@@ -8,6 +8,8 @@ namespace ports {
 typedef uint64_t PortName;
 typedef uint64_t NodeName;
 
+struct Context;
+
 struct Message {
   uint32_t sequence_num;
   const void* bytes;
@@ -44,47 +46,59 @@ struct Callbacks {
 };
 
 int Initialize(
-    Callbacks* callbacks);
+    Callbacks* callbacks,
+    Context** context);
 
-int Shutdown();
+int Shutdown(
+    Context* context);
 
 int AllocMessage(
+    Context* context,
     size_t num_bytes,
     size_t num_dependent_ports,
     Message** message);
 
 int FreeMessage(
+    Context* context,
     Message* message);
 
 int SendMessage(
+    Context* context,
     PortName port,
     Message* message); 
 
 int GetMessage(
+    Context* context,
     PortName port,
     Message** message);
 
 int AcceptMessage(
+    Context* context,
     PortName port,
     Message* message);
 
 int AcceptPort(
+    Context* context,
     PortName port,
     PortName peer,
     NodeName peer_node,
     uint32_t next_sequence_num);
 
 int AcceptPortAck(
+    Context* context,
     PortName port);
 
 int UpdatePort(
+    Context* context,
     PortName port,
     NodeName peer_node);
 
 int UpdatePortAck(
+    Context* context,
     PortName port);
 
 int PeerClosed(
+    Context* context,
     PortName port);
 
 }  // namespace ports
