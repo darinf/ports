@@ -77,7 +77,8 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
 
   message->sequence_num = port->next_sequence_num++;
     
-  return delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
+  delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
+  return OK;
 }
 
 int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
@@ -101,7 +102,28 @@ int Node::Impl::AcceptPort(PortName port_name,
                            PortName peer_name,
                            NodeName peer_node_name,
                            uint32_t next_sequence_num) {
-  return ERROR;
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (port)
+    return ERROR;  // Oops, port already exists!
+
+  port = std::make_shared<Port>();
+  port->peer_name = peer_name;
+  port->peer_node_name = peer_node_name;
+  port->proxy_to_node_name = 0;
+  port->next_sequence_num = next_sequence_num;
+  port->is_proxying = false;
+
+  // Hold the port's lock here to ensure that the port or its peer
+  // does not get moved after adding the port to the ports table.
+  std::lock_guard<std::mutex> port_guard(port->lock);
+
+  {
+    std::lock_guard<std::mutex> ports_guard(ports_lock_);
+    ports_.insert(std::make_pair(port_name, port));
+  }
+
+  delegate_->Send_AcceptPortAck(peer_node_name, port_name);
+  return OK;
 }
 
 int Node::Impl::AcceptPortAck(PortName port_name) {
@@ -138,11 +160,12 @@ int Node::Impl::SendPort(NodeName node_name, PortName port_name) {
   port->is_proxying = true;
   port->proxy_to_node_name = name_;
 
-  return delegate_->Send_AcceptPort(node_name,
-                                    port_name,
-                                    port->peer_name,
-                                    port->peer_node_name,
-                                    port->next_sequence_num);
+  delegate_->Send_AcceptPort(node_name,
+                             port_name,
+                             port->peer_name,
+                             port->peer_node_name,
+                             port->next_sequence_num);
+  return OK;
 }
 
 }  // namespace ports

@@ -62,32 +62,32 @@ class NodeDelegate {
  public:
   // Send_* methods MUST NOT call back into any Node methods synchronously.
 
-  virtual int Send_AcceptMessage(
+  virtual void Send_AcceptMessage(
       NodeName to_node,
       PortName port,
       Message* message) = 0;
 
-  virtual int Send_AcceptPort(
+  virtual void Send_AcceptPort(
       NodeName to_node,
       PortName port,
       PortName peer,
       NodeName peer_node,
       uint32_t next_sequence_num) = 0;
 
-  virtual int Send_AcceptPortAck(
+  virtual void Send_AcceptPortAck(
       NodeName to_node,
       PortName port) = 0;
 
-  virtual int Send_UpdatePort(
+  virtual void Send_UpdatePort(
       NodeName to_node,
       PortName port,
       NodeName peer_node) = 0;
 
-  virtual int Send_UpdatePortAck(
+  virtual void Send_UpdatePortAck(
       NodeName to_node,
       PortName port) = 0;
 
-  virtual int Send_PeerClosed(
+  virtual void Send_PeerClosed(
       NodeName to_node,
       PortName port) = 0;
 
