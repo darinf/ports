@@ -27,68 +27,21 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PORTS_INCLUDE_PORTS_H_
-#define PORTS_INCLUDE_PORTS_H_
+#ifndef PORTS_SRC_NODE_IMPL_H_
+#define PORTS_SRC_NODE_IMPL_H_
 
-#include <stdint.h>
+#include <mutex>
+#include <unordered_map>
+
+#include "../include/ports.h"
+#include "port.h"
 
 namespace ports {
 
-typedef uint64_t PortName;
-typedef uint64_t NodeName;
-
-enum {
-  OK = 0,
-  ERROR = -1,
-};
-
-struct Message {
-  uint32_t sequence_num;
-  const void* bytes;
-  size_t num_bytes;
-  const PortName* dependent_ports;
-  size_t num_dependent_ports;
-};
-
-Message* AllocMessage(
-    size_t num_bytes,
-    size_t num_dependent_ports);
-
-void FreeMessage(
-    Message* message);
-
-class NodeDelegate {
+class NodeImpl {
  public:
-  virtual int Send_AcceptMessage)(
-      NodeName to_node,
-      PortName port,
-      Message* message) = 0;
-
-  virtual int Send_AcceptPortAck)(
-      NodeName to_node,
-      PortName port) = 0;
-
-  virtual int Send_UpdatePort)(
-      NodeName to_node,
-      PortName port,
-      NodeName peer_node) = 0;
-
-  virtual int Send_UpdatePortAck)(
-      NodeName to_node,
-      PortName port) = 0;
-
-  virtual int Send_PeerClosed)(
-      NodeName to_node,
-      PortName port) = 0;
-
-  virtual int MessagesAvailable)(
-      PortName port) = 0;
-};
-
-class Node {
- public:
-  explicit Node(NodeDelegate* delegate);
-  ~Node();
+  explicit NodeImpl(NodeDelegate* delegate);
+  ~NodeImpl();
 
   int GetMessage(
       PortName port,
@@ -122,10 +75,12 @@ class Node {
       PortName port);
 
  private:
-  struct Impl;
-  Impl* impl_;
+  NodeDelegate* delegate_;
+
+  std::mutex ports_lock_;
+  std::unordered_map<PortName, std::unique_ptr<Port>> ports_;
 };
 
 }  // namespace ports
 
-#endif  // PORTS_INCLUDE_PORTS_H_
+#endif  // PORTS_SRC_NODE_IMPL_H_
