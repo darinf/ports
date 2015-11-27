@@ -67,6 +67,13 @@ class NodeDelegate {
       PortName port,
       Message* message) = 0;
 
+  virtual int Send_AcceptPort(
+      NodeName to_node,
+      PortName port,
+      PortName peer,
+      NodeName peer_node,
+      uint32_t next_sequence_num) = 0;
+
   virtual int Send_AcceptPortAck(
       NodeName to_node,
       PortName port) = 0;
@@ -92,7 +99,7 @@ class NodeDelegate {
 
 class Node {
  public:
-  explicit Node(NodeDelegate* delegate);
+  Node(NodeName name, NodeDelegate* delegate);
   ~Node();
 
   int GetMessage(

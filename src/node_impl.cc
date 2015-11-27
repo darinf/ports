@@ -31,16 +31,15 @@
 
 namespace ports {
 
-Node::Impl::Impl(NodeDelegate* delegate)
-    : delegate_(delegate) {
+Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
+    : name_(name),
+      delegate_(delegate) {
 }
 
 Node::Impl::~Impl() {
 }
 
-int Node::Impl::GetMessage(
-    PortName port_name,
-    Message** message) {
+int Node::Impl::GetMessage(PortName port_name, Message** message) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return ERROR;
@@ -50,9 +49,7 @@ int Node::Impl::GetMessage(
   return port->message_queue.GetMessage(message);
 }
 
-int Node::Impl::SendMessage(
-    PortName port_name,
-    Message* message) {
+int Node::Impl::SendMessage(PortName port_name, Message* message) {
   for (size_t i = 0; i < message->num_dependent_ports; ++i) {
     if (message->dependent_ports[i] == port_name)
       return ERROR;
@@ -72,10 +69,8 @@ int Node::Impl::SendMessage(
   // Call SendPort here while holding the port's lock to ensure that
   // peer_node_name doesn't change.
   for (size_t i = 0; i < message->num_dependent_ports; ++i) {
-    if (SendPort(peer_node_name, message->dependent_ports[i]) != OK) {
-      // Oops!
-      return ERROR;
-    }
+    if (SendPort(peer_node_name, message->dependent_ports[i]) != OK)
+      return ERROR;  // Oops!
   }
 
   message->sequence_num = port->next_sequence_num++;
@@ -83,38 +78,30 @@ int Node::Impl::SendMessage(
   return delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
 }
 
-int Node::Impl::AcceptMessage(
-    PortName port_name,
-    Message* message) {
+int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   return ERROR;
 }
 
-int Node::Impl::AcceptPort(
-    PortName port_name,
-    PortName peer_name,
-    NodeName peer_node_name,
-    uint32_t next_sequence_num) {
+int Node::Impl::AcceptPort(PortName port_name,
+                           PortName peer_name,
+                           NodeName peer_node_name,
+                           uint32_t next_sequence_num) {
   return ERROR;
 }
 
-int Node::Impl::AcceptPortAck(
-    PortName port_name) {
+int Node::Impl::AcceptPortAck(PortName port_name) {
   return ERROR;
 }
 
-int Node::Impl::UpdatePort(
-    PortName port_name,
-    NodeName peer_node_name) {
+int Node::Impl::UpdatePort(PortName port_name, NodeName peer_node_name) {
   return ERROR;
 }
 
-int Node::Impl::UpdatePortAck(
-    PortName port_name) {
+int Node::Impl::UpdatePortAck(PortName port_name) {
   return ERROR;
 }
 
-int Node::Impl::PeerClosed(
-    PortName port_name) {
+int Node::Impl::PeerClosed(PortName port_name) {
   return ERROR;
 }
 
@@ -126,6 +113,21 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
     return std::shared_ptr<Port>();
 
   return iter->second;
+}
+
+int Node::Impl::SendPort(NodeName node_name, PortName port_name) {
+  std::shared_ptr<Port> port = GetPort(port_name);
+
+  std::lock_guard<std::mutex> guard(port->lock);
+
+  port->is_proxying = true;
+  port->proxy_to_node_name = name_;
+
+  return delegate_->Send_AcceptPort(node_name,
+                                    port_name,
+                                    port->peer_name,
+                                    port->peer_node_name,
+                                    port->next_sequence_num);
 }
 
 }  // namespace ports

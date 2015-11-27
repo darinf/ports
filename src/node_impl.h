@@ -41,7 +41,7 @@ namespace ports {
 
 class Node::Impl {
  public:
-  explicit Impl(NodeDelegate* delegate);
+  Impl(NodeName name, NodeDelegate* delegate);
   ~Impl();
 
   int GetMessage(
@@ -76,6 +76,7 @@ class Node::Impl {
       PortName port_name);
 
  private:
+  NodeName name_;
   NodeDelegate* delegate_;
 
   std::shared_ptr<Port> GetPort(PortName port_name);
