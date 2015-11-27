@@ -93,7 +93,7 @@ class NodeDelegate {
 
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
-  virtual int MessagesAvailable(
+  virtual void MessagesAvailable(
       PortName port) = 0;
 };
 
@@ -102,6 +102,7 @@ class Node {
   Node(NodeName name, NodeDelegate* delegate);
   ~Node();
 
+  // Returns a null message if there are no messages available.
   int GetMessage(
       PortName port,
       Message** message);

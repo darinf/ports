@@ -39,7 +39,11 @@ class MessageQueue {
   MessageQueue();
   ~MessageQueue();
   
-  int GetMessage(Message** message);
+  void GetNextMessage(Message** message);
+
+  // Messages are ordered, so while we have given the message queue a message,
+  // it may not have the next message that should be read.
+  void AcceptMessage(Message* message, bool* has_next_message);
 };
 
 }  // namespace ports

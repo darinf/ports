@@ -46,7 +46,9 @@ int Node::Impl::GetMessage(PortName port_name, Message** message) {
 
   // Lock the port before accessing its message queue.
   std::lock_guard<std::mutex> guard(port->lock);
-  return port->message_queue.GetMessage(message);
+  port->message_queue.GetNextMessage(message);
+
+  return OK;
 }
 
 int Node::Impl::SendMessage(PortName port_name, Message* message) {
@@ -79,7 +81,20 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
 }
 
 int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
-  return ERROR;
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR;  // Oops!
+
+  bool has_next_message;
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+    port->message_queue.AcceptMessage(message, &has_message_message);
+  }
+
+  if (has_message_message)
+    delegate_->MessagesAvailable();
+
+  return OK;
 }
 
 int Node::Impl::AcceptPort(PortName port_name,
