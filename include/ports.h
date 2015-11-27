@@ -60,6 +60,8 @@ void FreeMessage(
 
 class NodeDelegate {
  public:
+  // Send_* methods MUST NOT call back into any Node methods synchronously.
+
   virtual int Send_AcceptMessage(
       NodeName to_node,
       PortName port,
@@ -82,6 +84,8 @@ class NodeDelegate {
       NodeName to_node,
       PortName port) = 0;
 
+  // Expected to call Node's GetMessage method to access the next available
+  // message. There may be zero or more messages available.
   virtual int MessagesAvailable(
       PortName port) = 0;
 };

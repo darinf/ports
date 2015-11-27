@@ -38,9 +38,9 @@ namespace ports {
 
 struct Port {
   std::mutex lock;
-  PortName peer;
-  NodeName peer_node;
-  NodeName proxy_to_node;
+  PortName peer_name;
+  NodeName peer_node_name;
+  NodeName proxy_to_node_name;
   uint32_t next_sequence_num;
   bool is_proxying;
   MessageQueue message_queue;

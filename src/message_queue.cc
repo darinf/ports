@@ -37,4 +37,9 @@ MessageQueue::MessageQueue() {
 MessageQueue::~MessageQueue() {
 }
 
+int MessageQueue::GetMessage(Message** message) {
+  *message = nullptr;
+  return ERROR;
+}
+
 }  // namespace ports

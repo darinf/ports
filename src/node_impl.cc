@@ -39,56 +39,89 @@ Node::Impl::~Impl() {
 }
 
 int Node::Impl::GetMessage(
-    PortName port,
+    PortName port_name,
     Message** message) {
-  return ERROR;
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR;
+
+  // Lock the port before accessing its message queue.
+  std::lock_guard<std::mutex> guard(port->lock);
+  return port->message_queue.GetMessage(message);
 }
 
 int Node::Impl::SendMessage(
-    PortName port,
+    PortName port_name,
     Message* message) {
-  return ERROR;
+  for (size_t i = 0; i < message->num_dependent_ports; ++i) {
+    if (message->dependent_ports[i] == port_name)
+      return ERROR;
+  }
+
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR;
+
+  std::lock_guard<std::mutex> guard(port->lock);
+  if (port->is_proxying)
+    return ERROR;
+
+  NodeName peer_node_name = port->peer_node_name;
+  PortName peer_name = port->peer_name;
+
+  // Call SendPort here while holding the port's lock to ensure that
+  // peer_node_name doesn't change.
+  for (size_t i = 0; i < message->num_dependent_ports; ++i) {
+    if (SendPort(peer_node_name, message->dependent_ports[i]) != OK) {
+      // Oops!
+      return ERROR;
+    }
+  }
+
+  message->sequence_num = port->next_sequence_num++;
+    
+  return delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
 }
 
 int Node::Impl::AcceptMessage(
-    PortName port,
+    PortName port_name,
     Message* message) {
   return ERROR;
 }
 
 int Node::Impl::AcceptPort(
-    PortName port,
-    PortName peer,
-    NodeName peer_node,
+    PortName port_name,
+    PortName peer_name,
+    NodeName peer_node_name,
     uint32_t next_sequence_num) {
   return ERROR;
 }
 
 int Node::Impl::AcceptPortAck(
-    PortName port) {
+    PortName port_name) {
   return ERROR;
 }
 
 int Node::Impl::UpdatePort(
-    PortName port,
-    NodeName peer_node) {
+    PortName port_name,
+    NodeName peer_node_name) {
   return ERROR;
 }
 
 int Node::Impl::UpdatePortAck(
-    PortName port) {
+    PortName port_name) {
   return ERROR;
 }
 
 int Node::Impl::PeerClosed(
-    PortName port) {
+    PortName port_name) {
   return ERROR;
 }
 
-std::shared_ptr<Port> Node::Impl::GetPort(PortName port) {
-  std::lock_guard<std::mutex> locker(ports_lock_);
+std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
+  std::lock_guard<std::mutex> guard(ports_lock_);
 
-  auto iter = ports_.find(port);
+  auto iter = ports_.find(port_name);
   if (iter == ports_.end())
     return std::shared_ptr<Port>();
 

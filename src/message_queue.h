@@ -30,12 +30,16 @@
 #ifndef PORTS_SRC_MESSAGE_QUEUE_H_
 #define PORTS_SRC_MESSAGE_QUEUE_H_
 
+#include "../include/ports.h"
+
 namespace ports {
 
 class MessageQueue {
  public:
   MessageQueue();
   ~MessageQueue();
+  
+  int GetMessage(Message** message);
 };
 
 }  // namespace ports
