@@ -30,6 +30,7 @@
 #ifndef PORTS_SRC_NODE_IMPL_H_
 #define PORTS_SRC_NODE_IMPL_H_
 
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -38,10 +39,10 @@
 
 namespace ports {
 
-class NodeImpl {
+class Node::Impl {
  public:
-  explicit NodeImpl(NodeDelegate* delegate);
-  ~NodeImpl();
+  explicit Impl(NodeDelegate* delegate);
+  ~Impl();
 
   int GetMessage(
       PortName port,
@@ -77,8 +78,10 @@ class NodeImpl {
  private:
   NodeDelegate* delegate_;
 
+  std::shared_ptr<Port> GetPort(PortName port);
+
   std::mutex ports_lock_;
-  std::unordered_map<PortName, std::unique_ptr<Port>> ports_;
+  std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
 };
 
 }  // namespace ports

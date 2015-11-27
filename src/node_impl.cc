@@ -31,32 +31,32 @@
 
 namespace ports {
 
-NodeImpl::NodeImpl(NodeDelegate* delegate)
-    delegate_(delegate) {
+Node::Impl::Impl(NodeDelegate* delegate)
+    : delegate_(delegate) {
 }
 
-NodeImpl::~NodeImpl() {
+Node::Impl::~Impl() {
 }
 
-int NodeImpl::GetMessage(
+int Node::Impl::GetMessage(
     PortName port,
     Message** message) {
   return ERROR;
 }
 
-int NodeImpl::SendMessage(
+int Node::Impl::SendMessage(
     PortName port,
     Message* message) {
   return ERROR;
 }
 
-int NodeImpl::AcceptMessage(
+int Node::Impl::AcceptMessage(
     PortName port,
     Message* message) {
   return ERROR;
 }
 
-int NodeImpl::AcceptPort(
+int Node::Impl::AcceptPort(
     PortName port,
     PortName peer,
     NodeName peer_node,
@@ -64,25 +64,35 @@ int NodeImpl::AcceptPort(
   return ERROR;
 }
 
-int NodeImpl::AcceptPortAck(
+int Node::Impl::AcceptPortAck(
     PortName port) {
   return ERROR;
 }
 
-int NodeImpl::UpdatePort(
+int Node::Impl::UpdatePort(
     PortName port,
     NodeName peer_node) {
   return ERROR;
 }
 
-int NodeImpl::UpdatePortAck(
+int Node::Impl::UpdatePortAck(
     PortName port) {
   return ERROR;
 }
 
-int NodeImpl::PeerClosed(
+int Node::Impl::PeerClosed(
     PortName port) {
   return ERROR;
+}
+
+std::shared_ptr<Port> Node::Impl::GetPort(PortName port) {
+  std::lock_guard<std::mutex> locker(ports_lock_);
+
+  auto iter = ports_.find(port);
+  if (iter == ports_.end())
+    return std::shared_ptr<Port>();
+
+  return iter->second;
 }
 
 }  // namespace ports

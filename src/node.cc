@@ -32,7 +32,7 @@
 namespace ports {
 
 Node::Node(NodeDelegate* delegate)
-    : impl_(new NodeImpl(delegate)) {
+    : impl_(new Impl(delegate)) {
 }
 
 Node::~Node() {

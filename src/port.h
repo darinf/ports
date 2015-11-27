@@ -32,6 +32,8 @@
 
 #include <mutex>
 
+#include "message_queue.h"
+
 namespace ports {
 
 struct Port {

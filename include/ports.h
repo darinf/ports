@@ -30,6 +30,7 @@
 #ifndef PORTS_INCLUDE_PORTS_H_
 #define PORTS_INCLUDE_PORTS_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace ports {
@@ -59,29 +60,29 @@ void FreeMessage(
 
 class NodeDelegate {
  public:
-  virtual int Send_AcceptMessage)(
+  virtual int Send_AcceptMessage(
       NodeName to_node,
       PortName port,
       Message* message) = 0;
 
-  virtual int Send_AcceptPortAck)(
+  virtual int Send_AcceptPortAck(
       NodeName to_node,
       PortName port) = 0;
 
-  virtual int Send_UpdatePort)(
+  virtual int Send_UpdatePort(
       NodeName to_node,
       PortName port,
       NodeName peer_node) = 0;
 
-  virtual int Send_UpdatePortAck)(
+  virtual int Send_UpdatePortAck(
       NodeName to_node,
       PortName port) = 0;
 
-  virtual int Send_PeerClosed)(
+  virtual int Send_PeerClosed(
       NodeName to_node,
       PortName port) = 0;
 
-  virtual int MessagesAvailable)(
+  virtual int MessagesAvailable(
       PortName port) = 0;
 };
 
