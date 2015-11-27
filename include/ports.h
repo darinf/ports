@@ -8,8 +8,6 @@ namespace ports {
 typedef uint64_t PortName;
 typedef uint64_t NodeName;
 
-struct Context;
-
 struct Message {
   uint32_t sequence_num;
   const void* bytes;
@@ -18,7 +16,15 @@ struct Message {
   size_t num_dependent_ports;
 };
 
-struct Callbacks {
+Message* AllocMessage(
+    size_t num_bytes,
+    size_t num_dependent_ports);
+
+void FreeMessage(
+    Message* message);
+
+class NodeDelegate {
+ public:
   virtual int Send_AcceptMessage)(
       NodeName to_node,
       PortName port,
@@ -45,61 +51,46 @@ struct Callbacks {
       PortName port) = 0;
 };
 
-int Initialize(
-    Callbacks* callbacks,
-    Context** context);
+class Node {
+ public:
+  explicit Node(NodeDelegate* delegate);
+  ~Node();
 
-int Shutdown(
-    Context* context);
+  int GetMessage(
+      PortName port,
+      Message** message);
 
-int AllocMessage(
-    Context* context,
-    size_t num_bytes,
-    size_t num_dependent_ports,
-    Message** message);
+  int SendMessage(
+      PortName port,
+      Message* message); 
 
-int FreeMessage(
-    Context* context,
-    Message* message);
+  int AcceptMessage(
+      PortName port,
+      Message* message);
 
-int SendMessage(
-    Context* context,
-    PortName port,
-    Message* message); 
+  int AcceptPort(
+      PortName port,
+      PortName peer,
+      NodeName peer_node,
+      uint32_t next_sequence_num);
 
-int GetMessage(
-    Context* context,
-    PortName port,
-    Message** message);
+  int AcceptPortAck(
+      PortName port);
 
-int AcceptMessage(
-    Context* context,
-    PortName port,
-    Message* message);
+  int UpdatePort(
+      PortName port,
+      NodeName peer_node);
 
-int AcceptPort(
-    Context* context,
-    PortName port,
-    PortName peer,
-    NodeName peer_node,
-    uint32_t next_sequence_num);
+  int UpdatePortAck(
+      PortName port);
 
-int AcceptPortAck(
-    Context* context,
-    PortName port);
+  int PeerClosed(
+      PortName port);
 
-int UpdatePort(
-    Context* context,
-    PortName port,
-    NodeName peer_node);
-
-int UpdatePortAck(
-    Context* context,
-    PortName port);
-
-int PeerClosed(
-    Context* context,
-    PortName port);
+ private:
+  struct State;
+  State* state_;
+};
 
 }  // namespace ports
 
