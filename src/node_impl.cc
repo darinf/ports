@@ -88,11 +88,11 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   bool has_next_message;
   {
     std::lock_guard<std::mutex> guard(port->lock);
-    port->message_queue.AcceptMessage(message, &has_message_message);
+    port->message_queue.AcceptMessage(message, &has_next_message);
   }
 
-  if (has_message_message)
-    delegate_->MessagesAvailable();
+  if (has_next_message)
+    delegate_->MessagesAvailable(port_name);
 
   return OK;
 }
