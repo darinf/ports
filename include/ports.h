@@ -81,7 +81,9 @@ class NodeDelegate {
       PortName peer,
       NodeName peer_node,
       uint32_t next_sequence_num,
-      NodeName from_node) = 0;
+      NodeName from_node,
+      PortName from_port,
+      PortName dependent_port) = 0;
 
   virtual void Send_AcceptPortAck(
       NodeName to_node,
@@ -114,6 +116,10 @@ class Node {
   Node(NodeName name, NodeDelegate* delegate);
   ~Node();
 
+  int CreatePortPair(
+      PortName* port0,
+      PortName* port1);
+
   // Returns a null message if there are no messages available.
   int GetMessage(
       PortName port,
@@ -132,7 +138,9 @@ class Node {
       PortName peer,
       NodeName peer_node,
       uint32_t next_sequence_num,
-      NodeName from_node);
+      NodeName from_node,
+      PortName from_port,
+      PortName dependent_port);
 
   int AcceptPortAck(
       PortName port);

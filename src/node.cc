@@ -39,6 +39,10 @@ Node::~Node() {
   delete impl_;
 }
 
+int Node::CreatePortPair(PortName* port0, PortName* port1) {
+  return impl_->CreatePortPair(port0, port1);
+}
+
 int Node::GetMessage(PortName port, Message** message) {
   return impl_->GetMessage(port, message);
 }
@@ -55,8 +59,11 @@ int Node::AcceptPort(PortName port,
                      PortName peer,
                      NodeName peer_node,
                      uint32_t next_sequence_num,
-                     NodeName from_node) {
-  return impl_->AcceptPort(port, peer, peer_node, next_sequence_num, from_node);
+                     NodeName from_node,
+                     PortName from_port,
+                     PortName dependent_port) {
+  return impl_->AcceptPort(port, peer, peer_node, next_sequence_num, from_node,
+                           from_port, dependent_port);
 }
 
 int Node::AcceptPortAck(PortName port) {

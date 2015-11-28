@@ -39,6 +39,25 @@ Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
 Node::Impl::~Impl() {
 }
 
+int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
+  *port_name_0 = delegate_->GeneratePortName();
+  *port_name_1 = delegate_->GeneratePortName();
+
+  // A connected pair of ports:
+  std::shared_ptr<Port> port0 =
+      std::make_shared<Port>(*port_name_1, name_, kInitialSequenceNum);
+  std::shared_ptr<Port> port1 =
+      std::make_shared<Port>(*port_name_0, name_, kInitialSequenceNum);
+
+  {
+    std::lock_guard<std::mutex> guard(ports_lock_);
+    ports_.insert(std::make_pair(*port_name_0, port0));
+    ports_.insert(std::make_pair(*port_name_1, port1));
+  }
+
+  return OK;
+}
+
 int Node::Impl::GetMessage(PortName port_name, Message** message) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -73,14 +92,20 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
     // Call SendPort here while holding the port's lock to ensure that
     // peer_node_name doesn't change.
     for (size_t i = 0; i < message->num_ports; ++i) {
-      if (RenameAndSendPort(peer_node_name, &message->ports[i]) != OK)
+      if (RenameAndSendPort(peer_node_name, peer_name, &message->ports[i])
+              != OK)
         return ERROR;  // Oops!
     }
 
     message->sequence_num = port->next_sequence_num++;
 
-    // TODO: Do we have to worry about AcceptMessage being processed ahead of
-    // AcceptPort? Yes, we do :-(
+    // It is OK for AcceptMessage to race with the AcceptPort calls. The
+    // message queue for |peer_name| will be blocked from emitting messages
+    // until all referenced ports for this message become available.
+
+    // XXX What if there are multiple AcceptMessage calls each w/ corresponding
+    // AcceptPort calls. Could this approach with counters not work if the
+    // wrong set of AcceptPort calls arrive first?
 
     delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
   }
@@ -106,9 +131,11 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   bool has_next_message;
   {
     std::lock_guard<std::mutex> guard(port->lock);
-    port->message_queue.AcceptMessage(message, &has_next_message);
+    if (message->num_ports > 0)
+      port->message_queue.BlockMessages(static_cast<int>(message->num_ports));
+    port->message_queue.AcceptMessage(message);
+    has_next_message = port->message_queue.HasNextMessage();
   }
-
   if (has_next_message)
     delegate_->MessagesAvailable(port_name);
 
@@ -120,7 +147,8 @@ int Node::Impl::AcceptPort(PortName port_name,
                            NodeName peer_node_name,
                            uint32_t next_sequence_num,
                            NodeName from_node_name,
-                           PortName from_port_name) {
+                           PortName from_port_name,
+                           PortName dependent_port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (port)
     return ERROR;  // Oops, port already exists!
@@ -128,11 +156,26 @@ int Node::Impl::AcceptPort(PortName port_name,
   port = std::make_shared<Port>(peer_name, peer_node_name, next_sequence_num);
 
   {
-    std::lock_guard<std::mutex> ports_guard(ports_lock_);
+    std::lock_guard<std::mutex> guard(ports_lock_);
     ports_.insert(std::make_pair(port_name, port));
   }
 
   delegate_->Send_AcceptPortAck(from_node_name, from_port_name);
+
+  // Upon receiving AcceptPort, we may now be able to unblock messages
+  // processing for the dependent port. Note: the message that depends on this
+  // AcceptPort call may not have arrived yet, in which case the counter will
+  // go negative.
+  bool has_next_message = false;
+  {
+    std::shared_ptr<Port> dependent_port = GetPort(dependent_port_name);
+    std::lock_guard<std::mutex> guard(dependent_port->lock);
+    dependent_port->message_queue.UnblockMessages(1);
+    has_next_message = dependent_port->message_queue.HasNextMessage();
+  }
+  if (has_next_message)
+    delegate_->MessagesAvailable(dependent_port_name);
+
   return OK;
 }
 
@@ -226,13 +269,19 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
   return iter->second;
 }
 
-int Node::Impl::RenameAndSendPort(NodeName node_name, PortName* port_name) {
-  std::shared_ptr<Port> port = GetPort(*port_name);
+int Node::Impl::RenameAndSendPort(NodeName node_name,
+                                  PortName dependent_peer_name,
+                                  PortName* port_name) {
+  PortName old_port_name = *port_name;
 
   // Generate a new name for the port. This is done to avoid collisions if the
   // port is later transferred back to this node.
   PortName new_port_name = delegate_->GeneratePortName();
   *port_name = new_port_name;
+
+  std::shared_ptr<Port> port = GetPort(old_port_name);
+  if (!port)
+    return ERROR;
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -256,7 +305,9 @@ int Node::Impl::RenameAndSendPort(NodeName node_name, PortName* port_name) {
                                port->peer_name,
                                port->peer_node_name,
                                port->next_sequence_num,
-                               name_);
+                               name_,
+                               old_port_name,
+                               dependent_peer_name);
   }
   return OK;
 }

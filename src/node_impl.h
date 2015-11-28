@@ -45,6 +45,7 @@ class Node::Impl {
   Impl(NodeName name, NodeDelegate* delegate);
   ~Impl();
 
+  int CreatePortPair(PortName* port0, PortName* port1);
   int GetMessage(PortName port_name, Message** message);
   int SendMessage(PortName port_name, Message* message); 
   int AcceptMessage(PortName port_name, Message* message);
@@ -53,7 +54,8 @@ class Node::Impl {
                  NodeName peer_node_name,
                  uint32_t next_sequence_num,
                  NodeName from_node_name,
-                 PortName from_port_name);
+                 PortName from_port_name,
+                 PortName dependent_port_name);
   int AcceptPortAck(PortName port_name);
   int UpdatePort(PortName port_name,
                  PortName peer_name,
@@ -66,7 +68,9 @@ class Node::Impl {
   NodeDelegate* delegate_;
 
   std::shared_ptr<Port> GetPort(PortName port_name);
-  int RenameAndSendPort(NodeName node_name, PortName* port_name);
+  int RenameAndSendPort(NodeName node_name,
+                        PortName dependent_peer_name,
+                        PortName* port_name);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;

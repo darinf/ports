@@ -31,7 +31,11 @@
 
 namespace ports {
 
-MessageQueue::MessageQueue() {
+MessageQueue::MessageQueue()
+    : block_count_(0),
+      waiting_for_initial_message_(true) {
+  // The message queue is blocked waiting for a message with sequence number
+  // equal to kInitialSequenceNum.
 }
 
 MessageQueue::~MessageQueue() {
@@ -41,9 +45,26 @@ bool MessageQueue::IsEmpty() {
   return true;
 }
 
-int MessageQueue::GetMessage(Message** message) {
+bool MessageQueue::HasNextMessage() const {
+  if (block_count_ < 0)
+    return false;
+
+  return false;
+}
+
+void MessageQueue::GetNextMessage(Message** message) {
   *message = nullptr;
-  return ERROR;
+}
+
+void MessageQueue::AcceptMessage(Message* message) {
+}
+
+void MessageQueue::BlockMessages(int count) {
+  block_count_ -= count;
+}
+
+void MessageQueue::UnblockMessages(int count) {
+  block_count_ += count;
 }
 
 }  // namespace ports

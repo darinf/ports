@@ -34,18 +34,34 @@
 
 namespace ports {
 
+const uint32_t kInitialSequenceNum = 1;
+
 class MessageQueue {
  public:
   MessageQueue();
   ~MessageQueue();
 
   bool IsEmpty();
+
+  // Messages are ordered, so while the message queue may not be empty, this
+  // method will return false if the *next* message is not available yet.
+  bool HasNextMessage() const;
   
+  // Gives ownership of the message.
   void GetNextMessage(Message** message);
 
-  // Messages are ordered, so while we have given the message queue a message,
-  // it may not have the next message that should be read.
-  void AcceptMessage(Message* message, bool* has_next_message);
+  // Takes ownership of the message.
+  void AcceptMessage(Message* message);
+
+  // Used to block/unblock the Has/GetNextMessage methods. OK to call
+  // Block/UnblockMessages multiple times, and UnblockMessages can be called in
+  // advance of BlockMessages.
+  void BlockMessages(int count);
+  void UnblockMessages(int count);
+
+ private:
+  int block_count_;
+  bool waiting_for_initial_message_;
 };
 
 }  // namespace ports
