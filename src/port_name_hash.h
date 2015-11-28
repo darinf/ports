@@ -27,51 +27,22 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PORTS_SRC_NODE_IMPL_H_
-#define PORTS_SRC_NODE_IMPL_H_
-
-#include <memory>
-#include <mutex>
-#include <unordered_map>
+#ifndef PORTS_SRC_PORT_NAME_HASH_H_
+#define PORTS_SRC_PORT_NAME_HASH_H_
 
 #include "../include/ports.h"
-#include "port.h"
-#include "port_name_hash.h"
 
-namespace ports {
+#include <functional>
 
-class Node::Impl {
- public:
-  Impl(NodeName name, NodeDelegate* delegate);
-  ~Impl();
+namespace std {
 
-  int GetMessage(PortName port_name, Message** message);
-  int SendMessage(PortName port_name, Message* message); 
-  int AcceptMessage(PortName port_name, Message* message);
-  int AcceptPort(PortName port_name,
-                 PortName peer_name,
-                 NodeName peer_node_name,
-                 uint32_t next_sequence_num,
-                 NodeName from_node_name,
-                 PortName from_port_name);
-  int AcceptPortAck(PortName port_name);
-  int UpdatePort(PortName port_name,
-                 PortName peer_name,
-                 NodeName peer_node_name);
-  int UpdatePortAck(PortName port_name);
-  int PeerClosed(PortName port_name);
-
- private:
-  NodeName name_;
-  NodeDelegate* delegate_;
-
-  std::shared_ptr<Port> GetPort(PortName port_name);
-  int RenameAndSendPort(NodeName node_name, PortName* port_name);
-
-  std::mutex ports_lock_;
-  std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
+template <>
+struct hash<ports::PortName> {
+  std::size_t operator()(const ports::PortName& port_name) const {
+    return hash<uint64_t>()(port_name.value);
+  }
 };
 
-}  // namespace ports
+}  // namespace std
 
-#endif  // PORTS_SRC_NODE_IMPL_H_
+#endif  // PORTS_SRC_PORT_NAME_HASH_H_

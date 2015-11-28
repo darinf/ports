@@ -35,8 +35,17 @@
 
 namespace ports {
 
-typedef uint64_t PortName;
-typedef uint64_t NodeName;
+struct PortName {
+  explicit PortName(uint64_t value) : value(value) {}
+  bool operator==(const PortName& other) const { return other.value == value; }
+  uint64_t value;
+};
+
+struct NodeName {
+  explicit NodeName(uint64_t value) : value(value) {}
+  bool operator==(const NodeName& other) const { return other.value == value; }
+  uint64_t value;
+};
 
 enum {
   OK = 0,
