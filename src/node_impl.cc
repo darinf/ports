@@ -80,7 +80,7 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
     message->sequence_num = port->next_sequence_num++;
 
     // TODO: Do we have to worry about AcceptMessage being processed ahead of
-    // AcceptPort?
+    // AcceptPort? Yes, we do :-(
 
     delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
   }
@@ -91,6 +91,17 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return ERROR;  // Oops!
+
+#ifndef NDEBUG
+  // Ensure that all referenced ports were already transferred.
+  {
+    std::lock_guard<std::mutex> guard(ports_lock_);
+    for (size_t i = 0; i < message->num_ports; ++i) {
+      if (ports_.find(message->ports[i]) == ports_.end())
+        return ERROR;  // Oops!
+    }
+  }
+#endif
 
   bool has_next_message;
   {
@@ -229,6 +240,11 @@ int Node::Impl::RenameAndSendPort(NodeName node_name, PortName* port_name) {
     if (port->state == Port::kProxying) {
       // Oops, the port can only be moved if it is bound to this node.
       return ERROR;
+    }
+
+    if (!port->message_queue.IsEmpty()) {
+      // TODO: What do we do with any unprocessed messages in this case? Should
+      // they also be forwarded?
     }
 
     port->state = Port::kProxying;

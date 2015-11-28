@@ -38,6 +38,8 @@ class MessageQueue {
  public:
   MessageQueue();
   ~MessageQueue();
+
+  bool IsEmpty();
   
   void GetNextMessage(Message** message);
 

@@ -37,6 +37,10 @@ MessageQueue::MessageQueue() {
 MessageQueue::~MessageQueue() {
 }
 
+bool MessageQueue::IsEmpty() {
+  return true;
+}
+
 int MessageQueue::GetMessage(Message** message) {
   *message = nullptr;
   return ERROR;
