@@ -114,13 +114,7 @@ int Node::Impl::AcceptPort(PortName port_name,
   if (port)
     return ERROR;  // Oops, port already exists!
 
-  port = std::make_shared<Port>();
-  port->peer_name = peer_name;
-  port->peer_node_name = peer_node_name;
-  port->proxy_to_port_name = 0;
-  port->proxy_to_node_name = 0;
-  port->next_sequence_num = next_sequence_num;
-  port->state = Port::kReceiving;
+  port = std::make_shared<Port>(peer_name, peer_node_name, next_sequence_num);
 
   {
     std::lock_guard<std::mutex> ports_guard(ports_lock_);
@@ -164,13 +158,19 @@ int Node::Impl::UpdatePort(PortName port_name,
     port->peer_name = peer_name;
     port->peer_node_name = peer_node_name;
 
+    // If |port| has also (in addition to its peer) been moved, then we need to
+    // forward these updates to the new port. We delay sending UpdatePortAck
+    // until the new port is updated. That way, our old peer stays around long
+    // enough to handle any messages sent to it from the new port.
+
     if (port->state == Port::kProxying) {
       delegate_->Send_UpdatePort(port->proxy_to_node_name,
                                  port->proxy_to_port_name,
-                                 peer_name,
-                                 peer_node_name);
+                                 port->peer_name,
+                                 port->peer_node_name);
+      port->delayed_update_port_ack = true;
     } else {
-      delegate_->Send_UpdatePortAck(peer_node_name, peer_name);
+      delegate_->Send_UpdatePortAck(port->peer_node_name, port->peer_name);
     }
   }
   return OK;
@@ -184,16 +184,16 @@ int Node::Impl::UpdatePortAck(PortName port_name) {
   // Forward UpdatePortAck corresponding to the forwarded UpdatePort case.
   {
     std::lock_guard<std::mutex> guard(port->lock);
-
-    if (port->state == Port::kProxying)
+    if (port->delayed_update_port_ack) {
+      port->delayed_update_port_ack = false;
       delegate_->Send_UpdatePortAck(port->peer_node_name, port->peer_name);
+    }
   }
 
   // Remove this port as it is now completely moved and no one else should be
   // sending messages to it at this node.
   {
     std::lock_guard<std::mutex> guard(ports_lock_);
-
     ports_.erase(port_name);
   }
   

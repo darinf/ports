@@ -50,6 +50,16 @@ struct Port {
   uint32_t next_sequence_num;
   State state;
   MessageQueue message_queue;
+  bool delayed_update_port_ack;
+
+  Port(PortName peer_name, NodeName peer_node_name, uint32_t next_sequence_num)
+      : peer_name(peer_name),
+        peer_node_name(peer_node_name),
+        proxy_to_port_name(0),
+        proxy_to_node_name(0),
+        next_sequence_num(next_sequence_num),
+        state(kReceiving),
+        delayed_update_port_ack(false) {}
 };
 
 }  // namespace ports
