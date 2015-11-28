@@ -44,43 +44,28 @@ class Node::Impl {
   Impl(NodeName name, NodeDelegate* delegate);
   ~Impl();
 
-  int GetMessage(
-      PortName port_name,
-      Message** message);
-
-  int SendMessage(
-      PortName port_name,
-      Message* message); 
-
-  int AcceptMessage(
-      PortName port_name,
-      Message* message);
-
-  int AcceptPort(
-      PortName port_name,
-      PortName peer_name,
-      NodeName peer_node_name,
-      uint32_t next_sequence_num);
-
-  int AcceptPortAck(
-      PortName port_name);
-
-  int UpdatePort(
-      PortName port_name,
-      NodeName peer_node_name);
-
-  int UpdatePortAck(
-      PortName port_name);
-
-  int PeerClosed(
-      PortName port_name);
+  int GetMessage(PortName port_name, Message** message);
+  int SendMessage(PortName port_name, Message* message); 
+  int AcceptMessage(PortName port_name, Message* message);
+  int AcceptPort(PortName port_name,
+                 PortName peer_name,
+                 NodeName peer_node_name,
+                 uint32_t next_sequence_num,
+                 NodeName from_node_name,
+                 PortName from_port_name);
+  int AcceptPortAck(PortName port_name);
+  int UpdatePort(PortName port_name,
+                 PortName peer_name,
+                 NodeName peer_node_name);
+  int UpdatePortAck(PortName port_name);
+  int PeerClosed(PortName port_name);
 
  private:
   NodeName name_;
   NodeDelegate* delegate_;
 
   std::shared_ptr<Port> GetPort(PortName port_name);
-  int SendPort(NodeName node_name, PortName port_name);
+  int RenameAndSendPort(NodeName node_name, PortName* port_name);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;

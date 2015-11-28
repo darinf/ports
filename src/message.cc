@@ -29,33 +29,44 @@
 
 #include "../include/ports.h"
 
-#include <stdlib.h>
+#include <cstdlib>
+#include <limits>
 
 namespace ports {
 
-Message* AllocMessage(size_t num_bytes, size_t num_dependent_ports) {
+Message* AllocMessage(size_t num_bytes, size_t num_ports) {
   // Memory layout: [Message] [dependent_ports] [bytes]
 
-  size_t size =
-      sizeof(Message) + num_dependent_ports * sizeof(PortName) + num_bytes;
+  // Take care to avoid integer overflow.
 
-  char* memory = static_cast<char*>(malloc(size));
+  if (num_ports > std::numeric_limits<size_t>::max() / sizeof(PortName))
+    return NULL;
+  size_t ports_size = num_ports * sizeof(PortName);
+
+  size_t message_size = sizeof(Message);
+
+  if (message_size + ports_size < message_size)
+    return NULL;
+  message_size += ports_size;
+
+  if (message_size + num_bytes < message_size)
+    return NULL;
+  message_size += num_bytes;
+
+  char* memory = static_cast<char*>(malloc(message_size));
 
   Message* message = reinterpret_cast<Message*>(memory);
   message->sequence_num = 0;
-  message->dependent_ports =
-      reinterpret_cast<PortName*>(memory + sizeof(Message));
-  message->num_dependent_ports = num_dependent_ports;
-  message->bytes =
-      memory + sizeof(Message) + num_dependent_ports * sizeof(PortName);
+  message->ports = reinterpret_cast<PortName*>(memory + sizeof(Message));
+  message->num_ports = num_ports;
+  message->bytes = memory + sizeof(Message) + ports_size;
   message->num_bytes = num_bytes;
 
   return message;
 }
 
 void FreeMessage(Message* message) {
-  char* memory = reinterpret_cast<char*>(message);
-  free(memory);
+  free(message);
 }
 
 }  // namespace ports

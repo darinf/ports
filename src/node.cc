@@ -54,16 +54,17 @@ int Node::AcceptMessage(PortName port, Message* message) {
 int Node::AcceptPort(PortName port,
                      PortName peer,
                      NodeName peer_node,
-                     uint32_t next_sequence_num) {
-  return impl_->AcceptPort(port, peer, peer_node, next_sequence_num);
+                     uint32_t next_sequence_num,
+                     NodeName from_node) {
+  return impl_->AcceptPort(port, peer, peer_node, next_sequence_num, from_node);
 }
 
 int Node::AcceptPortAck(PortName port) {
   return impl_->AcceptPortAck(port);
 }
 
-int Node::UpdatePort(PortName port, NodeName peer_node) {
-  return impl_->UpdatePort(port, peer_node);
+int Node::UpdatePort(PortName port, PortName peer, NodeName peer_node) {
+  return impl_->UpdatePort(port, peer, peer_node);
 }
 
 int Node::UpdatePortAck(PortName port) {

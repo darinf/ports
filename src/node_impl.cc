@@ -52,8 +52,8 @@ int Node::Impl::GetMessage(PortName port_name, Message** message) {
 }
 
 int Node::Impl::SendMessage(PortName port_name, Message* message) {
-  for (size_t i = 0; i < message->num_dependent_ports; ++i) {
-    if (message->dependent_ports[i] == port_name)
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    if (message->ports[i] == port_name)
       return ERROR;
   }
 
@@ -62,7 +62,7 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
     return ERROR;
 
   std::lock_guard<std::mutex> guard(port->lock);
-  if (port->is_proxying)
+  if (port->state == Port::kProxying)
     return ERROR;
 
   NodeName peer_node_name = port->peer_node_name;
@@ -70,13 +70,16 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
 
   // Call SendPort here while holding the port's lock to ensure that
   // peer_node_name doesn't change.
-  for (size_t i = 0; i < message->num_dependent_ports; ++i) {
-    if (SendPort(peer_node_name, message->dependent_ports[i]) != OK)
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    if (RenameAndSendPort(peer_node_name, &message->ports[i]) != OK)
       return ERROR;  // Oops!
   }
 
   message->sequence_num = port->next_sequence_num++;
-    
+
+  // TODO: Do we have to worry about AcceptMessage being processed ahead of
+  // AcceptPort?
+
   delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
   return OK;
 }
@@ -101,7 +104,9 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
 int Node::Impl::AcceptPort(PortName port_name,
                            PortName peer_name,
                            NodeName peer_node_name,
-                           uint32_t next_sequence_num) {
+                           uint32_t next_sequence_num,
+                           NodeName from_node_name,
+                           PortName from_port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (port)
     return ERROR;  // Oops, port already exists!
@@ -109,20 +114,17 @@ int Node::Impl::AcceptPort(PortName port_name,
   port = std::make_shared<Port>();
   port->peer_name = peer_name;
   port->peer_node_name = peer_node_name;
+  port->proxy_to_port_name = 0;
   port->proxy_to_node_name = 0;
   port->next_sequence_num = next_sequence_num;
-  port->is_proxying = false;
-
-  // Hold the port's lock here to ensure that the port and its peer do not get
-  // transferred after adding the port to the ports table.
-  std::lock_guard<std::mutex> port_guard(port->lock);
+  port->state = Port::kReceiving;
 
   {
     std::lock_guard<std::mutex> ports_guard(ports_lock_);
     ports_.insert(std::make_pair(port_name, port));
   }
 
-  delegate_->Send_AcceptPortAck(peer_node_name, port_name);
+  delegate_->Send_AcceptPortAck(from_node_name, from_port_name);
   return OK;
 }
 
@@ -133,29 +135,34 @@ int Node::Impl::AcceptPortAck(PortName port_name) {
 
   // Hmm, this lock may not be strictly necessary.
   std::lock_guard<std::mutex> guard(port->lock);
-  if (!port->is_proxying)
+  if (port->state != Port::kProxying)
     return ERROR;  // Oops, unexpected state!
 
   delegate_->Send_UpdatePort(port->peer_node_name,
                              port->peer_name,
+                             port_name,  // XXX
                              port->proxy_to_node_name);
   return OK;
 }
 
-int Node::Impl::UpdatePort(PortName port_name, NodeName peer_node_name) {
+int Node::Impl::UpdatePort(PortName port_name,
+                           PortName peer_name,
+                           NodeName peer_node_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return ERROR;  // Oops, port not found!
 
   std::lock_guard<std::mutex> guard(port->lock);
+  port->peer_name = peer_name;
   port->peer_node_name = peer_node_name;
 
-  if (port->is_proxying) {
+  if (port->state == Port::kProxying) {
     delegate_->Send_UpdatePort(port->proxy_to_node_name,
-                               port_name,
+                               port->proxy_to_port_name,
+                               peer_name,
                                peer_node_name);
   } else {
-    delegate_->Send_UpdatePortAck(peer_node_name, port->peer_name);
+    delegate_->Send_UpdatePortAck(peer_node_name, peer_name);
   }
   return OK;
 }
@@ -168,14 +175,12 @@ int Node::Impl::UpdatePortAck(PortName port_name) {
   // Forward UpdatePortAck corresponding to the forwarded UpdatePort case.
   {
     std::lock_guard<std::mutex> guard(port->lock);
-    if (port->is_proxying)
+    if (port->state == Port::kProxying)
       delegate_->Send_UpdatePortAck(port->peer_node_name, port->peer_name);
   }
 
   // Remove this port as it is now completely moved and no one else should be
   // sending messages to it at this node.
-
-  // TODO: What if someone moves the port back to this node in the meantime??
 
   std::lock_guard<std::mutex> guard(ports_lock_);
   ports_.erase(port_name);
@@ -184,6 +189,7 @@ int Node::Impl::UpdatePortAck(PortName port_name) {
 }
 
 int Node::Impl::PeerClosed(PortName port_name) {
+  // TODO: Implement me.
   return ERROR;
 }
 
@@ -197,19 +203,30 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
   return iter->second;
 }
 
-int Node::Impl::SendPort(NodeName node_name, PortName port_name) {
-  std::shared_ptr<Port> port = GetPort(port_name);
+int Node::Impl::RenameAndSendPort(NodeName node_name, PortName* port_name) {
+  std::shared_ptr<Port> port = GetPort(*port_name);
+
+  // Generate a new name for the port. This is done to avoid collisions if the
+  // port is later transferred back to this node.
+  PortName new_port_name = delegate_->GeneratePortName();
+  *port_name = new_port_name;
 
   std::lock_guard<std::mutex> guard(port->lock);
+  if (port->state == Port::kProxying) {
+    // Oops, the port can only be moved if it is bound to this node.
+    return ERROR;
+  }
 
-  port->is_proxying = true;
+  port->state = Port::kProxying;
+  port->proxy_to_port_name = new_port_name;
   port->proxy_to_node_name = name_;
 
   delegate_->Send_AcceptPort(node_name,
-                             port_name,
+                             new_port_name,
                              port->peer_name,
                              port->peer_node_name,
-                             port->next_sequence_num);
+                             port->next_sequence_num,
+                             name_);
   return OK;
 }
 

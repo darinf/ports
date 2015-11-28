@@ -45,18 +45,17 @@ enum {
 
 struct Message {
   uint32_t sequence_num;
-  const void* bytes;
+  void* bytes;
   size_t num_bytes;
-  const PortName* dependent_ports;
-  size_t num_dependent_ports;
+  PortName* ports;
+  size_t num_ports;
 };
 
 Message* AllocMessage(
     size_t num_bytes,
-    size_t num_dependent_ports);
+    size_t num_ports);
 
-void FreeMessage(
-    Message* message);
+void FreeMessage(Message* message);
 
 class NodeDelegate {
  public:
@@ -72,7 +71,8 @@ class NodeDelegate {
       PortName port,
       PortName peer,
       NodeName peer_node,
-      uint32_t next_sequence_num) = 0;
+      uint32_t next_sequence_num,
+      NodeName from_node) = 0;
 
   virtual void Send_AcceptPortAck(
       NodeName to_node,
@@ -81,7 +81,8 @@ class NodeDelegate {
   virtual void Send_UpdatePort(
       NodeName to_node,
       PortName port,
-      NodeName peer_node) = 0;
+      PortName new_peer,
+      NodeName new_peer_node) = 0;
 
   virtual void Send_UpdatePortAck(
       NodeName to_node,
@@ -95,6 +96,8 @@ class NodeDelegate {
   // message. There may be zero or more messages available.
   virtual void MessagesAvailable(
       PortName port) = 0;
+
+  virtual PortName GeneratePortName() = 0;
 };
 
 class Node {
@@ -119,14 +122,16 @@ class Node {
       PortName port,
       PortName peer,
       NodeName peer_node,
-      uint32_t next_sequence_num);
+      uint32_t next_sequence_num,
+      NodeName from_node);
 
   int AcceptPortAck(
       PortName port);
 
   int UpdatePort(
       PortName port,
-      NodeName peer_node);
+      PortName new_peer,
+      NodeName new_peer_node);
 
   int UpdatePortAck(
       PortName port);
