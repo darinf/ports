@@ -113,8 +113,8 @@ int Node::Impl::AcceptPort(PortName port_name,
   port->next_sequence_num = next_sequence_num;
   port->is_proxying = false;
 
-  // Hold the port's lock here to ensure that the port or its peer
-  // does not get moved after adding the port to the ports table.
+  // Hold the port's lock here to ensure that the port and its peer do not get
+  // transferred after adding the port to the ports table.
   std::lock_guard<std::mutex> port_guard(port->lock);
 
   {
@@ -127,15 +127,60 @@ int Node::Impl::AcceptPort(PortName port_name,
 }
 
 int Node::Impl::AcceptPortAck(PortName port_name) {
-  return ERROR;
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR;  // Oops, port not found!
+
+  // Hmm, this lock may not be strictly necessary.
+  std::lock_guard<std::mutex> guard(port->lock);
+  if (!port->is_proxying)
+    return ERROR;  // Oops, unexpected state!
+
+  delegate_->Send_UpdatePort(port->peer_node_name,
+                             port->peer_name,
+                             port->proxy_to_node_name);
+  return OK;
 }
 
 int Node::Impl::UpdatePort(PortName port_name, NodeName peer_node_name) {
-  return ERROR;
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR;  // Oops, port not found!
+
+  std::lock_guard<std::mutex> guard(port->lock);
+  port->peer_node_name = peer_node_name;
+
+  if (port->is_proxying) {
+    delegate_->Send_UpdatePort(port->proxy_to_node_name,
+                               port_name,
+                               peer_node_name);
+  } else {
+    delegate_->Send_UpdatePortAck(peer_node_name, port->peer_name);
+  }
+  return OK;
 }
 
 int Node::Impl::UpdatePortAck(PortName port_name) {
-  return ERROR;
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR;  // Oops, port not found!
+
+  // Forward UpdatePortAck corresponding to the forwarded UpdatePort case.
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+    if (port->is_proxying)
+      delegate_->Send_UpdatePortAck(port->peer_node_name, port->peer_name);
+  }
+
+  // Remove this port as it is now completely moved and no one else should be
+  // sending messages to it at this node.
+
+  // TODO: What if someone moves the port back to this node in the meantime??
+
+  std::lock_guard<std::mutex> guard(ports_lock_);
+  ports_.erase(port_name);
+  
+  return OK;
 }
 
 int Node::Impl::PeerClosed(PortName port_name) {
