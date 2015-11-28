@@ -47,6 +47,12 @@ struct NodeName {
   uint64_t value;
 };
 
+struct PortDescriptor {
+  PortName peer;
+  NodeName peer_node;
+  uint32_t next_sequence_num;
+};
+
 enum {
   OK = 0,
   ERROR = -1,
@@ -73,8 +79,14 @@ class NodeDelegate {
   virtual void Send_AcceptMessage(
       NodeName to_node,
       PortName port,
-      Message* message) = 0;
+      Message* message,
+      const PortDescriptor* port_descriptors) = 0;
 
+  virtual void Send_AcceptMessageAck(
+      NodeName to_node,
+      PortName port) = 0;
+
+  /*
   virtual void Send_AcceptPort(
       NodeName to_node,
       PortName port,
@@ -88,6 +100,7 @@ class NodeDelegate {
   virtual void Send_AcceptPortAck(
       NodeName to_node,
       PortName port) = 0;
+  */
 
   virtual void Send_UpdatePort(
       NodeName to_node,
@@ -131,8 +144,13 @@ class Node {
 
   int AcceptMessage(
       PortName port,
-      Message* message);
+      Message* message,
+      const PortDescriptor* port_descriptors);
 
+  int AcceptMessageAck(
+      PortName port);
+
+  /*
   int AcceptPort(
       PortName port,
       PortName peer,
@@ -144,6 +162,7 @@ class Node {
 
   int AcceptPortAck(
       PortName port);
+  */
 
   int UpdatePort(
       PortName port,
