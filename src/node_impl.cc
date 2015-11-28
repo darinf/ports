@@ -44,10 +44,10 @@ int Node::Impl::GetMessage(PortName port_name, Message** message) {
   if (!port)
     return ERROR;
 
-  // Lock the port before accessing its message queue.
-  std::lock_guard<std::mutex> guard(port->lock);
-  port->message_queue.GetNextMessage(message);
-
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+    port->message_queue.GetNextMessage(message);
+  }
   return OK;
 }
 
@@ -61,26 +61,29 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
   if (!port)
     return ERROR;
 
-  std::lock_guard<std::mutex> guard(port->lock);
-  if (port->state == Port::kProxying)
-    return ERROR;
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
 
-  NodeName peer_node_name = port->peer_node_name;
-  PortName peer_name = port->peer_name;
+    if (port->state == Port::kProxying)
+      return ERROR;
 
-  // Call SendPort here while holding the port's lock to ensure that
-  // peer_node_name doesn't change.
-  for (size_t i = 0; i < message->num_ports; ++i) {
-    if (RenameAndSendPort(peer_node_name, &message->ports[i]) != OK)
-      return ERROR;  // Oops!
+    NodeName peer_node_name = port->peer_node_name;
+    PortName peer_name = port->peer_name;
+
+    // Call SendPort here while holding the port's lock to ensure that
+    // peer_node_name doesn't change.
+    for (size_t i = 0; i < message->num_ports; ++i) {
+      if (RenameAndSendPort(peer_node_name, &message->ports[i]) != OK)
+        return ERROR;  // Oops!
+    }
+
+    message->sequence_num = port->next_sequence_num++;
+
+    // TODO: Do we have to worry about AcceptMessage being processed ahead of
+    // AcceptPort?
+
+    delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
   }
-
-  message->sequence_num = port->next_sequence_num++;
-
-  // TODO: Do we have to worry about AcceptMessage being processed ahead of
-  // AcceptPort?
-
-  delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
   return OK;
 }
 
@@ -133,15 +136,18 @@ int Node::Impl::AcceptPortAck(PortName port_name) {
   if (!port)
     return ERROR;  // Oops, port not found!
 
-  // Hmm, this lock may not be strictly necessary.
-  std::lock_guard<std::mutex> guard(port->lock);
-  if (port->state != Port::kProxying)
-    return ERROR;  // Oops, unexpected state!
+  {
+    // Hmm, this lock may not be strictly necessary.
+    std::lock_guard<std::mutex> guard(port->lock);
 
-  delegate_->Send_UpdatePort(port->peer_node_name,
-                             port->peer_name,
-                             port_name,  // XXX
-                             port->proxy_to_node_name);
+    if (port->state != Port::kProxying)
+      return ERROR;  // Oops, unexpected state!
+
+    delegate_->Send_UpdatePort(port->peer_node_name,
+                               port->peer_name,
+                               port->proxy_to_port_name,
+                               port->proxy_to_node_name);
+  }
   return OK;
 }
 
@@ -152,17 +158,20 @@ int Node::Impl::UpdatePort(PortName port_name,
   if (!port)
     return ERROR;  // Oops, port not found!
 
-  std::lock_guard<std::mutex> guard(port->lock);
-  port->peer_name = peer_name;
-  port->peer_node_name = peer_node_name;
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
 
-  if (port->state == Port::kProxying) {
-    delegate_->Send_UpdatePort(port->proxy_to_node_name,
-                               port->proxy_to_port_name,
-                               peer_name,
-                               peer_node_name);
-  } else {
-    delegate_->Send_UpdatePortAck(peer_node_name, peer_name);
+    port->peer_name = peer_name;
+    port->peer_node_name = peer_node_name;
+
+    if (port->state == Port::kProxying) {
+      delegate_->Send_UpdatePort(port->proxy_to_node_name,
+                                 port->proxy_to_port_name,
+                                 peer_name,
+                                 peer_node_name);
+    } else {
+      delegate_->Send_UpdatePortAck(peer_node_name, peer_name);
+    }
   }
   return OK;
 }
@@ -175,15 +184,18 @@ int Node::Impl::UpdatePortAck(PortName port_name) {
   // Forward UpdatePortAck corresponding to the forwarded UpdatePort case.
   {
     std::lock_guard<std::mutex> guard(port->lock);
+
     if (port->state == Port::kProxying)
       delegate_->Send_UpdatePortAck(port->peer_node_name, port->peer_name);
   }
 
   // Remove this port as it is now completely moved and no one else should be
   // sending messages to it at this node.
+  {
+    std::lock_guard<std::mutex> guard(ports_lock_);
 
-  std::lock_guard<std::mutex> guard(ports_lock_);
-  ports_.erase(port_name);
+    ports_.erase(port_name);
+  }
   
   return OK;
 }
@@ -211,22 +223,25 @@ int Node::Impl::RenameAndSendPort(NodeName node_name, PortName* port_name) {
   PortName new_port_name = delegate_->GeneratePortName();
   *port_name = new_port_name;
 
-  std::lock_guard<std::mutex> guard(port->lock);
-  if (port->state == Port::kProxying) {
-    // Oops, the port can only be moved if it is bound to this node.
-    return ERROR;
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+
+    if (port->state == Port::kProxying) {
+      // Oops, the port can only be moved if it is bound to this node.
+      return ERROR;
+    }
+
+    port->state = Port::kProxying;
+    port->proxy_to_port_name = new_port_name;
+    port->proxy_to_node_name = name_;
+
+    delegate_->Send_AcceptPort(node_name,
+                               new_port_name,
+                               port->peer_name,
+                               port->peer_node_name,
+                               port->next_sequence_num,
+                               name_);
   }
-
-  port->state = Port::kProxying;
-  port->proxy_to_port_name = new_port_name;
-  port->proxy_to_node_name = name_;
-
-  delegate_->Send_AcceptPort(node_name,
-                             new_port_name,
-                             port->peer_name,
-                             port->peer_node_name,
-                             port->next_sequence_num,
-                             name_);
   return OK;
 }
 
