@@ -5,12 +5,14 @@ SOURCES = \
 	message_queue.cc \
 	node_impl.cc \
 	node.cc \
+	test.cc \
 	$(NULL)
 
 OBJECTS = $(patsubst %.cc,%.o,$(SOURCES))
 CPPFLAGS = -std=c++11
+CC = c++
 
-all: $(OBJECTS)
+test: test.o $(OBJECTS)
 
 .PHONY: clean
 clean:
