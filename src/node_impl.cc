@@ -72,7 +72,7 @@ int Node::Impl::GetMessage(PortName port_name, Message** message) {
 
 int Node::Impl::SendMessage(PortName port_name, Message* message) {
   for (size_t i = 0; i < message->num_ports; ++i) {
-    if (message->ports[i] == port_name)
+    if (message->ports[i].name == port_name)
       return ERROR;
   }
 
@@ -89,23 +89,24 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
     NodeName peer_node_name = port->peer_node_name;
     PortName peer_name = port->peer_name;
 
-    // Call SendPort here while holding the port's lock to ensure that
-    // peer_node_name doesn't change.
-    for (size_t i = 0; i < message->num_ports; ++i) {
-      if (RenameAndSendPort(peer_node_name, peer_name, &message->ports[i])
-              != OK)
-        return ERROR;  // Oops!
+    if (message->num_ports > 0) {
+      // Remember the ports we are sending so we can continue processing their
+      // transfer in AcceptMessageAck. We also need to generate new names for
+      // these ports, that the target node will use to refer to them, and we
+      // need to populate the PortDescriptor structure with the information
+      // needed to setup the port at the target node.
+
+      std::vector<PortName> sent_ports;
+      sent_ports.resize(message->num_ports);
+      for (size_t i = 0; i < message->num_ports; ++i) {
+        sent_ports[i] = message->ports[i].name;
+        if (WillSendPort(peer_node_name, &message->ports[i]) != OK)
+          return ERROR;  // Oops!
+      }
+      port->sent_ports.emplace(message->sequence_num, std::move(sent_ports));
     }
 
     message->sequence_num = port->next_sequence_num++;
-
-    // It is OK for AcceptMessage to race with the AcceptPort calls. The
-    // message queue for |peer_name| will be blocked from emitting messages
-    // until all referenced ports for this message become available.
-
-    // XXX What if there are multiple AcceptMessage calls each w/ corresponding
-    // AcceptPort calls. Could this approach with counters not work if the
-    // wrong set of AcceptPort calls arrive first?
 
     delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
   }
@@ -117,24 +118,20 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   if (!port)
     return ERROR;  // Oops!
 
-#ifndef NDEBUG
-  // Ensure that all referenced ports were already transferred.
-  {
-    std::lock_guard<std::mutex> guard(ports_lock_);
-    for (size_t i = 0; i < message->num_ports; ++i) {
-      if (ports_.find(message->ports[i]) == ports_.end())
-        return ERROR;  // Oops!
-    }
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    if (AcceptPort(message->ports[i]) != OK)
+      return ERROR;  // Oops!
   }
-#endif
 
   bool has_next_message;
   {
     std::lock_guard<std::mutex> guard(port->lock);
-    if (message->num_ports > 0)
-      port->message_queue.BlockMessages(static_cast<int>(message->num_ports));
-    port->message_queue.AcceptMessage(message);
-    has_next_message = port->message_queue.HasNextMessage();
+
+    delegate_->Send_AcceptMessageAck(port->peer_node_name,
+                                     port->peer_name,
+                                     message->sequence_num);
+
+    port->message_queue.AcceptMessage(message, &has_next_message);
   }
   if (has_next_message)
     delegate_->MessagesAvailable(port_name);
@@ -142,59 +139,26 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   return OK;
 }
 
-int Node::Impl::AcceptPort(PortName port_name,
-                           PortName peer_name,
-                           NodeName peer_node_name,
-                           uint32_t next_sequence_num,
-                           NodeName from_node_name,
-                           PortName from_port_name,
-                           PortName dependent_port_name) {
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (port)
-    return ERROR;  // Oops, port already exists!
-
-  port = std::make_shared<Port>(peer_name, peer_node_name, next_sequence_num);
-
-  {
-    std::lock_guard<std::mutex> guard(ports_lock_);
-    ports_.insert(std::make_pair(port_name, port));
-  }
-
-  delegate_->Send_AcceptPortAck(from_node_name, from_port_name);
-
-  // Upon receiving AcceptPort, we may now be able to unblock messages
-  // processing for the dependent port. Note: the message that depends on this
-  // AcceptPort call may not have arrived yet, in which case the counter will
-  // go negative.
-  bool has_next_message = false;
-  {
-    std::shared_ptr<Port> dependent_port = GetPort(dependent_port_name);
-    std::lock_guard<std::mutex> guard(dependent_port->lock);
-    dependent_port->message_queue.UnblockMessages(1);
-    has_next_message = dependent_port->message_queue.HasNextMessage();
-  }
-  if (has_next_message)
-    delegate_->MessagesAvailable(dependent_port_name);
-
-  return OK;
-}
-
-int Node::Impl::AcceptPortAck(PortName port_name) {
+int Node::Impl::AcceptMessageAck(PortName port_name, uint32_t sequence_num) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return ERROR;  // Oops, port not found!
 
   {
-    // Hmm, this lock may not be strictly necessary.
     std::lock_guard<std::mutex> guard(port->lock);
 
-    if (port->state != Port::kProxying)
-      return ERROR;  // Oops, unexpected state!
+    auto iter = port->sent_ports.find(sequence_num);
+    if (iter != port->sent_ports.end()) {
+      // Now that the new ports have been setup at the target node, we need to
+      // inform the peer of this node of the port transfer.
+      std::vector<PortName> port_names = std::move(iter->second);
+      port->sent_ports.erase(iter);
 
-    delegate_->Send_UpdatePort(port->peer_node_name,
-                               port->peer_name,
-                               port->proxy_to_port_name,
-                               port->proxy_to_node_name);
+      for (size_t i = 0; i < port_names.size(); ++i) {
+        if (PortAccepted(port_names[i]) != OK)
+          return ERROR;  // Oops!
+      }
+    }
   }
   return OK;
 }
@@ -269,19 +233,17 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
   return iter->second;
 }
 
-int Node::Impl::RenameAndSendPort(NodeName node_name,
-                                  PortName dependent_peer_name,
-                                  PortName* port_name) {
-  PortName old_port_name = *port_name;
-
-  // Generate a new name for the port. This is done to avoid collisions if the
-  // port is later transferred back to this node.
-  PortName new_port_name = delegate_->GeneratePortName();
-  *port_name = new_port_name;
+int Node::Impl::WillSendPort(NodeName to_node_name,
+                             PortDescriptor* port_descriptor) {
+  PortName old_port_name = port_descriptor->name;
 
   std::shared_ptr<Port> port = GetPort(old_port_name);
   if (!port)
     return ERROR;
+
+  // Generate a new name for the port. This is done to avoid collisions if the
+  // port is later transferred back to this node.
+  PortName new_port_name = delegate_->GeneratePortName();
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -293,23 +255,53 @@ int Node::Impl::RenameAndSendPort(NodeName node_name,
 
     if (!port->message_queue.IsEmpty()) {
       // TODO: What do we do with any unprocessed messages in this case? Should
-      // they also be forwarded?
+      // they also be forwarded? Probably yes.
     }
 
     port->state = Port::kProxying;
     port->proxy_to_port_name = new_port_name;
-    port->proxy_to_node_name = name_;
+    port->proxy_to_node_name = to_node_name;
 
-    delegate_->Send_AcceptPort(node_name,
-                               new_port_name,
-                               port->peer_name,
-                               port->peer_node_name,
-                               port->next_sequence_num,
-                               name_,
-                               old_port_name,
-                               dependent_peer_name);
+    port_descriptor->name = new_port_name;
+    port_descriptor->peer = port->peer_name;
+    port_descriptor->peer_node = port->peer_node_name;
+    port_descriptor->next_sequence_num = port->next_sequence_num;
   }
   return OK;
+}
+
+int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
+  std::shared_ptr<Port> port = GetPort(port_descriptor.name);
+  if (port)
+    return ERROR;  // Oops, port already exists!
+
+  port = std::make_shared<Port>(port_descriptor.peer,
+                                port_descriptor.peer_node,
+                                port_descriptor.next_sequence_num);
+
+  {
+    std::lock_guard<std::mutex> guard(ports_lock_);
+    ports_.insert(std::make_pair(port_descriptor.name, port));
+  }
+  return OK;
+}
+
+int Node::Impl::PortAccepted(PortName port_name) {
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR;  // Oops, port not found!
+  
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+
+    if (port->state != Port::kProxying)
+      return ERROR;  // Oops, unexpected state!
+
+    delegate_->Send_UpdatePort(port->peer_node_name,
+                               port->peer_name,
+                               port->proxy_to_port_name,
+                               port->proxy_to_node_name);
+  }
 }
 
 }  // namespace ports

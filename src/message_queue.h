@@ -43,24 +43,16 @@ class MessageQueue {
 
   bool IsEmpty();
 
-  // Messages are ordered, so while the message queue may not be empty, this
-  // method will return false if the *next* message is not available yet.
-  bool HasNextMessage() const;
-  
   // Gives ownership of the message.
   void GetNextMessage(Message** message);
 
-  // Takes ownership of the message.
-  void AcceptMessage(Message* message);
-
-  // Used to block/unblock the Has/GetNextMessage methods. OK to call
-  // Block/UnblockMessages multiple times, and UnblockMessages can be called in
-  // advance of BlockMessages.
-  void BlockMessages(int count);
-  void UnblockMessages(int count);
+  // Takes ownership of the message. Note: Messages are ordered, so while we
+  // have added a message to the queue, we may still be waiting on a message
+  // ahead of this one before we can let any of the messages be returned by
+  // GetNextMessage.
+  void AcceptMessage(Message* message, bool* has_next_message);
 
  private:
-  int block_count_;
   bool waiting_for_initial_message_;
 };
 

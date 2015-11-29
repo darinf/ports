@@ -35,34 +35,37 @@
 
 namespace ports {
 
+enum {
+  OK = 0,
+  ERROR = -1,
+};
+
 struct PortName {
+  PortName() : value(0) {}
   explicit PortName(uint64_t value) : value(value) {}
   bool operator==(const PortName& other) const { return other.value == value; }
   uint64_t value;
 };
 
 struct NodeName {
+  NodeName() : value(0) {}
   explicit NodeName(uint64_t value) : value(value) {}
   bool operator==(const NodeName& other) const { return other.value == value; }
   uint64_t value;
 };
 
 struct PortDescriptor {
+  PortName name;
   PortName peer;
   NodeName peer_node;
   uint32_t next_sequence_num;
-};
-
-enum {
-  OK = 0,
-  ERROR = -1,
 };
 
 struct Message {
   uint32_t sequence_num;
   void* bytes;
   size_t num_bytes;
-  PortName* ports;
+  PortDescriptor* ports;
   size_t num_ports;
 };
 
@@ -79,28 +82,12 @@ class NodeDelegate {
   virtual void Send_AcceptMessage(
       NodeName to_node,
       PortName port,
-      Message* message,
-      const PortDescriptor* port_descriptors) = 0;
+      Message* message) = 0;
 
   virtual void Send_AcceptMessageAck(
       NodeName to_node,
-      PortName port) = 0;
-
-  /*
-  virtual void Send_AcceptPort(
-      NodeName to_node,
       PortName port,
-      PortName peer,
-      NodeName peer_node,
-      uint32_t next_sequence_num,
-      NodeName from_node,
-      PortName from_port,
-      PortName dependent_port) = 0;
-
-  virtual void Send_AcceptPortAck(
-      NodeName to_node,
-      PortName port) = 0;
-  */
+      uint32_t sequence_num) = 0;
 
   virtual void Send_UpdatePort(
       NodeName to_node,
@@ -144,25 +131,11 @@ class Node {
 
   int AcceptMessage(
       PortName port,
-      Message* message,
-      const PortDescriptor* port_descriptors);
+      Message* message);
 
   int AcceptMessageAck(
-      PortName port);
-
-  /*
-  int AcceptPort(
       PortName port,
-      PortName peer,
-      NodeName peer_node,
-      uint32_t next_sequence_num,
-      NodeName from_node,
-      PortName from_port,
-      PortName dependent_port);
-
-  int AcceptPortAck(
-      PortName port);
-  */
+      uint32_t sequence_num);
 
   int UpdatePort(
       PortName port,

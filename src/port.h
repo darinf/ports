@@ -30,7 +30,9 @@
 #ifndef PORTS_SRC_PORT_H_
 #define PORTS_SRC_PORT_H_
 
+#include <map>
 #include <mutex>
+#include <vector>
 
 #include "message_queue.h"
 
@@ -50,6 +52,7 @@ struct Port {
   uint32_t next_sequence_num;
   State state;
   MessageQueue message_queue;
+  std::map<uint32_t /* sequence_num */, std::vector<PortName>> sent_ports;
   bool delayed_update_port_ack;
 
   Port(PortName peer_name, NodeName peer_node_name, uint32_t next_sequence_num)

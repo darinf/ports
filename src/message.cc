@@ -39,9 +39,9 @@ Message* AllocMessage(size_t num_bytes, size_t num_ports) {
 
   // Take care to avoid integer overflow.
 
-  if (num_ports > std::numeric_limits<size_t>::max() / sizeof(PortName))
+  if (num_ports > std::numeric_limits<size_t>::max() / sizeof(PortDescriptor))
     return NULL;
-  size_t ports_size = num_ports * sizeof(PortName);
+  size_t ports_size = num_ports * sizeof(PortDescriptor);
 
   size_t message_size = sizeof(Message);
 
@@ -57,7 +57,7 @@ Message* AllocMessage(size_t num_bytes, size_t num_ports) {
 
   Message* message = reinterpret_cast<Message*>(memory);
   message->sequence_num = 0;
-  message->ports = reinterpret_cast<PortName*>(memory + sizeof(Message));
+  message->ports = reinterpret_cast<PortDescriptor*>(memory + sizeof(Message));
   message->num_ports = num_ports;
   message->bytes = memory + sizeof(Message) + ports_size;
   message->num_bytes = num_bytes;
