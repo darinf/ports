@@ -45,7 +45,7 @@ bool MessageQueue::IsEmpty() {
 }
 
 void MessageQueue::GetNextMessage(Message** message) {
-  if (queue_.top()->sequence_num != next_sequence_num_) {
+  if (queue_.empty() || queue_.top()->sequence_num != next_sequence_num_) {
     *message = nullptr;
   } else {
     // TODO: Surely there is a better way?

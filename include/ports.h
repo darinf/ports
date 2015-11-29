@@ -116,6 +116,11 @@ class Node {
   Node(NodeName name, NodeDelegate* delegate);
   ~Node();
 
+  int AddPort(
+      PortName port,
+      PortName peer,
+      NodeName peer_node);
+
   int CreatePortPair(
       PortName* port0,
       PortName* port1);

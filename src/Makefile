@@ -9,7 +9,7 @@ SOURCES = \
 	$(NULL)
 
 OBJECTS = $(patsubst %.cc,%.o,$(SOURCES))
-CPPFLAGS = -std=c++11
+CPPFLAGS = -std=c++11 -g -Wall
 CC = c++
 
 test: test.o $(OBJECTS)

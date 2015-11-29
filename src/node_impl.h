@@ -45,7 +45,8 @@ class Node::Impl {
   Impl(NodeName name, NodeDelegate* delegate);
   ~Impl();
 
-  int CreatePortPair(PortName* port0, PortName* port1);
+  int AddPort(PortName port_name, PortName peer_name, NodeName peer_node_name);
+  int CreatePortPair(PortName* port_name_0, PortName* port_name_1);
   int GetMessage(PortName port_name, Message** message);
   int SendMessage(PortName port_name, Message* message); 
   int AcceptMessage(PortName port_name, Message* message);

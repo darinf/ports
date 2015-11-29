@@ -31,12 +31,32 @@
 
 namespace ports {
 
+static int Error(const char* message) {
+  printf("ERROR: %s\n", message);
+  return ERROR;
+}
+
 Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
     : name_(name),
       delegate_(delegate) {
 }
 
 Node::Impl::~Impl() {
+}
+
+int Node::Impl::AddPort(PortName port_name,
+                        PortName peer_name,
+                        NodeName peer_node_name) {
+  std::shared_ptr<Port> port =
+      std::make_shared<Port>(peer_name, peer_node_name, kInitialSequenceNum);
+
+  {
+    std::lock_guard<std::mutex> guard(ports_lock_);
+    if (!ports_.insert(std::make_pair(port_name, port)).second)
+      return Error("port already exists");
+  }
+
+  return OK;
 }
 
 int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
@@ -61,7 +81,7 @@ int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
 int Node::Impl::GetMessage(PortName port_name, Message** message) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return ERROR;
+    return Error("port not found");
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -73,18 +93,18 @@ int Node::Impl::GetMessage(PortName port_name, Message** message) {
 int Node::Impl::SendMessage(PortName port_name, Message* message) {
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (message->ports[i].name == port_name)
-      return ERROR;
+      return Error("cannot send self");
   }
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return ERROR;
+    return Error("port not found");
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
     if (port->state == Port::kProxying)
-      return ERROR;
+      return Error("unexpected port state");
 
     NodeName peer_node_name = port->peer_node_name;
     PortName peer_name = port->peer_name;
@@ -101,7 +121,7 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
       for (size_t i = 0; i < message->num_ports; ++i) {
         sent_ports[i] = message->ports[i].name;
         if (WillSendPort(peer_node_name, &message->ports[i]) != OK)
-          return ERROR;  // Oops!
+          return Error("cannot send port");
       }
       port->sent_ports.emplace(message->sequence_num, std::move(sent_ports));
     }
@@ -116,11 +136,11 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
 int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return ERROR;  // Oops!
+    return Error("port not found");
 
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (AcceptPort(message->ports[i]) != OK)
-      return ERROR;  // Oops!
+      return Error("cannot accept port");
   }
 
   bool has_next_message;
@@ -142,7 +162,7 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
 int Node::Impl::AcceptMessageAck(PortName port_name, uint32_t sequence_num) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return ERROR;  // Oops, port not found!
+    return Error("port not found");
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -155,8 +175,9 @@ int Node::Impl::AcceptMessageAck(PortName port_name, uint32_t sequence_num) {
       port->sent_ports.erase(iter);
 
       for (size_t i = 0; i < port_names.size(); ++i) {
-        if (PortAccepted(port_names[i]) != OK)
-          return ERROR;  // Oops!
+        int rv = PortAccepted(port_names[i]);
+        if (rv != OK)
+          return rv;
       }
     }
   }
@@ -273,7 +294,7 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
 int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
   std::shared_ptr<Port> port = GetPort(port_descriptor.name);
   if (port)
-    return ERROR;  // Oops, port already exists!
+    return Error("port already exists");
 
   port = std::make_shared<Port>(port_descriptor.peer,
                                 port_descriptor.peer_node,
@@ -289,19 +310,20 @@ int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
 int Node::Impl::PortAccepted(PortName port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return ERROR;  // Oops, port not found!
+    return Error("port not found");
   
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
     if (port->state != Port::kProxying)
-      return ERROR;  // Oops, unexpected state!
+      return Error("unexpected state");
 
     delegate_->Send_UpdatePort(port->peer_node_name,
                                port->peer_name,
                                port->proxy_to_port_name,
                                port->proxy_to_node_name);
   }
+  return OK;
 }
 
 }  // namespace ports
