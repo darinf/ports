@@ -32,7 +32,7 @@
 namespace ports {
 
 MessageQueue::MessageQueue()
-    : waiting_for_initial_message_(true) {
+    : next_sequence_num_(kInitialSequenceNum) {
   // The message queue is blocked waiting for a message with sequence number
   // equal to kInitialSequenceNum.
 }
@@ -41,14 +41,25 @@ MessageQueue::~MessageQueue() {
 }
 
 bool MessageQueue::IsEmpty() {
-  return true;
+  return queue_.empty();
 }
 
 void MessageQueue::GetNextMessage(Message** message) {
-  *message = nullptr;
+  if (queue_.top()->sequence_num != next_sequence_num_) {
+    *message = nullptr;
+  } else {
+    // TODO: Surely there is a better way?
+    const std::unique_ptr<Message>* message_ptr = &queue_.top();
+    *message = const_cast<std::unique_ptr<Message>*>(message_ptr)->release();
+
+    queue_.pop();
+    next_sequence_num_++;
+  }
 }
 
 void MessageQueue::AcceptMessage(Message* message, bool* has_next_message) {
+  queue_.emplace(message);
+  *has_next_message = (queue_.top()->sequence_num == next_sequence_num_);
 }
 
 }  // namespace ports

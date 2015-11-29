@@ -30,7 +30,24 @@
 #ifndef PORTS_SRC_MESSAGE_QUEUE_H_
 #define PORTS_SRC_MESSAGE_QUEUE_H_
 
+#include <deque>
+#include <functional>
+#include <memory>
+#include <queue>
+
 #include "../include/ports.h"
+
+namespace std {
+
+template <>
+struct greater<std::unique_ptr<ports::Message>> {
+  bool operator()(const std::unique_ptr<ports::Message>& a,
+                  const std::unique_ptr<ports::Message>& b) {
+    return a->sequence_num > b->sequence_num;
+  }
+};
+
+}  // namespace std
 
 namespace ports {
 
@@ -53,7 +70,10 @@ class MessageQueue {
   void AcceptMessage(Message* message, bool* has_next_message);
 
  private:
-  bool waiting_for_initial_message_;
+  std::priority_queue<std::unique_ptr<Message>,
+                      std::deque<std::unique_ptr<Message>>,
+                      std::greater<std::unique_ptr<Message>>> queue_;
+  uint32_t next_sequence_num_;
 };
 
 }  // namespace ports

@@ -11,3 +11,7 @@ OBJECTS = $(patsubst %.cc,%.o,$(SOURCES))
 CPPFLAGS = -std=c++11
 
 all: $(OBJECTS)
+
+.PHONY: clean
+clean:
+	rm *.o
