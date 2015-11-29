@@ -16,4 +16,4 @@ test: test.o $(OBJECTS)
 
 .PHONY: clean
 clean:
-	rm *.o
+	rm *.o test
