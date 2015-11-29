@@ -10,6 +10,13 @@
 namespace ports {
 namespace test {
 
+static void PrintMessage(const Message* message) {
+  printf(":[seq=%u]\"%s\"",
+      message->sequence_num, static_cast<const char*>(message->bytes));
+  for (size_t i = 0; i < message->num_ports; ++i)
+    printf(":%lX", message->ports[i].name.value);
+}
+
 struct Task {
   enum Type {
     kAcceptMessage,
@@ -34,18 +41,31 @@ static void DoTask(Task* task) {
   Node* node = node_map[task->to_node.value];
   switch (task->type) {
     case Task::kAcceptMessage:
+      printf("n%lX:AcceptMessage(p%lX)",
+          task->to_node.value, task->port.value);
+      PrintMessage(task->message.get());
+      printf("\n");
       node->AcceptMessage(task->port, task->message.release());
       break;
     case Task::kAcceptMessageAck:
+      printf("n%lX:AcceptMessageAck(p%lX,seq=%u)\n",
+          task->to_node.value, task->port.value, task->sequence_num);
       node->AcceptMessageAck(task->port, task->sequence_num);
       break;
     case Task::kUpdatePort:
+      printf("n%lX:UpdatePort(p%lX,p%lX,n%lX)\n",
+          task->to_node.value, task->port.value, task->new_peer.value,
+          task->new_peer_node.value);
       node->UpdatePort(task->port, task->new_peer, task->new_peer_node);
       break;
     case Task::kUpdatePortAck:
+      printf("n%lX:UpdatePortAck(p%lX)\n",
+          task->to_node.value, task->port.value);
       node->UpdatePortAck(task->port);
       break;
     case Task::kPeerClosed:
+      printf("n%lX:PeerClosed(p%lX)\n",
+          task->to_node.value, task->port.value);
       node->PeerClosed(task->port);
       break;
   }
@@ -73,13 +93,6 @@ static Message* NewStringMessageWithPort(const char* s, PortName port) {
   memcpy(message->bytes, s, len);
   message->ports[0].name = port;
   return message;
-}
-
-static void PrintMessage(const Message* message) {
-  printf(":[seq=%u]\"%s\"",
-      message->sequence_num, static_cast<const char*>(message->bytes));
-  for (size_t i = 0; i < message->num_ports; ++i)
-    printf(":%lX", message->ports[i].name.value);
 }
 
 class TestNodeDelegate : public NodeDelegate {

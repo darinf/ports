@@ -109,6 +109,8 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
     NodeName peer_node_name = port->peer_node_name;
     PortName peer_name = port->peer_name;
 
+    message->sequence_num = port->next_sequence_num++;
+
     if (message->num_ports > 0) {
       // Remember the ports we are sending so we can continue processing their
       // transfer in AcceptMessageAck. We also need to generate new names for
@@ -125,8 +127,6 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
       }
       port->sent_ports.emplace(message->sequence_num, std::move(sent_ports));
     }
-
-    message->sequence_num = port->next_sequence_num++;
 
     delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
   }
