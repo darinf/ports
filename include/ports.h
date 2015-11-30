@@ -91,7 +91,7 @@ class NodeDelegate {
   virtual void Send_AcceptMessage(
       NodeName to_node,
       PortName port,
-      Message* message) = 0;
+      Message* message) = 0;  // Passes ownership.
 
   // Call the corresponding AcceptMessageAck method on the specified node.
   virtual void Send_AcceptMessageAck(
@@ -148,19 +148,19 @@ class Node {
   // message if there are none available.
   int GetMessage(
       PortName port,
-      Message** message);
+      Message** message);  // Passes ownership.
 
   // Sends a message from the specified port to its peer.
   int SendMessage(
       PortName port,
-      Message* message); 
+      Message* message);  // Passes ownership.
 
   // The following methods are for internal use and should only be called in
   // response to a NodeDelegate's Send_* set of functions.
 
   int AcceptMessage(
       PortName port,
-      Message* message);
+      Message* message);  // Passes ownership.
 
   int AcceptMessageAck(
       PortName port,
