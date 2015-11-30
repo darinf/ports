@@ -127,7 +127,16 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
         if (rv != OK)
           return rv;
       }
-      port->sent_ports.emplace(message->sequence_num, std::move(sent_ports));
+
+      // We use a separate table for this instead of hanging sent_ports off of
+      // the Port structure as the port we are sending the message from may
+      // itself be transferred before we receive the AcceptMessageAck.
+      {
+        std::lock_guard<std::mutex> sent_ports_guard(sent_ports_lock_);
+        sent_ports_.emplace(
+            std::make_pair(port_name, message->sequence_num),
+            std::move(sent_ports));
+      }
     }
 
     delegate_->Send_AcceptMessage(peer_node_name, peer_name, message);
@@ -166,26 +175,27 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
 }
 
 int Node::Impl::AcceptMessageAck(PortName port_name, uint32_t sequence_num) {
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+  // Now that the new ports have been setup at the target node, we need to
+  // inform the peers of those ports.
 
+  // NOTE: The given port may no longer be bound to this node. That's OK though
+  // as we only need to use it as part of the key to the sent_ports_ map.
+
+  std::vector<PortName> port_names;
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    std::lock_guard<std::mutex> guard(sent_ports_lock_);
 
-    auto iter = port->sent_ports.find(sequence_num);
-    if (iter != port->sent_ports.end()) {
-      // Now that the new ports have been setup at the target node, we need to
-      // inform the peer of this node of the port transfer.
-      std::vector<PortName> port_names = std::move(iter->second);
-      port->sent_ports.erase(iter);
-
-      for (size_t i = 0; i < port_names.size(); ++i) {
-        int rv = PortAccepted(port_names[i]);
-        if (rv != OK)
-          return rv;
-      }
+    auto iter = sent_ports_.find(std::make_pair(port_name, sequence_num));
+    if (iter != sent_ports_.end()) {
+      port_names = std::move(iter->second);
+      sent_ports_.erase(iter);
     }
+  }
+
+  for (size_t i = 0; i < port_names.size(); ++i) {
+    int rv = PortAccepted(port_names[i]);
+    if (rv != OK)
+      return rv;
   }
   return OK;
 }

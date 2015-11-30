@@ -35,8 +35,8 @@
 #include <unordered_map>
 
 #include "../include/ports.h"
+#include "hash_functions.h"
 #include "port.h"
-#include "port_name_hash.h"
 
 namespace ports {
 
@@ -68,6 +68,10 @@ class Node::Impl {
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
+
+  std::mutex sent_ports_lock_;
+  std::unordered_map<std::pair<PortName, uint32_t /* sequence_num */>,
+                     std::vector<PortName>> sent_ports_;
 };
 
 }  // namespace ports

@@ -27,8 +27,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PORTS_SRC_PORT_NAME_HASH_H_
-#define PORTS_SRC_PORT_NAME_HASH_H_
+#ifndef PORTS_SRC_HASH_FUNCTIONS_H_
+#define PORTS_SRC_HASH_FUNCTIONS_H_
 
 #include "../include/ports.h"
 
@@ -43,6 +43,16 @@ struct hash<ports::PortName> {
   }
 };
 
+template <>
+struct hash<std::pair<ports::PortName, uint32_t>> {
+  std::size_t operator()(const std::pair<ports::PortName, uint32_t>& obj)
+      const {
+    size_t h1 = hash<uint64_t>()(obj.first.value);
+    size_t h2 = hash<uint32_t>()(obj.second);
+    return h1 ^ (h2 << 1);
+  }
+};
+
 }  // namespace std
 
-#endif  // PORTS_SRC_PORT_NAME_HASH_H_
+#endif  // PORTS_SRC_HASH_FUNCTIONS_H_
