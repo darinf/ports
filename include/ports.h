@@ -87,26 +87,31 @@ class NodeDelegate {
  public:
   // Send_* methods MUST NOT call back into any Node methods synchronously.
 
+  // Call the corresponding AcceptMessage method on the specified node.
   virtual void Send_AcceptMessage(
       NodeName to_node,
       PortName port,
       Message* message) = 0;
 
+  // Call the corresponding AcceptMessageAck method on the specified node.
   virtual void Send_AcceptMessageAck(
       NodeName to_node,
       PortName port,
       uint32_t sequence_num) = 0;
 
+  // Call the corresponding UpdatePort method on the specified node.
   virtual void Send_UpdatePort(
       NodeName to_node,
       PortName port,
       PortName new_peer,
       NodeName new_peer_node) = 0;
 
+  // Call the corresponding UpdatePortAck method on the specified node.
   virtual void Send_UpdatePortAck(
       NodeName to_node,
       PortName port) = 0;
 
+  // Call the corresponding PeerClosed method on the specified node.
   virtual void Send_PeerClosed(
       NodeName to_node,
       PortName port) = 0;
@@ -123,25 +128,35 @@ class NodeDelegate {
 class Node {
  public:
   Node(NodeName name, NodeDelegate* delegate);
+
+  // Closes any ports bound to this node.
   ~Node();
 
+  // Adds a port to this node. This is used to bootstrap a connection between
+  // two nodes. Generally, ports are created using CreatePortPair instead.
   int AddPort(
       PortName port,
       PortName peer,
       NodeName peer_node);
 
+  // Generates a new connected pair of ports bound to this node.
   int CreatePortPair(
       PortName* port0,
       PortName* port1);
 
-  // Returns a null message if there are no messages available.
+  // Returns the next available message on the specified port or returns a null
+  // message if there are none available.
   int GetMessage(
       PortName port,
       Message** message);
 
+  // Sends a message from the specified port to its peer.
   int SendMessage(
       PortName port,
       Message* message); 
+
+  // The following methods are for internal use and should only be called in
+  // response to a NodeDelegate's Send_* set of functions.
 
   int AcceptMessage(
       PortName port,
