@@ -42,8 +42,12 @@ namespace test {
 static void PrintMessage(const Message* message) {
   printf(":[seq=%u]\"%s\"",
       message->sequence_num, static_cast<const char*>(message->bytes));
-  for (size_t i = 0; i < message->num_ports; ++i)
-    printf(":%lX", message->ports[i].name.value);
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    printf(":p%lX(n%lX,p%lX)",
+        message->ports[i].name.value,
+        message->ports[i].peer_node.value,
+        message->ports[i].peer.value);
+  }
 }
 
 struct Task {
@@ -53,8 +57,13 @@ struct Task {
     kUpdatePort,
     kUpdatePortAck,
     kPeerClosed
-  } type;
+  };
 
+  explicit Task(Type type) : type(type), priority(rand()) {
+  }
+
+  Type type;
+  int32_t priority;
   NodeName to_node;
   PortName port;
   std::unique_ptr<Message> message;
@@ -63,7 +72,15 @@ struct Task {
   NodeName new_peer_node;
 };
 
-static std::queue<Task*> task_queue;
+struct TaskComparator {
+  bool operator()(const Task* a, const Task* b) {
+    return a->priority < b->priority;
+  }
+};
+
+static std::priority_queue<Task*,
+                           std::vector<Task*>,
+                           TaskComparator> task_queue;
 static Node* node_map[2];
 
 static void DoTask(Task* task) {
@@ -102,7 +119,7 @@ static void DoTask(Task* task) {
 
 static void PumpTasks() {
   while (!task_queue.empty()) {
-    Task* task = task_queue.front();
+    Task* task = task_queue.top();
     task_queue.pop();
     DoTask(task);
     delete task;
@@ -138,8 +155,7 @@ class TestNodeDelegate : public NodeDelegate {
     PrintMessage(message);
     printf("\n");
 
-    Task* task = new Task();
-    task->type = Task::kAcceptMessage;
+    Task* task = new Task(Task::kAcceptMessage);
     task->to_node = to_node;
     task->port = port;
     task->message.reset(message);
@@ -153,8 +169,7 @@ class TestNodeDelegate : public NodeDelegate {
     printf("n%lX:Send_AcceptMessageAck(n%lX,p%lX,seq=%u)\n",
         node_.value, to_node.value, port.value, sequence_num);
 
-    Task* task = new Task();
-    task->type = Task::kAcceptMessageAck;
+    Task* task = new Task(Task::kAcceptMessageAck);
     task->to_node = to_node;
     task->port = port;
     task->sequence_num = sequence_num;
@@ -170,8 +185,7 @@ class TestNodeDelegate : public NodeDelegate {
         node_.value, to_node.value, port.value, new_peer.value,
         new_peer_node.value);
 
-    Task* task = new Task();
-    task->type = Task::kUpdatePort;
+    Task* task = new Task(Task::kUpdatePort);
     task->to_node = to_node;
     task->port = port;
     task->new_peer = new_peer;
@@ -183,8 +197,7 @@ class TestNodeDelegate : public NodeDelegate {
     printf("n%lX:Send_UpdatePortAck(n%lX,p%lX)\n",
         node_.value, to_node.value, port.value);
 
-    Task* task = new Task();
-    task->type = Task::kUpdatePortAck;
+    Task* task = new Task(Task::kUpdatePortAck);
     task->to_node = to_node;
     task->port = port;
     task_queue.push(task);
@@ -194,8 +207,7 @@ class TestNodeDelegate : public NodeDelegate {
     printf("n%lX:Send_PeerClosed(n%lX,p%lX)\n",
         node_.value, to_node.value, port.value);
 
-    Task* task = new Task();
-    task->type = Task::kPeerClosed;
+    Task* task = new Task(Task::kPeerClosed);
     task->to_node = to_node;
     task->port = port;
     task_queue.push(task);
@@ -252,6 +264,9 @@ static void RunTest() {
   PortName a0, a1;
   node0.CreatePortPair(&a0, &a1);
   node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
+
+  // Transfer a0 as well.
+  node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
 
   PumpTasks();
 }

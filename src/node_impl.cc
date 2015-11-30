@@ -149,6 +149,8 @@ int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
 
+  // TODO: Need to handle case where port is a proxy!
+
   for (size_t i = 0; i < message->num_ports; ++i) {
     int rv = AcceptPort(message->ports[i]);
     if (rv != OK)
@@ -219,6 +221,8 @@ int Node::Impl::UpdatePort(PortName port_name,
     // enough to handle any messages sent to it from the new port.
 
     if (port->state == Port::kProxying) {
+      // TODO: What if the other side has not delivered an AcceptMessageAck?
+      // We can't be sure that the other port exists yet!
       delegate_->Send_UpdatePort(port->proxy_to_node_name,
                                  port->proxy_to_port_name,
                                  port->peer_name,
