@@ -37,7 +37,10 @@ namespace ports {
 
 enum {
   OK = 0,
-  ERROR = -1,
+  ERROR_PORT_UNKNOWN = -1,
+  ERROR_PORT_EXISTS = -2,
+  ERROR_PORT_STATE_UNEXPECTED = -3,
+  ERROR_PORT_CANNOT_SEND_SELF = -4,
 };
 
 struct PortName {
