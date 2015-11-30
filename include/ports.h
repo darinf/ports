@@ -43,6 +43,7 @@ enum {
   ERROR_PORT_CANNOT_SEND_SELF = -4,
 };
 
+// Port names are globally unique.
 struct PortName {
   PortName() : value(0) {}
   explicit PortName(uint64_t value) : value(value) {}
@@ -50,6 +51,7 @@ struct PortName {
   uint64_t value;
 };
 
+// Node names are globally unique.
 struct NodeName {
   NodeName() : value(0) {}
   explicit NodeName(uint64_t value) : value(value) {}
@@ -65,19 +67,22 @@ struct PortDescriptor {
 };
 
 struct Message {
-  uint32_t sequence_num;
+  uint32_t sequence_num;  // This field should be ignored by the embedder.
   void* bytes;
   size_t num_bytes;
   PortDescriptor* ports;
   size_t num_ports;
 };
 
+// Message objects should only be allocated using this function.
 Message* AllocMessage(
     size_t num_bytes,
     size_t num_ports);
 
+// Message objects should only be freed using this function.
 void FreeMessage(Message* message);
 
+// Implemented by the embedder.
 class NodeDelegate {
  public:
   // Send_* methods MUST NOT call back into any Node methods synchronously.
@@ -111,6 +116,7 @@ class NodeDelegate {
   virtual void MessagesAvailable(
       PortName port) = 0;
 
+  // Port names should be globally unique (i.e., not just unique to this node).
   virtual PortName GeneratePortName() = 0;
 };
 
