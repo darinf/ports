@@ -85,33 +85,29 @@ void FreeMessage(Message* message);
 // Implemented by the embedder.
 class NodeDelegate {
  public:
-  // Send_* methods MUST NOT call back into any Node methods synchronously.
+  // Send_* methods must asynchronously call the corresponding methods
+  // on the specified node.
 
-  // Call the corresponding AcceptMessage method on the specified node.
   virtual void Send_AcceptMessage(
       NodeName to_node,
       PortName port,
       Message* message) = 0;  // Passes ownership.
 
-  // Call the corresponding AcceptMessageAck method on the specified node.
   virtual void Send_AcceptMessageAck(
       NodeName to_node,
       PortName port,
       uint32_t sequence_num) = 0;
 
-  // Call the corresponding UpdatePort method on the specified node.
   virtual void Send_UpdatePort(
       NodeName to_node,
       PortName port,
       PortName new_peer,
       NodeName new_peer_node) = 0;
 
-  // Call the corresponding UpdatePortAck method on the specified node.
   virtual void Send_UpdatePortAck(
       NodeName to_node,
       PortName port) = 0;
 
-  // Call the corresponding PeerClosed method on the specified node.
   virtual void Send_PeerClosed(
       NodeName to_node,
       PortName port) = 0;
