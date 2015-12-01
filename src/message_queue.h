@@ -69,10 +69,19 @@ class MessageQueue {
   // GetNextMessage.
   void AcceptMessage(Message* message, bool* has_next_message);
 
+  // Empties the queue, transferring all messages to the caller.
+  void Drain(std::deque<std::unique_ptr<Message>>* storage);
+
  private:
-  std::priority_queue<std::unique_ptr<Message>,
-                      std::deque<std::unique_ptr<Message>>,
-                      std::greater<std::unique_ptr<Message>>> queue_;
+  class Impl
+      : public std::priority_queue<std::unique_ptr<Message>,
+                                   std::deque<std::unique_ptr<Message>>,
+                                   std::greater<std::unique_ptr<Message>>> {
+   public:
+    void Drain(std::deque<std::unique_ptr<Message>>* storage);
+  };
+
+  Impl impl_;
   uint32_t next_sequence_num_;
 };
 

@@ -41,6 +41,7 @@ enum {
   ERROR_PORT_EXISTS = -2,
   ERROR_PORT_STATE_UNEXPECTED = -3,
   ERROR_PORT_CANNOT_SEND_SELF = -4,
+  ERROR_NOT_IMPLEMENTED = -100,
 };
 
 // Port names are globally unique.

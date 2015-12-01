@@ -41,6 +41,7 @@ namespace ports {
 struct Port {
   enum State {
     kReceiving,
+    kBuffering,
     kProxying
   };
 
@@ -52,6 +53,7 @@ struct Port {
   uint32_t next_sequence_num;
   State state;
   MessageQueue message_queue;
+  bool buffering_update_port;
   bool delayed_update_port_ack;
 
   Port(PortName peer_name, NodeName peer_node_name, uint32_t next_sequence_num)

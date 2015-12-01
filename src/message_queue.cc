@@ -29,6 +29,8 @@
 
 #include "message_queue.h"
 
+#include <assert.h>
+
 namespace ports {
 
 MessageQueue::MessageQueue()
@@ -41,25 +43,34 @@ MessageQueue::~MessageQueue() {
 }
 
 bool MessageQueue::IsEmpty() {
-  return queue_.empty();
+  return impl_.empty();
 }
 
 void MessageQueue::GetNextMessage(Message** message) {
-  if (queue_.empty() || queue_.top()->sequence_num != next_sequence_num_) {
+  if (impl_.empty() || impl_.top()->sequence_num != next_sequence_num_) {
     *message = nullptr;
   } else {
     // TODO: Surely there is a better way?
-    const std::unique_ptr<Message>* message_ptr = &queue_.top();
+    const std::unique_ptr<Message>* message_ptr = &impl_.top();
     *message = const_cast<std::unique_ptr<Message>*>(message_ptr)->release();
 
-    queue_.pop();
+    impl_.pop();
     next_sequence_num_++;
   }
 }
 
 void MessageQueue::AcceptMessage(Message* message, bool* has_next_message) {
-  queue_.emplace(message);
-  *has_next_message = (queue_.top()->sequence_num == next_sequence_num_);
+  impl_.emplace(message);
+  *has_next_message = (impl_.top()->sequence_num == next_sequence_num_);
+}
+
+void MessageQueue::Drain(std::deque<std::unique_ptr<Message>>* storage) {
+  impl_.Drain(storage);
+}
+
+void MessageQueue::Impl::Drain(std::deque<std::unique_ptr<Message>>* storage) {
+  assert(storage->empty());
+  c.swap(*storage);
 }
 
 }  // namespace ports

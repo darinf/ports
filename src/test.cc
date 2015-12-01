@@ -222,8 +222,11 @@ class TestNodeDelegate : public NodeDelegate {
       PrintMessage(message);
       printf("\n");
       for (size_t i = 0; i < message->num_ports; ++i) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "got port: p%lX",
+                 message->ports[i].name.value);
         node_map[node_.value]->SendMessage(message->ports[i].name,
-                                           NewStringMessage("got port"));
+                                           NewStringMessage(buf));
       }
       FreeMessage(message);
     }
