@@ -49,12 +49,17 @@ class Node::Impl {
   int CreatePortPair(PortName* port_name_0, PortName* port_name_1);
   int GetMessage(PortName port_name, Message** message);
   int SendMessage(PortName port_name, Message* message); 
-  int AcceptMessage(PortName port_name, Message* message);
+  int AcceptMessage(PortName port_name,
+                    Message* message,
+                    NodeName from_node_name,
+                    PortName from_port_name);
   int AcceptMessageAck(PortName port_name, uint32_t sequence_num);
   int UpdatePort(PortName port_name,
+                 NodeName peer_node_name,
                  PortName peer_name,
-                 NodeName peer_node_name);
-  int UpdatePortAck(PortName port_name);
+                 NodeName from_node_name,
+                 PortName from_port_name);
+  int UpdatePortAck(PortName port_name, uint32_t last_sequence_num);
   int PeerClosed(PortName port_name);
 
  private:

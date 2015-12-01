@@ -50,6 +50,8 @@ struct Port {
   NodeName peer_node_name;
   PortName proxy_to_port_name;
   NodeName proxy_to_node_name;
+  PortName old_peer_name;
+  NodeName old_peer_node_name;
   uint32_t next_sequence_num;
   State state;
   MessageQueue message_queue;
