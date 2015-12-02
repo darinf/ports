@@ -46,29 +46,30 @@ bool MessageQueue::IsEmpty() {
   return impl_.empty();
 }
 
-void MessageQueue::GetNextMessage(Message** message) {
+void MessageQueue::GetNextMessage(ScopedMessage* message) {
   if (impl_.empty() || impl_.top()->sequence_num != next_sequence_num_) {
-    *message = nullptr;
+    message->reset();
   } else {
     // TODO: Surely there is a better way?
-    const std::unique_ptr<Message>* message_ptr = &impl_.top();
-    *message = const_cast<std::unique_ptr<Message>*>(message_ptr)->release();
+    const ScopedMessage* message_ptr = &impl_.top();
+    message->reset(const_cast<ScopedMessage*>(message_ptr)->release());
 
     impl_.pop();
     next_sequence_num_++;
   }
 }
 
-void MessageQueue::AcceptMessage(Message* message, bool* has_next_message) {
-  impl_.emplace(message);
+void MessageQueue::AcceptMessage(ScopedMessage message,
+                                 bool* has_next_message) {
+  impl_.emplace(std::move(message));
   *has_next_message = (impl_.top()->sequence_num == next_sequence_num_);
 }
 
-void MessageQueue::Drain(std::deque<std::unique_ptr<Message>>* storage) {
+void MessageQueue::Drain(std::deque<ScopedMessage>* storage) {
   impl_.Drain(storage);
 }
 
-void MessageQueue::Impl::Drain(std::deque<std::unique_ptr<Message>>* storage) {
+void MessageQueue::Impl::Drain(std::deque<ScopedMessage>* storage) {
   assert(storage->empty());
   c.swap(*storage);
 }
