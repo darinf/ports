@@ -30,8 +30,9 @@
 #ifndef PORTS_INCLUDE_PORTS_H_
 #define PORTS_INCLUDE_PORTS_H_
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 
 namespace ports {
 
@@ -83,40 +84,29 @@ Message* AllocMessage(
 // Message objects should only be freed using this function.
 void FreeMessage(Message* message);
 
+struct Event {
+  enum Type {
+    kAcceptMessage,
+    kAcceptMessageAck,
+    kPeerClosed,
+  } type;
+  PortName port;
+  NodeName from_node;
+  PortName from_port;
+  std::unique_ptr<Message, FreeMessage> message;
+  uint32_t sequence_num;
+};
+
 // Implemented by the embedder.
 class NodeDelegate {
  public:
-  // Send_* methods must asynchronously call the corresponding methods
-  // on the specified node.
-
-  virtual void Send_AcceptMessage(
-      NodeName to_node,
-      PortName port,
-      Message* message) = 0;  // Passes ownership.
-
-  virtual void Send_AcceptMessageAck(
-      NodeName to_node,
-      PortName port,
-      uint32_t sequence_num) = 0;
-
-  virtual void Send_UpdatePort(
-      NodeName to_node,
-      PortName port,
-      PortName new_peer,
-      NodeName new_peer_node) = 0;
-
-  virtual void Send_UpdatePortAck(
-      NodeName to_node,
-      PortName port) = 0;
-
-  virtual void Send_PeerClosed(
-      NodeName to_node,
-      PortName port) = 0;
+  // Send an event asynchronously to the specified node. This method MUST NOT
+  // synchronously call any methods on Node.
+  virtual void SendEvent(NodeName node, Event event) = 0;
 
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
-  virtual void MessagesAvailable(
-      PortName port) = 0;
+  virtual void MessagesAvailable(PortName port) = 0;
 
   // Port names should be globally unique (i.e., not just unique to this node).
   virtual PortName GeneratePortName() = 0;
@@ -131,48 +121,20 @@ class Node {
 
   // Adds a port to this node. This is used to bootstrap a connection between
   // two nodes. Generally, ports are created using CreatePortPair instead.
-  int AddPort(
-      PortName port,
-      PortName peer,
-      NodeName peer_node);
+  int AddPort(PortName port, PortName peer, NodeName peer_node);
 
   // Generates a new connected pair of ports bound to this node.
-  int CreatePortPair(
-      PortName* port0,
-      PortName* port1);
+  int CreatePortPair(PortName* port0, PortName* port1);
 
   // Returns the next available message on the specified port or returns a null
   // message if there are none available.
-  int GetMessage(
-      PortName port,
-      Message** message);  // Passes ownership.
+  int GetMessage(PortName port, std::unique_ptr<Message, FreeMessage>* message);
 
   // Sends a message from the specified port to its peer.
-  int SendMessage(
-      PortName port,
-      Message* message);  // Passes ownership.
+  int SendMessage(PortName port, std::unique_ptr<Message, FreeMessage> message);
 
-  // The following methods are for internal use and should only be called in
-  // response to a NodeDelegate's Send_* set of functions.
-
-  int AcceptMessage(
-      PortName port,
-      Message* message);  // Passes ownership.
-
-  int AcceptMessageAck(
-      PortName port,
-      uint32_t sequence_num);
-
-  int UpdatePort(
-      PortName port,
-      PortName new_peer,
-      NodeName new_peer_node);
-
-  int UpdatePortAck(
-      PortName port);
-
-  int PeerClosed(
-      PortName port);
+  // Corresponding to NodeDelegate::SendEvent.
+  int AcceptEvent(Event event);
 
  private:
   struct Impl;
