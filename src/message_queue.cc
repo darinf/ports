@@ -65,13 +65,4 @@ void MessageQueue::AcceptMessage(ScopedMessage message,
   *has_next_message = (impl_.top()->sequence_num == next_sequence_num_);
 }
 
-void MessageQueue::Drain(std::deque<ScopedMessage>* storage) {
-  impl_.Drain(storage);
-}
-
-void MessageQueue::Impl::Drain(std::deque<ScopedMessage>* storage) {
-  assert(storage->empty());
-  c.swap(*storage);
-}
-
 }  // namespace ports

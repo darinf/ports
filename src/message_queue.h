@@ -69,18 +69,10 @@ class MessageQueue {
   // GetNextMessage.
   void AcceptMessage(ScopedMessage message, bool* has_next_message);
 
-  // Empties the queue, transferring all messages to the caller.
-  void Drain(std::deque<ScopedMessage>* storage);
-
  private:
-  class Impl
-      : public std::priority_queue<ScopedMessage,
-                                   std::deque<ScopedMessage>,
-                                   std::greater<ScopedMessage>> {
-   public:
-    void Drain(std::deque<ScopedMessage>* storage);
-  };
-
+  typedef std::priority_queue<ScopedMessage,
+                              std::deque<ScopedMessage>,
+                              std::greater<ScopedMessage>> Impl;
   Impl impl_;
   uint32_t next_sequence_num_;
 };

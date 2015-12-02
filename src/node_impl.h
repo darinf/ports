@@ -62,19 +62,10 @@ class Node::Impl {
   int AcceptPort(const PortDescriptor& port_descriptor);
   int PortAccepted(PortName port_name);
   int SendMessage_Locked(Port* port, ScopedMessage message);
-
-#if 0
-  int PortAccepted(PortName port_name);
-#endif
+  int ForwardMessages_Locked(Port* port);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
-
-#if 0
-  std::mutex sent_ports_lock_;
-  std::unordered_map<std::pair<PortName, uint32_t /* sequence_num */>,
-                     std::vector<PortName>> sent_ports_;
-#endif
 };
 
 }  // namespace ports
