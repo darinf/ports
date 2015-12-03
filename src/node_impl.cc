@@ -165,10 +165,10 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
     } else if (port->state == Port::kProxying) {
       has_next_message = false;
 
-      // Forward messages. We forward in order here so that we maintain the
-      // message queue's notion of next sequence number. That's useful for the
-      // proxy removal process as we can tell when this port has seen all of
-      // the messages it is expected to see.
+      // Forward messages. We forward messages in sequential order here so that
+      // we maintain the message queue's notion of next sequence number. That's
+      // useful for the proxy removal process as we can tell when this port has
+      // seen all of the messages it is expected to see.
       int rv = ForwardMessages_Locked(port.get());
       if (rv != OK)
         return rv;
