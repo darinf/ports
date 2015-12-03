@@ -40,15 +40,14 @@ namespace ports {
 namespace test {
 
 static void PrintMessage(const Message* message) {
-  printf(":[seq=%u]\"%s\"",
+  printf(":[seq=%u]\"%s\"[",
       message->sequence_num, static_cast<const char*>(message->bytes));
   for (size_t i = 0; i < message->num_ports; ++i) {
-    printf(":p%lX(n%lX,p%lX,ref:p%lX)",
-        message->ports[i].name.value,
-        message->ports[i].peer_node_name.value,
-        message->ports[i].peer_port_name.value,
-        message->ports[i].referring_port_name.value);
+    if (i > 0)
+      printf(",");
+    printf("p%lX", message->ports[i].name.value);
   }
+  printf("]");
 }
 
 struct Task {
@@ -164,9 +163,15 @@ static void RunTest() {
   PortName a0, a1;
   node0.CreatePortPair(&a0, &a1);
   node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
+  node0.SendMessage(a0, NewStringMessage("hello over there"));
 
   // Transfer a0 as well.
   node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
+
+  PortName b0, b1;
+  node0.CreatePortPair(&b0, &b1);
+  node0.SendMessage(x0, NewStringMessageWithPort("take port (2)", b1));
+  node0.SendMessage(b0, NewStringMessage("hello over there (2)"));
 
   PumpTasks();
 }
