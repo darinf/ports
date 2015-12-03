@@ -39,40 +39,24 @@ Node::~Node() {
   delete impl_;
 }
 
-int Node::AddPort(PortName port, PortName peer, NodeName peer_node) {
-  return impl_->AddPort(port, peer, peer_node);
+int Node::AddPort(PortName port, NodeName peer_node, PortName peer) {
+  return impl_->AddPort(port, peer_node, peer);
 }
 
 int Node::CreatePortPair(PortName* port0, PortName* port1) {
   return impl_->CreatePortPair(port0, port1);
 }
 
-int Node::GetMessage(PortName port, Message** message) {
+int Node::GetMessage(PortName port, ScopedMessage* message) {
   return impl_->GetMessage(port, message);
 }
 
-int Node::SendMessage(PortName port, Message* message) {
-  return impl_->SendMessage(port, message);
+int Node::SendMessage(PortName port, ScopedMessage message) {
+  return impl_->SendMessage(port, std::move(message));
 }
 
-int Node::AcceptMessage(PortName port, Message* message) {
-  return impl_->AcceptMessage(port, message);
-}
-
-int Node::AcceptMessageAck(PortName port, uint32_t sequence_num) {
-  return impl_->AcceptMessageAck(port, sequence_num);
-}
-
-int Node::UpdatePort(PortName port, PortName peer, NodeName peer_node) {
-  return impl_->UpdatePort(port, peer, peer_node);
-}
-
-int Node::UpdatePortAck(PortName port) {
-  return impl_->UpdatePortAck(port);
-}
-
-int Node::PeerClosed(PortName port) {
-  return impl_->PeerClosed(port);
+int Node::AcceptEvent(Event event) {
+  return impl_->AcceptEvent(std::move(event));
 }
 
 }  // namespace ports

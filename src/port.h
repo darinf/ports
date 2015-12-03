@@ -30,7 +30,6 @@
 #ifndef PORTS_SRC_PORT_H_
 #define PORTS_SRC_PORT_H_
 
-#include <map>
 #include <mutex>
 #include <vector>
 
@@ -46,24 +45,25 @@ struct Port {
   };
 
   std::mutex lock;
-  PortName peer_name;
-  NodeName peer_node_name;
-  PortName proxy_to_port_name;
-  NodeName proxy_to_node_name;
-  uint32_t next_sequence_num;
   State state;
+  NodeName peer_node_name;
+  PortName peer_port_name;
+  NodeName referring_node_name;
+  PortName referring_port_name;
+  uint32_t next_sequence_num;
   MessageQueue message_queue;
-  bool buffering_update_port;
-  bool delayed_update_port_ack;
+  int32_t lock_count;
+  //XXX bool buffering_update_port;
+  //XXX bool delayed_update_port_ack;
 
-  Port(PortName peer_name, NodeName peer_node_name, uint32_t next_sequence_num)
-      : peer_name(peer_name),
+  Port(NodeName peer_node_name,
+       PortName peer_port_name,
+       uint32_t next_sequence_num)
+      : state(kReceiving),
         peer_node_name(peer_node_name),
-        proxy_to_port_name(0),
-        proxy_to_node_name(0),
+        peer_port_name(peer_port_name),
         next_sequence_num(next_sequence_num),
-        state(kReceiving),
-        delayed_update_port_ack(false) {}
+        lock_count(0) {}
 };
 
 }  // namespace ports

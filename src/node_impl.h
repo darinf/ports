@@ -30,7 +30,6 @@
 #ifndef PORTS_SRC_NODE_IMPL_H_
 #define PORTS_SRC_NODE_IMPL_H_
 
-#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -45,33 +44,28 @@ class Node::Impl {
   Impl(NodeName name, NodeDelegate* delegate);
   ~Impl();
 
-  int AddPort(PortName port_name, PortName peer_name, NodeName peer_node_name);
+  int AddPort(PortName port_name,
+              NodeName peer_node_name,
+              PortName peer_port_name);
   int CreatePortPair(PortName* port_name_0, PortName* port_name_1);
-  int GetMessage(PortName port_name, Message** message);
-  int SendMessage(PortName port_name, Message* message); 
-  int AcceptMessage(PortName port_name, Message* message);
-  int AcceptMessageAck(PortName port_name, uint32_t sequence_num);
-  int UpdatePort(PortName port_name,
-                 PortName peer_name,
-                 NodeName peer_node_name);
-  int UpdatePortAck(PortName port_name);
-  int PeerClosed(PortName port_name);
+  int GetMessage(PortName port_name, ScopedMessage* message);
+  int SendMessage(PortName port_name, ScopedMessage message); 
+  int AcceptEvent(Event event);
 
  private:
   NodeName name_;
   NodeDelegate* delegate_;
 
   std::shared_ptr<Port> GetPort(PortName port_name);
+  int AcceptMessage(PortName port_name, ScopedMessage message);
   int WillSendPort(NodeName to_node_name, PortDescriptor* port_descriptor);
   int AcceptPort(const PortDescriptor& port_descriptor);
   int PortAccepted(PortName port_name);
+  int SendMessage_Locked(Port* port, ScopedMessage message);
+  int ForwardMessages_Locked(Port* port);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
-
-  std::mutex sent_ports_lock_;
-  std::unordered_map<std::pair<PortName, uint32_t /* sequence_num */>,
-                     std::vector<PortName>> sent_ports_;
 };
 
 }  // namespace ports

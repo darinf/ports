@@ -45,6 +45,8 @@ enum {
   ERROR_NOT_IMPLEMENTED = -100,
 };
 
+// TODO: make node and port names 128-bit to avoid collisions.
+
 // Port names are globally unique.
 struct PortName {
   PortName() : value(0) {}
@@ -63,8 +65,13 @@ struct NodeName {
 
 struct PortDescriptor {
   PortName name;
-  PortName peer;
-  NodeName peer_node;
+
+  // The following fields are used by the implementation and do not need to be
+  // set before calling SendMessage.
+  NodeName peer_node_name;
+  PortName peer_port_name;
+  NodeName referring_node_name;
+  PortName referring_port_name;
   uint32_t next_sequence_num;
 };
 
@@ -77,24 +84,26 @@ struct Message {
 };
 
 // Message objects should only be allocated using this function.
-Message* AllocMessage(
-    size_t num_bytes,
-    size_t num_ports);
+Message* AllocMessage(size_t num_bytes, size_t num_ports);
 
 // Message objects should only be freed using this function.
 void FreeMessage(Message* message);
 
+struct MessageDeleter {
+  void operator()(Message* message) { FreeMessage(message); }
+};
+
+typedef std::unique_ptr<Message, MessageDeleter> ScopedMessage;
+
 struct Event {
   enum Type {
     kAcceptMessage,
-    kAcceptMessageAck,
-    kPeerClosed,
+    kPortAccepted,
   } type;
-  PortName port;
-  NodeName from_node;
-  PortName from_port;
-  std::unique_ptr<Message, FreeMessage> message;
+  PortName port_name;
+  ScopedMessage message;
   uint32_t sequence_num;
+  explicit Event(Type type) : type(type), sequence_num(0) {}
 };
 
 // Implemented by the embedder.
@@ -121,17 +130,17 @@ class Node {
 
   // Adds a port to this node. This is used to bootstrap a connection between
   // two nodes. Generally, ports are created using CreatePortPair instead.
-  int AddPort(PortName port, PortName peer, NodeName peer_node);
+  int AddPort(PortName port, NodeName peer_node, PortName peer_port);
 
   // Generates a new connected pair of ports bound to this node.
   int CreatePortPair(PortName* port0, PortName* port1);
 
   // Returns the next available message on the specified port or returns a null
   // message if there are none available.
-  int GetMessage(PortName port, std::unique_ptr<Message, FreeMessage>* message);
+  int GetMessage(PortName port, ScopedMessage* message);
 
   // Sends a message from the specified port to its peer.
-  int SendMessage(PortName port, std::unique_ptr<Message, FreeMessage> message);
+  int SendMessage(PortName port, ScopedMessage message);
 
   // Corresponding to NodeDelegate::SendEvent.
   int AcceptEvent(Event event);

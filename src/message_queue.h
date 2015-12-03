@@ -61,26 +61,18 @@ class MessageQueue {
   bool IsEmpty();
 
   // Gives ownership of the message.
-  void GetNextMessage(Message** message);
+  void GetNextMessage(ScopedMessage* message);
 
   // Takes ownership of the message. Note: Messages are ordered, so while we
   // have added a message to the queue, we may still be waiting on a message
   // ahead of this one before we can let any of the messages be returned by
   // GetNextMessage.
-  void AcceptMessage(Message* message, bool* has_next_message);
-
-  // Empties the queue, transferring all messages to the caller.
-  void Drain(std::deque<std::unique_ptr<Message>>* storage);
+  void AcceptMessage(ScopedMessage message, bool* has_next_message);
 
  private:
-  class Impl
-      : public std::priority_queue<std::unique_ptr<Message>,
-                                   std::deque<std::unique_ptr<Message>>,
-                                   std::greater<std::unique_ptr<Message>>> {
-   public:
-    void Drain(std::deque<std::unique_ptr<Message>>* storage);
-  };
-
+  typedef std::priority_queue<ScopedMessage,
+                              std::deque<ScopedMessage>,
+                              std::greater<ScopedMessage>> Impl;
   Impl impl_;
   uint32_t next_sequence_num_;
 };
