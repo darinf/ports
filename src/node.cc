@@ -55,22 +55,20 @@ int Node::SendMessage(PortName port, Message* message) {
   return impl_->SendMessage(port, message);
 }
 
-int Node::AcceptMessage(PortName port, Message* message, NodeName from_node,
-                        PortName from_port) {
-  return impl_->AcceptMessage(port, message, from_node, from_port);
+int Node::AcceptMessage(PortName port, Message* message) {
+  return impl_->AcceptMessage(port, message);
 }
 
 int Node::AcceptMessageAck(PortName port, uint32_t sequence_num) {
   return impl_->AcceptMessageAck(port, sequence_num);
 }
 
-int Node::UpdatePort(PortName port, NodeName peer_node, PortName peer_port,
-                     NodeName from_node, PortName from_port) {
-  return impl_->UpdatePort(port, peer_node, peer_port, from_node, from_port);
+int Node::UpdatePort(PortName port, PortName peer, NodeName peer_node) {
+  return impl_->UpdatePort(port, peer, peer_node);
 }
 
-int Node::UpdatePortAck(PortName port, uint32_t last_sequence_num) {
-  return impl_->UpdatePortAck(port, last_sequence_num);
+int Node::UpdatePortAck(PortName port) {
+  return impl_->UpdatePortAck(port);
 }
 
 int Node::PeerClosed(PortName port) {

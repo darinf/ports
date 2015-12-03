@@ -81,7 +81,7 @@ struct TaskComparator {
 static std::priority_queue<Task*,
                            std::vector<Task*>,
                            TaskComparator> task_queue;
-static Node* node_map[3];
+static Node* node_map[2];
 
 static void DoTask(Task* task) {
   Node* node = node_map[task->to_node.value];
@@ -253,11 +253,6 @@ static void RunTest() {
   Node node1(node1_name, &node1_delegate);
   node_map[1] = &node1;
 
-  NodeName node2_name(2);
-  TestNodeDelegate node2_delegate(node2_name);
-  Node node2(node2_name, &node2_delegate);
-  node_map[2] = &node2;
-
   // Setup pipe between node0 and node1.
   PortName x0, x1;
   x0 = node0_delegate.GeneratePortName();
@@ -265,23 +260,16 @@ static void RunTest() {
   node0.AddPort(x0, x1, node1_name);
   node1.AddPort(x1, x0, node0_name);
 
-  // Setup pipe between node1 and node2.
-  PortName y0, y1;
-  y0 = node0_delegate.GeneratePortName();
-  y1 = node1_delegate.GeneratePortName();
-  node1.AddPort(y0, y1, node2_name);
-  node2.AddPort(y1, y0, node1_name);
-
   // Transfer a message from node0 to node1.
-  //XXX node0.SendMessage(x0, NewStringMessage("hello world"));
+  node0.SendMessage(x0, NewStringMessage("hello world"));
 
   // Transfer a port from node0 to node1.
   PortName a0, a1;
-  node1.CreatePortPair(&a0, &a1);
-  node1.SendMessage(y0, NewStringMessageWithPort("take port", a1));
+  node0.CreatePortPair(&a0, &a1);
+  node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
 
   // Transfer a0 as well.
-  node1.SendMessage(x1, NewStringMessageWithPort("take another port", a0));
+  node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
 
   PumpTasks();
 }

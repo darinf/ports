@@ -91,28 +91,23 @@ class NodeDelegate {
 
   virtual void Send_AcceptMessage(
       NodeName to_node,
-      PortName to_port,
-      Message* message,  // Passes ownership.
-      NodeName from_node,
-      PortName from_port) = 0;
+      PortName port,
+      Message* message) = 0;  // Passes ownership.
 
   virtual void Send_AcceptMessageAck(
       NodeName to_node,
-      PortName to_port,
+      PortName port,
       uint32_t sequence_num) = 0;
 
   virtual void Send_UpdatePort(
       NodeName to_node,
-      PortName to_port,
-      NodeName new_peer_node,
-      PortName new_peer_port,
-      NodeName from_node,
-      PortName from_port) = 0;
+      PortName port,
+      PortName new_peer,
+      NodeName new_peer_node) = 0;
 
   virtual void Send_UpdatePortAck(
       NodeName to_node,
-      PortName port,
-      uint32_t last_sequence_num) = 0;
+      PortName port) = 0;
 
   virtual void Send_PeerClosed(
       NodeName to_node,
@@ -162,9 +157,7 @@ class Node {
 
   int AcceptMessage(
       PortName port,
-      Message* message,  // Passes ownership.
-      NodeName from_node,
-      PortName from_port);
+      Message* message);  // Passes ownership.
 
   int AcceptMessageAck(
       PortName port,
@@ -172,14 +165,11 @@ class Node {
 
   int UpdatePort(
       PortName port,
-      NodeName new_peer_node,
-      PortName new_peer_port,
-      NodeName from_node,
-      PortName from_port);
+      PortName new_peer,
+      NodeName new_peer_node);
 
   int UpdatePortAck(
-      PortName port,
-      uint32_t last_sequence_num);
+      PortName port);
 
   int PeerClosed(
       PortName port);

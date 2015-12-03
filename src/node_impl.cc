@@ -156,10 +156,7 @@ int Node::Impl::SendMessage(PortName port_name, Message* message) {
   return OK;
 }
 
-int Node::Impl::AcceptMessage(PortName port_name,
-                              Message* message,
-                              NodeName from_node_name,
-                              PortName from_port_name) {
+int Node::Impl::AcceptMessage(PortName port_name, Message* message) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -188,7 +185,7 @@ int Node::Impl::AcceptMessage(PortName port_name,
 
     if (port->state == Port::kProxying) {
       if (message->num_ports > 0)
-        return Oops(ERROR_NOT_IMPLEMENTED);  // TODO
+        return Oops(ERROR_NOT_IMPLEMENTED);
 
       delegate_->Send_AcceptMessage(port->proxy_to_node_name,
                                     port->proxy_to_port_name,
@@ -241,9 +238,6 @@ int Node::Impl::UpdatePort(PortName port_name,
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    port->old_peer_name = port->peer_name;
-    port->old_peer_node_name = port->peer_node_name;
-
     port->peer_name = peer_name;
     port->peer_node_name = peer_node_name;
 
@@ -263,16 +257,13 @@ int Node::Impl::UpdatePort(PortName port_name,
                                  port->peer_node_name);
       port->delayed_update_port_ack = true;
     } else {
-      delegate_->Send_UpdatePortAck(port->old_peer_node_name,
-                                    port->old_peer_name,
-                                    port->next_sequence_num - 1);
+      delegate_->Send_UpdatePortAck(port->peer_node_name, port->peer_name);
     }
   }
   return OK;
 }
 
-int Node::Impl::UpdatePortAck(PortName port_name, uint32_t last_sequence_num) {
-#if 0
+int Node::Impl::UpdatePortAck(PortName port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -282,8 +273,7 @@ int Node::Impl::UpdatePortAck(PortName port_name, uint32_t last_sequence_num) {
     std::lock_guard<std::mutex> guard(port->lock);
     if (port->delayed_update_port_ack) {
       port->delayed_update_port_ack = false;
-      delegate_->Send_UpdatePortAck(port->old_peer_node_name,
-                                    port->old_peer_name);
+      delegate_->Send_UpdatePortAck(port->peer_node_name, port->peer_name);
     }
   }
 
@@ -294,7 +284,6 @@ int Node::Impl::UpdatePortAck(PortName port_name, uint32_t last_sequence_num) {
     ports_.erase(port_name);
   }
   
-#endif
   return OK;
 }
 
@@ -397,7 +386,6 @@ int Node::Impl::PortAccepted(PortName port_name) {
   }
 
   // Forward messages.
-  // TODO: Oops, SendMessageAck won't return to this node!
   for (auto iter = messages.begin(); iter != messages.end(); ++iter)
     SendMessage(port_name, iter->release());
 
