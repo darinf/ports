@@ -50,6 +50,10 @@ Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
 Node::Impl::~Impl() {
 }
 
+int Node::Impl::Shutdown() {
+  return Oops(ERROR_NOT_IMPLEMENTED);
+}
+
 int Node::Impl::CreatePort(PortName* port_name) {
   std::shared_ptr<Port> port = std::make_shared<Port>(kInitialSequenceNum);
   return AddPort(std::move(port), port_name);

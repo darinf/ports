@@ -44,6 +44,7 @@ class Node::Impl {
   Impl(NodeName name, NodeDelegate* delegate);
   ~Impl();
 
+  int Shutdown();
   int CreatePort(PortName* port_name);
   int InitializePort(PortName port_name,
                      NodeName peer_node_name,

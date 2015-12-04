@@ -136,9 +136,10 @@ class NodeDelegate {
 class Node {
  public:
   Node(NodeName name, NodeDelegate* delegate);
-
-  // Closes any ports bound to this node.
   ~Node();
+
+  // Closes all ports and prevents creation of new ports.
+  int Shutdown();
 
   // Creates a port on this node. Before the port can be used, it must be
   // initialized using InitializePort. This method is useful for bootstrapping
