@@ -77,3 +77,5 @@ When acknowledging a port's annoucement that it has become a proxy port, the
 sequence number of the last message sent to the proxy port is sent to the proxy
 port. This allows the proxy port to observe when it has received the last
 message it will receive.
+
+## TODO: Figure out shutdown
