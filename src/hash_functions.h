@@ -43,16 +43,6 @@ struct hash<ports::PortName> {
   }
 };
 
-template <>
-struct hash<std::pair<ports::PortName, uint32_t>> {
-  std::size_t operator()(const std::pair<ports::PortName, uint32_t>& obj)
-      const {
-    size_t h1 = hash<uint64_t>()(obj.first.value);
-    size_t h2 = hash<uint32_t>()(obj.second);
-    return h1 ^ (h2 << 1);
-  }
-};
-
 }  // namespace std
 
 #endif  // PORTS_SRC_HASH_FUNCTIONS_H_
