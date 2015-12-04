@@ -48,12 +48,10 @@ struct Port {
   State state;
   NodeName peer_node_name;
   PortName peer_port_name;
-  NodeName referring_node_name;
-  PortName referring_port_name;
   uint32_t next_sequence_num;
+  uint32_t last_sequence_num_to_proxy;
   MessageQueue message_queue;
-  int32_t lock_count;  // XXX do we need this?
-  bool removing;
+  bool doomed;
 
   Port(NodeName peer_node_name,
        PortName peer_port_name,
@@ -62,8 +60,8 @@ struct Port {
         peer_node_name(peer_node_name),
         peer_port_name(peer_port_name),
         next_sequence_num(next_sequence_num),
-        lock_count(0),
-        removing(false) {}
+        last_sequence_num_to_proxy(0),
+        doomed(false) {}
 };
 
 }  // namespace ports

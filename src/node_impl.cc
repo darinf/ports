@@ -128,14 +128,10 @@ int Node::Impl::AcceptEvent(Event event) {
       return AcceptMessage(event.port_name, std::move(event.message));
     case Event::kPortAccepted:
       return PortAccepted(event.port_name);
-    case Event::kUpdatePeer:
-      return UpdatePeer(event.port_name,
-                        event.new_peer_node_name,
-                        event.new_peer_port_name);
-    case Event::kUpdatePeerAck:
-      return UpdatePeerAck(event.port_name,
-                           event.last_sequence_num,
-                           event.succeeded);
+    case Event::kObserveProxy:
+      return ObserveProxy(std::move(event));
+    case Event::kObserveProxyAck:
+      return ObserveProxyAck(event.port_name, event.last_sequence_num);
   }
   return Oops(ERROR_NOT_IMPLEMENTED);
 }
@@ -182,6 +178,8 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
       int rv = ForwardMessages_Locked(port.get());
       if (rv != OK)
         return rv;
+
+      MaybeRemovePort_Locked(port.get(), port_name);
     }
   }
   if (has_next_message)
@@ -222,11 +220,6 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
     // as part of the proxy removal phase.
     port->peer_node_name = to_node_name;
     port->peer_port_name = new_port_name;
-    port->referring_node_name = old_peer_node_name;
-    port->referring_port_name = old_peer_port_name;
-
-    // Make sure this port remains until we handle PortAccepted.
-    port->lock_count++;
 
     port_descriptor->name = new_port_name;
     port_descriptor->peer_node_name = old_peer_node_name;
@@ -246,8 +239,6 @@ int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
   port = std::make_shared<Port>(port_descriptor.peer_node_name,
                                 port_descriptor.peer_port_name,
                                 port_descriptor.next_sequence_num);
-  port->referring_node_name = port_descriptor.referring_node_name;
-  port->referring_port_name = port_descriptor.referring_port_name;
 
   {
     std::lock_guard<std::mutex> guard(ports_lock_);
@@ -277,16 +268,13 @@ int Node::Impl::PortAccepted(PortName port_name) {
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
 
     port->state = Port::kProxying;
-    port->lock_count--;
 
     int rv = ForwardMessages_Locked(port.get());
     if (rv != OK)
       return rv;
 
-    if (port->lock_count == 0) {
-      printf(">>> p%lX: initiating removal\n", port_name.value);
-      InitiateRemoval_Locked(port.get());
-    }
+    printf(">>> p%lX: initiating removal\n", port_name.value);
+    InitiateRemoval_Locked(port.get(), port_name);
   }
   return OK;
 }
@@ -322,53 +310,75 @@ int Node::Impl::ForwardMessages_Locked(Port* port) {
   return OK;
 }
 
-void Node::Impl::InitiateRemoval_Locked(Port* port) {
-  port->removing = true;
+void Node::Impl::InitiateRemoval_Locked(Port* port, PortName port_name) {
+  // To remove this node, we start by notifying the connected graph that we are
+  // a proxy. This allows whatever port is referencing this node to skip it.
+  // Eventually, this node will receivce an ObserveProxyAck.
 
-  Event event(Event::kUpdatePeer);
-  event.port_name = port->referring_port_name;
-  event.new_peer_node_name = port->peer_node_name;
-  event.new_peer_port_name = port->peer_port_name;
+  Event event(Event::kObserveProxy);
+  event.port_name = port->peer_port_name;
+  event.proxy_node_name = name_;
+  event.proxy_port_name = port_name;
+  event.proxy_to_node_name = port->peer_node_name;
+  event.proxy_to_port_name = port->peer_port_name;
 
-  delegate_->SendEvent(port->referring_node_name, std::move(event));
+  delegate_->SendEvent(port->peer_node_name, std::move(event));
 }
 
-int Node::Impl::UpdatePeer(PortName port_name,
-                           NodeName new_peer_node_name,
-                           PortName new_peer_port_name) {
-  std::shared_ptr<Port> port = GetPort(port_name);
+void Node::Impl::MaybeRemovePort_Locked(Port* port, PortName port_name) {
+  assert(port->state == Port::kProxying);
+
+  uint32_t last_sequence_num_proxied = 
+      port->message_queue.next_sequence_num() - 1;
+
+  if (last_sequence_num_proxied == port->last_sequence_num_to_proxy) {
+    // This port is done. We can now remove it!
+    {
+      std::lock_guard<std::mutex> guard(ports_lock_);
+      ports_.erase(port_name);
+    }
+    printf(">>> n%lX,p%lX: removed!\n", name_.value, port_name.value);
+  }
+}  
+
+int Node::Impl::ObserveProxy(Event event) {
+  printf(">>> n%lX,p%lX: ObserveProxy\n", name_.value, event.port_name.value);
+
+  std::shared_ptr<Port> port = GetPort(event.port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
-
+  
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    printf(">>> p%lX: UpdatePeer(n%lX,p%lX)\n",
-        port_name.value, new_peer_node_name.value, new_peer_port_name.value);
+    if (port->peer_node_name == event.proxy_node_name &&
+        port->peer_port_name == event.proxy_port_name) {
+      port->peer_node_name = event.proxy_to_node_name; 
+      port->peer_port_name = event.proxy_to_port_name; 
 
-    NodeName old_peer_node_name = port->peer_node_name;
-    PortName old_peer_port_name = port->peer_port_name;
+      Event ack(Event::kObserveProxyAck);
+      ack.port_name = event.proxy_port_name;
+      ack.last_sequence_num = port->next_sequence_num - 1;
 
-    if (!port->removing) {
-      port->peer_node_name = new_peer_node_name;
-      port->peer_port_name = new_peer_port_name;
+      printf(">>> n%lX,p%lX: sending ObserveProxyAck\n",
+          name_.value, event.port_name.value);
 
-      port->lock_count++;
+      delegate_->SendEvent(event.proxy_node_name, std::move(ack));
+    } else {
+      // Forward this event along to our peer. Eventually, it should find the
+      // port referring to the proxy.
+      event.port_name = port->peer_port_name;
+
+      delegate_->SendEvent(port->peer_node_name, std::move(event));
     }
-
-    Event event(Event::kUpdatePeerAck);
-    event.port_name = old_peer_port_name;
-    event.last_sequence_num = port->next_sequence_num - 1;
-    event.succeeded = !port->removing;
-
-    delegate_->SendEvent(old_peer_node_name, std::move(event));
   }
   return OK;
 }
 
-int Node::Impl::UpdatePeerAck(PortName port_name,
-                              uint32_t last_sequence_num,
-                              bool succeeded) {
+int Node::Impl::ObserveProxyAck(PortName port_name,
+                                uint32_t last_sequence_num) {
+  printf(">>> n%lX,p%lX: ObserveProxyAck\n", name_.value, port_name.value);
+
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -376,29 +386,15 @@ int Node::Impl::UpdatePeerAck(PortName port_name,
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    if (!succeeded) {
-      printf(">>> UpdatePeerAck(p%lX) rejected\n", port_name.value);
+    if (port->state != Port::kProxying)
+      return Oops(ERROR_PORT_STATE_UNEXPECTED);
 
-      // We'll try again later (or now if our referring port already finished
-      // removing itself).
-      if (++port->lock_count == 0)
-        InitiateRemoval_Locked(port.get());
-    } else {
-      // Forward messages until our message queue has seen messages up to
-      // last_sequence_num. Then, we know we'll not see any more messages.
+    // We can now remove this port once we have received and forwarded the last
+    // message addressed to this port.
+    port->doomed = true;
+    port->last_sequence_num_to_proxy = last_sequence_num;
 
-      int rv = ForwardMessages_Locked(port.get());
-      if (rv != OK)
-        return rv;
-
-      printf(">>> UpdatePeerAck(p%lX) succeeded\n", port_name.value);
-
-      if (port->message_queue.next_sequence_num() == last_sequence_num + 1) {
-        // All messages have been forwarded. Now, flush messages to our peer.
-        // Make sure they have all been received.
-        // XXX
-      }
-    }
+    MaybeRemovePort_Locked(port.get(), port_name);
   }
   return OK;
 }

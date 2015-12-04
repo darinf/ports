@@ -63,13 +63,11 @@ class Node::Impl {
   int PortAccepted(PortName port_name);
   int SendMessage_Locked(Port* port, ScopedMessage message);
   int ForwardMessages_Locked(Port* port);
-  void InitiateRemoval_Locked(Port* port);
-  int UpdatePeer(PortName port_name,
-                 NodeName new_peer_node_name,
-                 PortName new_peer_port_name);
-  int UpdatePeerAck(PortName port_name,
-                    uint32_t last_sequence_num,
-                    bool succeeded);
+  void InitiateRemoval_Locked(Port* port, PortName port_name);
+  void MaybeRemovePort_Locked(Port* port, PortName port_name);
+  int ObserveProxy(Event event);
+  int ObserveProxyAck(PortName port_name,
+                      uint32_t last_sequence_num);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
