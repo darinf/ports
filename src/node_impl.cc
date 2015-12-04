@@ -96,6 +96,10 @@ int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
   return OK;
 }
 
+int Node::Impl::ClosePort(PortName port_name) {
+  return Oops(ERROR_NOT_IMPLEMENTED);
+}
+
 int Node::Impl::GetMessage(PortName port_name, ScopedMessage* message) {
   *message = nullptr;
 

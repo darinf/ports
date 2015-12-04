@@ -172,6 +172,8 @@ static void RunTest() {
   node0.SendMessage(x0, NewStringMessageWithPort("take port (2)", b1));
   node0.SendMessage(b0, NewStringMessage("hello over there (2)"));
 
+  node0.ClosePort(b0);
+
   PumpTasks();
 }
 

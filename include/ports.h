@@ -43,6 +43,7 @@ enum {
   ERROR_PORT_ALREADY_INITIALIZED = -3,
   ERROR_PORT_STATE_UNEXPECTED = -4,
   ERROR_PORT_CANNOT_SEND_SELF = -5,
+  ERROR_PORT_PEER_CLOSED = -6,
   ERROR_NOT_IMPLEMENTED = -100,
 };
 
@@ -147,6 +148,10 @@ class Node {
   // Generates a new connected pair of ports bound to this node. These ports
   // are initialized and ready to go.
   int CreatePortPair(PortName* port0, PortName* port1);
+
+  // Prevents further messages from being sent from this port or delivered to
+  // this port. The port is removed, and the port's peer is notified.
+  int ClosePort(PortName port);
 
   // Returns the next available message on the specified port or returns a null
   // message if there are none available.

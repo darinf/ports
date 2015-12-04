@@ -51,6 +51,10 @@ int Node::CreatePortPair(PortName* port0, PortName* port1) {
   return impl_->CreatePortPair(port0, port1);
 }
 
+int Node::ClosePort(PortName port_name) {
+  return impl_->ClosePort(port_name);
+}
+
 int Node::GetMessage(PortName port, ScopedMessage* message) {
   return impl_->GetMessage(port, message);
 }
