@@ -78,4 +78,18 @@ sequence number of the last message sent to the proxy port is sent to the proxy
 port. This allows the proxy port to observe when it has received the last
 message it will receive.
 
+To help illustrate what's going on, consider a more complex example. Consider
+the case in which both port A and port B are transferred. In this case,
+transferring port A implies setting up a new port at a different node called
+port D. You can end up with a circular list that looks like this:
+
+```
+A --> D --> B --> C --> A
+```
+
+The real communication end points are port D and port C here, and ports A and B
+are just proxy ports that are both interested in being removed. Applying the
+send an announcement algorithm from above, it is clear that the removal of
+ports A and B can happen simultaneously without it causing any inconsistencies.
+
 ## TODO: Figure out shutdown
