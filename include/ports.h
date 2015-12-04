@@ -40,14 +40,14 @@ enum {
   OK = 0,
   ERROR_PORT_UNKNOWN = -1,
   ERROR_PORT_EXISTS = -2,
-  ERROR_PORT_STATE_UNEXPECTED = -3,
-  ERROR_PORT_CANNOT_SEND_SELF = -4,
+  ERROR_PORT_ALREADY_INITIALIZED = -3,
+  ERROR_PORT_STATE_UNEXPECTED = -4,
+  ERROR_PORT_CANNOT_SEND_SELF = -5,
   ERROR_NOT_IMPLEMENTED = -100,
 };
 
-// TODO: make node and port names 128-bit to avoid collisions.
-
-// Port names are globally unique.
+// Port names are NOT globally unique. They are relative to the node they are
+// bound to.
 struct PortName {
   PortName() : value(0) {}
   explicit PortName(uint64_t value) : value(value) {}
@@ -66,8 +66,8 @@ struct NodeName {
 struct PortDescriptor {
   PortName name;
 
-  // The following fields are used by the implementation and do not need to be
-  // set before calling SendMessage.
+  // The following fields are used by the implementation and should not be set
+  // before calling SendMessage.
   NodeName peer_node_name;
   PortName peer_port_name;
   NodeName referring_node_name;
@@ -116,6 +116,9 @@ struct Event {
 // Implemented by the embedder.
 class NodeDelegate {
  public:
+  // Port names should be difficult to guess.
+  virtual PortName GenerateRandomPortName() = 0;
+
   // Send an event asynchronously to the specified node. This method MUST NOT
   // synchronously call any methods on Node.
   virtual void SendEvent(NodeName node, Event event) = 0;
@@ -123,9 +126,6 @@ class NodeDelegate {
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
   virtual void MessagesAvailable(PortName port) = 0;
-
-  // Port names should be globally unique (i.e., not just unique to this node).
-  virtual PortName GeneratePortName() = 0;
 };
 
 class Node {
@@ -135,11 +135,17 @@ class Node {
   // Closes any ports bound to this node.
   ~Node();
 
-  // Adds a port to this node. This is used to bootstrap a connection between
-  // two nodes. Generally, ports are created using CreatePortPair instead.
-  int AddPort(PortName port, NodeName peer_node, PortName peer_port);
+  // Creates a port on this node. Before the port can be used, it must be
+  // initialized using InitializePort. This method is useful for bootstrapping
+  // a connection between two nodes. Generally, ports are created using
+  // CreatePortPair instead.
+  int CreatePort(PortName* port);
 
-  // Generates a new connected pair of ports bound to this node.
+  // Initializes a newly created port.
+  int InitializePort(PortName port, NodeName peer_node, PortName peer_port);
+
+  // Generates a new connected pair of ports bound to this node. These ports
+  // are initialized and ready to go.
   int CreatePortPair(PortName* port0, PortName* port1);
 
   // Returns the next available message on the specified port or returns a null

@@ -44,9 +44,10 @@ class Node::Impl {
   Impl(NodeName name, NodeDelegate* delegate);
   ~Impl();
 
-  int AddPort(PortName port_name,
-              NodeName peer_node_name,
-              PortName peer_port_name);
+  int CreatePort(PortName* port_name);
+  int InitializePort(PortName port_name,
+                     NodeName peer_node_name,
+                     PortName peer_port_name);
   int CreatePortPair(PortName* port_name_0, PortName* port_name_1);
   int GetMessage(PortName port_name, ScopedMessage* message);
   int SendMessage(PortName port_name, ScopedMessage message); 
@@ -56,18 +57,18 @@ class Node::Impl {
   NodeName name_;
   NodeDelegate* delegate_;
 
+  int AddPort(std::shared_ptr<Port> port, PortName* port_name);
   std::shared_ptr<Port> GetPort(PortName port_name);
   int AcceptMessage(PortName port_name, ScopedMessage message);
   int WillSendPort(NodeName to_node_name, PortDescriptor* port_descriptor);
-  int AcceptPort(const PortDescriptor& port_descriptor);
-  int PortAccepted(PortName port_name);
+  int AcceptPort(PortDescriptor* port_descriptor);
+  int PortAccepted(PortName port_name, PortName proxy_to_port_name);
   int SendMessage_Locked(Port* port, ScopedMessage message);
   int ForwardMessages_Locked(Port* port);
   void InitiateRemoval_Locked(Port* port, PortName port_name);
   void MaybeRemovePort_Locked(Port* port, PortName port_name);
   int ObserveProxy(Event event);
-  int ObserveProxyAck(PortName port_name,
-                      uint32_t last_sequence_num);
+  int ObserveProxyAck(PortName port_name, uint32_t last_sequence_num);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;

@@ -53,12 +53,8 @@ struct Port {
   MessageQueue message_queue;
   bool doomed;
 
-  Port(NodeName peer_node_name,
-       PortName peer_port_name,
-       uint32_t next_sequence_num)
+  explicit Port(uint32_t next_sequence_num)
       : state(kReceiving),
-        peer_node_name(peer_node_name),
-        peer_port_name(peer_port_name),
         next_sequence_num(next_sequence_num),
         last_sequence_num_to_proxy(0),
         doomed(false) {}

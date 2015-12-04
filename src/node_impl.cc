@@ -49,36 +49,48 @@ Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
 Node::Impl::~Impl() {
 }
 
-int Node::Impl::AddPort(PortName port_name,
-                        NodeName peer_node_name,
-                        PortName peer_port_name) {
-  std::shared_ptr<Port> port = std::make_shared<Port>(peer_node_name,
-                                                      peer_port_name,
-                                                      kInitialSequenceNum);
-  {
-    std::lock_guard<std::mutex> guard(ports_lock_);
-    if (!ports_.insert(std::make_pair(port_name, port)).second)
-      return Oops(ERROR_PORT_EXISTS);
-  }
+int Node::Impl::CreatePort(PortName* port_name) {
+  std::shared_ptr<Port> port = std::make_shared<Port>(kInitialSequenceNum);
+  return AddPort(std::move(port), port_name);
+}
 
+int Node::Impl::InitializePort(PortName port_name,
+                               NodeName peer_node_name,
+                               PortName peer_port_name) {
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return Oops(ERROR_PORT_UNKNOWN);
+
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+    if (port->peer_node_name.value != NodeName().value ||
+        port->peer_port_name.value != PortName().value)
+      return Oops(ERROR_PORT_ALREADY_INITIALIZED);
+
+    port->peer_node_name = peer_node_name;
+    port->peer_port_name = peer_port_name;
+  }
   return OK;
 }
 
 int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
-  *port_name_0 = delegate_->GeneratePortName();
-  *port_name_1 = delegate_->GeneratePortName();
+  int rv;
 
-  // A connected pair of ports:
-  std::shared_ptr<Port> port0 =
-      std::make_shared<Port>(name_, *port_name_1, kInitialSequenceNum);
-  std::shared_ptr<Port> port1 =
-      std::make_shared<Port>(name_, *port_name_0, kInitialSequenceNum);
+  rv = CreatePort(port_name_0);
+  if (rv != OK)
+    return rv;
 
-  {
-    std::lock_guard<std::mutex> guard(ports_lock_);
-    ports_.insert(std::make_pair(*port_name_0, port0));
-    ports_.insert(std::make_pair(*port_name_1, port1));
-  }
+  rv = CreatePort(port_name_1);
+  if (rv != OK)
+    return rv;
+
+  rv = InitializePort(*port_name_0, name_, *port_name_1);
+  if (rv != OK)
+    return rv;
+
+  rv = InitializePort(*port_name_1, name_, *port_name_0);
+  if (rv != OK)
+    return rv;
 
   return OK;
 }
@@ -127,13 +139,25 @@ int Node::Impl::AcceptEvent(Event event) {
     case Event::kAcceptMessage:
       return AcceptMessage(event.port_name, std::move(event.message));
     case Event::kPortAccepted:
-      return PortAccepted(event.port_name);
+      return PortAccepted(event.port_name, event.proxy_to_port_name);
     case Event::kObserveProxy:
       return ObserveProxy(std::move(event));
     case Event::kObserveProxyAck:
       return ObserveProxyAck(event.port_name, event.last_sequence_num);
   }
   return Oops(ERROR_NOT_IMPLEMENTED);
+}
+
+int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
+  // Ensure we end up with a unique port name.
+  for (;;) {
+    *port_name = delegate_->GenerateRandomPortName();
+
+    std::lock_guard<std::mutex> guard(ports_lock_);
+    if (ports_.insert(std::make_pair(*port_name, port)).second)
+      break;
+  }
+  return OK;
 }
 
 std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
@@ -156,7 +180,7 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   // will get transferred following the usual method.
 
   for (size_t i = 0; i < message->num_ports; ++i) {
-    int rv = AcceptPort(message->ports[i]);
+    int rv = AcceptPort(&message->ports[i]);
     if (rv != OK)
       return rv;
   }
@@ -196,10 +220,6 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
 
-  // Generate a new name for the port. This is done to avoid collisions if the
-  // port is later transferred back to this node.
-  PortName new_port_name = delegate_->GeneratePortName();
-
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
@@ -216,12 +236,11 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
     port->state = Port::kBuffering;
 
     // Our "peer" is now the new port, meaning we will forward messages to the
-    // new port. The referring port is now our old peer. We need this linkage
-    // as part of the proxy removal phase.
+    // new port. The referring port is now our old peer.
     port->peer_node_name = to_node_name;
-    port->peer_port_name = new_port_name;
+    port->peer_port_name = PortName();  // To be assigned.
 
-    port_descriptor->name = new_port_name;
+    port_descriptor->name = PortName();  // To be assigned.
     port_descriptor->peer_node_name = old_peer_node_name;
     port_descriptor->peer_port_name = old_peer_port_name;
     port_descriptor->referring_node_name = name_;
@@ -231,32 +250,33 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
   return OK;
 }
 
-int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
-  std::shared_ptr<Port> port = GetPort(port_descriptor.name);
-  if (port)
-    return Oops(ERROR_PORT_EXISTS);
+int Node::Impl::AcceptPort(PortDescriptor* port_descriptor) {
+  std::shared_ptr<Port> port =
+      std::make_shared<Port>(port_descriptor->next_sequence_num);
+  port->peer_node_name = port_descriptor->peer_node_name;
+  port->peer_port_name = port_descriptor->peer_port_name;
 
-  port = std::make_shared<Port>(port_descriptor.peer_node_name,
-                                port_descriptor.peer_port_name,
-                                port_descriptor.next_sequence_num);
+  PortName port_name;
+  int rv = AddPort(std::move(port), &port_name);
+  if (rv != OK)
+    return rv;
 
-  {
-    std::lock_guard<std::mutex> guard(ports_lock_);
-    ports_.insert(std::make_pair(port_descriptor.name, port));
-  }
+  // Provide the port name here so that it will be visible to the eventual
+  // recipient of the message containing this PortDescriptor.
+  port_descriptor->name = port_name;
 
-  // Let the referring port know we're all setup, so it can allow new messages
-  // to flow to this port.
+  // Provide the referring port w/ the name of this new port, so it can allow
+  // new messages to flow.
 
   Event event(Event::kPortAccepted);
-  event.port_name = port_descriptor.referring_port_name;
+  event.port_name = port_descriptor->referring_port_name;
+  event.proxy_to_port_name = port_name;
 
-  delegate_->SendEvent(port_descriptor.referring_node_name, std::move(event));
-
+  delegate_->SendEvent(port_descriptor->referring_node_name, std::move(event));
   return OK;
 }
 
-int Node::Impl::PortAccepted(PortName port_name) {
+int Node::Impl::PortAccepted(PortName port_name, PortName proxy_to_port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -268,6 +288,7 @@ int Node::Impl::PortAccepted(PortName port_name) {
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
 
     port->state = Port::kProxying;
+    port->peer_port_name = proxy_to_port_name;
 
     int rv = ForwardMessages_Locked(port.get());
     if (rv != OK)

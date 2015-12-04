@@ -39,8 +39,12 @@ Node::~Node() {
   delete impl_;
 }
 
-int Node::AddPort(PortName port, NodeName peer_node, PortName peer) {
-  return impl_->AddPort(port, peer_node, peer);
+int Node::CreatePort(PortName* port) {
+  return impl_->CreatePort(port);
+}
+
+int Node::InitializePort(PortName port, NodeName peer_node, PortName peer) {
+  return impl_->InitializePort(port, peer_node, peer);
 }
 
 int Node::CreatePortPair(PortName* port0, PortName* port1) {

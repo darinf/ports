@@ -105,6 +105,13 @@ class TestNodeDelegate : public NodeDelegate {
   explicit TestNodeDelegate(NodeName node_name) : node_name_(node_name) {
   }
 
+  virtual PortName GenerateRandomPortName() override {
+    static uint64_t next_port_name = 1;
+    printf("n%lX:GenerateRandomPortName => p%lX\n",
+        node_name_.value, next_port_name);
+    return PortName(next_port_name++);
+  }
+
   virtual void SendEvent(NodeName node_name, Event event) override {
     task_queue.push(new Task(node_name, std::move(event)));
   }
@@ -128,12 +135,6 @@ class TestNodeDelegate : public NodeDelegate {
     }
   }
 
-  virtual PortName GeneratePortName() override {
-    static uint64_t next_port_name = 1;
-    printf("n%lX:GeneratePortName => p%lX\n", node_name_.value, next_port_name);
-    return PortName(next_port_name++);
-  }
-
  private:
   NodeName node_name_;
 };
@@ -151,10 +152,10 @@ static void RunTest() {
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
-  x0 = node0_delegate.GeneratePortName();
-  x1 = node1_delegate.GeneratePortName();
-  node0.AddPort(x0, node1_name, x1);
-  node1.AddPort(x1, node0_name, x0);
+  node0.CreatePort(&x0);
+  node1.CreatePort(&x1);
+  node0.InitializePort(x0, node1_name, x1);
+  node1.InitializePort(x1, node0_name, x0);
 
   // Transfer a message from node0 to node1.
   node0.SendMessage(x0, NewStringMessage("hello world"));
