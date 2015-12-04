@@ -163,7 +163,7 @@ int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
       break;
   }
 
-  printf("Created port %lX@%lX\n", port_name->value, name_.value);
+  printf("Created port %X@%X\n", port_name->value, name_.value);
   return OK;
 }
 
@@ -315,7 +315,7 @@ int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
       return rv;
   }
 
-  printf("Sending message %u to %lX@%lX\n",
+  printf("Sending message %u to %X@%X\n",
       message->sequence_num,
       port->peer_port_name.value,
       port->peer_node_name.value);
@@ -369,7 +369,7 @@ void Node::Impl::MaybeRemovePort_Locked(Port* port, PortName port_name) {
       std::lock_guard<std::mutex> guard(ports_lock_);
       ports_.erase(port_name);
     }
-    printf("Deleted port %lX@%lX\n", port_name.value, name_.value);
+    printf("Deleted port %X@%X\n", port_name.value, name_.value);
   }
 }  
 
