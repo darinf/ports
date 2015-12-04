@@ -243,7 +243,7 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
     port->state = Port::kBuffering;
 
     // Our "peer" is now the new port, meaning we will forward messages to the
-    // new port. The referring port is now our old peer.
+    // new port.
     port->peer_node_name = to_node_name;
     port->peer_port_name = PortName();  // To be assigned.
 
