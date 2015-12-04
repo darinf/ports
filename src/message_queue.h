@@ -58,7 +58,7 @@ class MessageQueue {
   MessageQueue();
   ~MessageQueue();
 
-  bool IsEmpty();
+  uint32_t next_sequence_num() const { return next_sequence_num_; }
 
   // Gives ownership of the message.
   void GetNextMessage(ScopedMessage* message);

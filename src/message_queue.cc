@@ -42,10 +42,6 @@ MessageQueue::MessageQueue()
 MessageQueue::~MessageQueue() {
 }
 
-bool MessageQueue::IsEmpty() {
-  return impl_.empty();
-}
-
 void MessageQueue::GetNextMessage(ScopedMessage* message) {
   if (impl_.empty() || impl_.top()->sequence_num != next_sequence_num_) {
     message->reset();

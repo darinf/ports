@@ -157,21 +157,23 @@ static void RunTest() {
   node1.AddPort(x1, node0_name, x0);
 
   // Transfer a message from node0 to node1.
-  node0.SendMessage(x0, NewStringMessage("hello world"));
+  //XXX node0.SendMessage(x0, NewStringMessage("hello world"));
 
   // Transfer a port from node0 to node1.
   PortName a0, a1;
   node0.CreatePortPair(&a0, &a1);
   node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
-  node0.SendMessage(a0, NewStringMessage("hello over there"));
+  //XXX node0.SendMessage(a0, NewStringMessage("hello over there"));
 
   // Transfer a0 as well.
-  node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
+  //XXX node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
 
+/*
   PortName b0, b1;
   node0.CreatePortPair(&b0, &b1);
   node0.SendMessage(x0, NewStringMessageWithPort("take port (2)", b1));
   node0.SendMessage(b0, NewStringMessage("hello over there (2)"));
+*/
 
   PumpTasks();
 }

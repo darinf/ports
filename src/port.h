@@ -52,9 +52,8 @@ struct Port {
   PortName referring_port_name;
   uint32_t next_sequence_num;
   MessageQueue message_queue;
-  int32_t lock_count;
-  //XXX bool buffering_update_port;
-  //XXX bool delayed_update_port_ack;
+  int32_t lock_count;  // XXX do we need this?
+  bool removing;
 
   Port(NodeName peer_node_name,
        PortName peer_port_name,
@@ -63,7 +62,8 @@ struct Port {
         peer_node_name(peer_node_name),
         peer_port_name(peer_port_name),
         next_sequence_num(next_sequence_num),
-        lock_count(0) {}
+        lock_count(0),
+        removing(false) {}
 };
 
 }  // namespace ports

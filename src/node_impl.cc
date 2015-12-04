@@ -29,6 +29,8 @@
 
 #include "node_impl.h"
 
+#include <cassert>
+
 namespace ports {
 
 static int DebugError(const char* message, int error_code, const char* func) {
@@ -126,6 +128,14 @@ int Node::Impl::AcceptEvent(Event event) {
       return AcceptMessage(event.port_name, std::move(event.message));
     case Event::kPortAccepted:
       return PortAccepted(event.port_name);
+    case Event::kUpdatePeer:
+      return UpdatePeer(event.port_name,
+                        event.new_peer_node_name,
+                        event.new_peer_port_name);
+    case Event::kUpdatePeerAck:
+      return UpdatePeerAck(event.port_name,
+                           event.last_sequence_num,
+                           event.succeeded);
   }
   return Oops(ERROR_NOT_IMPLEMENTED);
 }
@@ -269,11 +279,15 @@ int Node::Impl::PortAccepted(PortName port_name) {
     port->state = Port::kProxying;
     port->lock_count--;
 
-    ForwardMessages_Locked(port.get());
+    int rv = ForwardMessages_Locked(port.get());
+    if (rv != OK)
+      return rv;
 
-    // TODO: initiate removal of this port if lock_count has gone to zero.
+    if (port->lock_count == 0) {
+      printf(">>> p%lX: initiating removal\n", port_name.value);
+      InitiateRemoval_Locked(port.get());
+    }
   }
-
   return OK;
 }
 
@@ -304,6 +318,87 @@ int Node::Impl::ForwardMessages_Locked(Port* port) {
     int rv = SendMessage_Locked(port, std::move(message));
     if (rv != OK)
       return rv;
+  }
+  return OK;
+}
+
+void Node::Impl::InitiateRemoval_Locked(Port* port) {
+  port->removing = true;
+
+  Event event(Event::kUpdatePeer);
+  event.port_name = port->referring_port_name;
+  event.new_peer_node_name = port->peer_node_name;
+  event.new_peer_port_name = port->peer_port_name;
+
+  delegate_->SendEvent(port->referring_node_name, std::move(event));
+}
+
+int Node::Impl::UpdatePeer(PortName port_name,
+                           NodeName new_peer_node_name,
+                           PortName new_peer_port_name) {
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return Oops(ERROR_PORT_UNKNOWN);
+
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+
+    printf(">>> p%lX: UpdatePeer(n%lX,p%lX)\n",
+        port_name.value, new_peer_node_name.value, new_peer_port_name.value);
+
+    NodeName old_peer_node_name = port->peer_node_name;
+    PortName old_peer_port_name = port->peer_port_name;
+
+    if (!port->removing) {
+      port->peer_node_name = new_peer_node_name;
+      port->peer_port_name = new_peer_port_name;
+
+      port->lock_count++;
+    }
+
+    Event event(Event::kUpdatePeerAck);
+    event.port_name = old_peer_port_name;
+    event.last_sequence_num = port->next_sequence_num - 1;
+    event.succeeded = !port->removing;
+
+    delegate_->SendEvent(old_peer_node_name, std::move(event));
+  }
+  return OK;
+}
+
+int Node::Impl::UpdatePeerAck(PortName port_name,
+                              uint32_t last_sequence_num,
+                              bool succeeded) {
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return Oops(ERROR_PORT_UNKNOWN);
+
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+
+    if (!succeeded) {
+      printf(">>> UpdatePeerAck(p%lX) rejected\n", port_name.value);
+
+      // We'll try again later (or now if our referring port already finished
+      // removing itself).
+      if (++port->lock_count == 0)
+        InitiateRemoval_Locked(port.get());
+    } else {
+      // Forward messages until our message queue has seen messages up to
+      // last_sequence_num. Then, we know we'll not see any more messages.
+
+      int rv = ForwardMessages_Locked(port.get());
+      if (rv != OK)
+        return rv;
+
+      printf(">>> UpdatePeerAck(p%lX) succeeded\n", port_name.value);
+
+      if (port->message_queue.next_sequence_num() == last_sequence_num + 1) {
+        // All messages have been forwarded. Now, flush messages to our peer.
+        // Make sure they have all been received.
+        // XXX
+      }
+    }
   }
   return OK;
 }

@@ -99,11 +99,18 @@ struct Event {
   enum Type {
     kAcceptMessage,
     kPortAccepted,
+    kUpdatePeer,
+    kUpdatePeerAck
   } type;
   PortName port_name;
+  NodeName new_peer_node_name;
+  PortName new_peer_port_name;
   ScopedMessage message;
-  uint32_t sequence_num;
-  explicit Event(Type type) : type(type), sequence_num(0) {}
+  uint32_t last_sequence_num;
+  bool succeeded;
+
+  explicit Event(Type type)
+      : type(type), last_sequence_num(0), succeeded(false) {}
 };
 
 // Implemented by the embedder.
