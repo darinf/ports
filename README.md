@@ -34,7 +34,9 @@ send messages to. In the simplest case of two connected ports A and B this
 forms a cycle like so:
 
 ```
-A --> B --> A
++--> A ---> B --+
+|               |
++---------------+
 ```
 
 When a port is moved to another node via `SendMessage`, what really happens
