@@ -56,13 +56,24 @@ to port C.
 
 To remove itself, port B does not try to directly talk to the port sending it
 messages. It doesn't have a pointer to A, so instead it forwards a message to
-its peer, port C, announcing that port B is a proxy to port C. Port C is
-not interested in this information but is happy to forward the message along.
-Port A receives the message, and can act on it to change its pointer to port
-C. As port A knows that its old peer was port B, port A can send port
-B a final last message indicating that its annoucement about being a proxy has
-been acknowledged. Now, port B is ready to remove itself.
+its peer, port C, announcing that port B is a proxy to port C. Port C is not
+interested in this information but is happy to forward the message along.  Port
+C forwards the message to its peer, port A. Port A receives the message, and
+can act on it to change its pointer to port C. As port A knows that its old
+peer was port B, port A can send port B a final last message indicating that
+its annoucement about being a proxy has been acknowledged. Now, port B is ready
+to remove itself.
 
 The last step for port B before removing itself is to ensure that any
 outstanding messages from port A have been forwarded to port C. Once that is
 done, port B can remove itself.
+
+To help simplify the implementation, all messages are assigned sequence numbers
+by the sending port. The sequence numbers increase incrementally by 1, and the
+recipient port uses the sequence numbers to ensure proper ordering of the
+received messages.
+
+When acknowledging a port's annoucement that it has become a proxy port, the
+sequence number of the last message sent to the proxy port is sent to the proxy
+port. This allows the proxy port to observe when it has received the last
+message it will receive.
