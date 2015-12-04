@@ -27,3 +27,20 @@ The ports library is thread safe, and a NodeDelegate may be invoked from any
 thread.
 
 ## Implementation details
+
+Ports can be thought of as items in a circular, singly linked list. Every port
+has a pointer to the next port, called its peer. In the simplest form this is
+a cycle like so:
+
+```
+A --> B --> A
+```
+
+When a port is moved to another node via `SendMessage`, what really happens
+under the hood is another port is created at the new node and inserted into the 
+list. If port `B` is moved to another node, then you end up with port `C` being
+created at the other node, and the resulting circular list looks like:
+
+```
+A --> B --> C --> A
+```
