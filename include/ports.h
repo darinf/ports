@@ -51,17 +51,17 @@ enum {
 // bound to.
 struct PortName {
   PortName() : value(0) {}
-  explicit PortName(uint32_t value) : value(value) {}
+  explicit PortName(uint64_t value) : value(value) {}
   bool operator==(const PortName& other) const { return other.value == value; }
-  uint32_t value;
+  uint64_t value;
 };
 
 // Node names are globally unique.
 struct NodeName {
   NodeName() : value(0) {}
-  explicit NodeName(uint32_t value) : value(value) {}
+  explicit NodeName(uint64_t value) : value(value) {}
   bool operator==(const NodeName& other) const { return other.value == value; }
-  uint32_t value;
+  uint64_t value;
 };
 
 struct PortDescriptor {

@@ -45,7 +45,7 @@ static void PrintMessage(const Message* message) {
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (i > 0)
       printf(",");
-    printf("p%X", message->ports[i].name.value);
+    printf("p%lX", message->ports[i].name.value);
   }
   printf("]");
 }
@@ -120,12 +120,12 @@ class TestNodeDelegate : public NodeDelegate {
       ScopedMessage message;
       if (node->GetMessage(port, &message) != OK || !message)
         break;
-      printf("n%X:MessagesAvailable(p%X)", node_name_.value, port.value);
+      printf("n%lX:MessagesAvailable(p%lX)", node_name_.value, port.value);
       PrintMessage(message.get());
       printf("\n");
       for (size_t i = 0; i < message->num_ports; ++i) {
         char buf[256];
-        snprintf(buf, sizeof(buf), "got port: p%X",
+        snprintf(buf, sizeof(buf), "got port: p%lX",
                  message->ports[i].name.value);
         node->SendMessage(message->ports[i].name,
                           std::move(NewStringMessage(buf)));
