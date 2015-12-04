@@ -30,7 +30,7 @@ thread.
 
 Ports can be thought of as items in a circular, singly linked list. Every port
 has a pointer to the next port, called its peer. This is the only port it can
-send messages to. In the simplest case of two connected ports `A` and `B` this
+send messages to. In the simplest case of two connected ports A and B this
 forms a cycle like so:
 
 ```
@@ -39,30 +39,30 @@ A --> B --> A
 
 When a port is moved to another node via `SendMessage`, what really happens
 under the hood is another port is created at the new node and inserted into the
-list. For example, if port `B` is moved to another node, then you end up with
-port `C` being created at the other node, and the resulting circular list looks
+list. For example, if port B is moved to another node, then you end up with
+port C being created at the other node, and the resulting circular list looks
 like this:
 
 ```
 A --> B --> C --> A
 ```
 
-Here, port `B` is just a forwarding port called a proxy. Messages are not
-delivered at port `B`, rather they are forwarded to port `C`. The embedding
-application does not see the existence of port `B`, and indeed port `B` upon
+Here, port B is just a forwarding port called a proxy. Messages are not
+delivered at port B, rather they are forwarded to port C. The embedding
+application does not see the existence of port B, and indeed port B upon
 becoming a proxy has a short lifespan. Once a port has become a proxy, its
-next step is to be eliminated. Port `A` should just send its messages directly
-to port `C`.
+next step is to be eliminated. Port A should just send its messages directly
+to port C.
 
-To remove itself, port `B` does not try to directly talk to the port sending it
-messages. It doesn't have a pointer to `A`, so instead it forwards a message to
-its peer, port `C`, announcing that port `B` is a proxy to port `C`. Port `C` is
+To remove itself, port B does not try to directly talk to the port sending it
+messages. It doesn't have a pointer to A, so instead it forwards a message to
+its peer, port C, announcing that port B is a proxy to port C. Port C is
 not interested in this information but is happy to forward the message along.
-Port `A` receives the message, and can act on it to change its pointer to port
-`C`. As port `A` knows that its old peer was port `B`, port `A` can send port
-`B` a final last message indicating that its annoucement about being a proxy has
-been acknowledged. Now, port `B` is ready to remove itself.
+Port A receives the message, and can act on it to change its pointer to port
+C. As port A knows that its old peer was port B, port A can send port
+B a final last message indicating that its annoucement about being a proxy has
+been acknowledged. Now, port B is ready to remove itself.
 
-The last step for port `B` before removing itself is to ensure that any
-outstanding messages from port `A` have been forwarded to port `C`. Once that is
-done, port `B` can remove itself.
+The last step for port B before removing itself is to ensure that any
+outstanding messages from port A have been forwarded to port C. Once that is
+done, port B can remove itself.
