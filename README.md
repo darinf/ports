@@ -1,4 +1,6 @@
-# ports
+# Ports
+
+## Overview
 
 Ports is a simple messaging system. In this system, ports come in pairs, and
 can be used for bi-directional communication. Messages are addressed to ports.
@@ -20,3 +22,8 @@ To use the library, allocate one or more Node objects. Provide a Node object
 with a NodeDelegate. This provides the Node with a means to communicate with
 the outside world and lets the embedder provide low-level transport and to
 observe when messages arrive at the node for handling.
+
+The ports library is thread safe, and a NodeDelegate may be invoked from any
+thread.
+
+## Implementation details
