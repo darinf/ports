@@ -107,8 +107,6 @@ class TestNodeDelegate : public NodeDelegate {
 
   virtual PortName GenerateRandomPortName() override {
     static uint64_t next_port_name = 1;
-    printf("n%lX:GenerateRandomPortName => p%lX\n",
-        node_name_.value, next_port_name);
     return PortName(next_port_name++);
   }
 

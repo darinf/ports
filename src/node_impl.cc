@@ -30,6 +30,7 @@
 #include "node_impl.h"
 
 #include <cassert>
+#include <cstdio>
 
 namespace ports {
 
@@ -96,17 +97,21 @@ int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
 }
 
 int Node::Impl::GetMessage(PortName port_name, ScopedMessage* message) {
+  *message = nullptr;
+
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
-    if (port->state == Port::kReceiving) {
-      port->message_queue.GetNextMessage(message);
-    } else {
-      *message = nullptr;
-    }
+
+    // This could also be treated like the port being unknown since the
+    // embedder should no longer be referring to a port that has been sent.
+    if (port->state != Port::kReceiving)
+      return Oops(ERROR_PORT_STATE_UNEXPECTED);
+
+    port->message_queue.GetNextMessage(message);
   }
   return OK;
 }
@@ -157,6 +162,8 @@ int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
     if (ports_.insert(std::make_pair(*port_name, port)).second)
       break;
   }
+
+  printf("Created port %lX@%lX\n", port_name->value, name_.value);
   return OK;
 }
 
@@ -294,7 +301,6 @@ int Node::Impl::PortAccepted(PortName port_name, PortName proxy_to_port_name) {
     if (rv != OK)
       return rv;
 
-    printf(">>> p%lX: initiating removal\n", port_name.value);
     InitiateRemoval_Locked(port.get(), port_name);
   }
   return OK;
@@ -308,6 +314,11 @@ int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
     if (rv != OK)
       return rv;
   }
+
+  printf("Sending message %u to %lX@%lX\n",
+      message->sequence_num,
+      port->peer_port_name.value,
+      port->peer_node_name.value);
 
   Event event(Event::kAcceptMessage);
   event.port_name = port->peer_port_name;
@@ -358,13 +369,11 @@ void Node::Impl::MaybeRemovePort_Locked(Port* port, PortName port_name) {
       std::lock_guard<std::mutex> guard(ports_lock_);
       ports_.erase(port_name);
     }
-    printf(">>> n%lX,p%lX: removed!\n", name_.value, port_name.value);
+    printf("Deleted port %lX@%lX\n", port_name.value, name_.value);
   }
 }  
 
 int Node::Impl::ObserveProxy(Event event) {
-  printf(">>> n%lX,p%lX: ObserveProxy\n", name_.value, event.port_name.value);
-
   std::shared_ptr<Port> port = GetPort(event.port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -381,9 +390,6 @@ int Node::Impl::ObserveProxy(Event event) {
       ack.port_name = event.proxy_port_name;
       ack.last_sequence_num = port->next_sequence_num - 1;
 
-      printf(">>> n%lX,p%lX: sending ObserveProxyAck\n",
-          name_.value, event.port_name.value);
-
       delegate_->SendEvent(event.proxy_node_name, std::move(ack));
     } else {
       // Forward this event along to our peer. Eventually, it should find the
@@ -398,8 +404,6 @@ int Node::Impl::ObserveProxy(Event event) {
 
 int Node::Impl::ObserveProxyAck(PortName port_name,
                                 uint32_t last_sequence_num) {
-  printf(">>> n%lX,p%lX: ObserveProxyAck\n", name_.value, port_name.value);
-
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
