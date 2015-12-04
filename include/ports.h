@@ -104,6 +104,8 @@ struct Event {
     kPortAccepted,
     kObserveProxy,
     kObserveProxyAck,
+    kObserveClosure,
+    kObserveClosureAck,
   } type;
   PortName port_name;
   NodeName proxy_node_name;

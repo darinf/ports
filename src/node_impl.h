@@ -70,6 +70,8 @@ class Node::Impl {
   void MaybeRemovePort_Locked(Port* port, PortName port_name);
   int ObserveProxy(Event event);
   int ObserveProxyAck(PortName port_name, uint32_t last_sequence_num);
+  int ObserveClosure(Event event);
+  int ObserveClosureAck(PortName port_name);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
