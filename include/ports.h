@@ -47,6 +47,8 @@ enum {
   ERROR_NOT_IMPLEMENTED = -100,
 };
 
+// TODO: Make these 128-bit to reduce guessability.
+
 // Port names are NOT globally unique. They are relative to the node they are
 // bound to.
 struct PortName {
