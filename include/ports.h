@@ -108,14 +108,27 @@ struct Event {
     kObserveClosureAck,
   } type;
   PortName port_name;
-  NodeName proxy_node_name;
-  PortName proxy_port_name;
-  NodeName proxy_to_node_name;
-  PortName proxy_to_port_name;
   ScopedMessage message;
-  uint32_t last_sequence_num;
-
-  explicit Event(Type type) : type(type), last_sequence_num(0) {}
+  union {
+    struct {
+      PortName new_port_name;
+    } port_accepted;
+    struct {
+      NodeName proxy_node_name;
+      PortName proxy_port_name;
+      NodeName proxy_to_node_name;
+      PortName proxy_to_port_name;
+    } observe_proxy;
+    struct {
+      uint32_t last_sequence_num;
+    } observe_proxy_ack;
+    struct {
+      NodeName closed_node_name;
+      PortName closed_port_name;
+      uint32_t last_sequence_num;
+    } observe_closure;
+  };
+  explicit Event(Type type) : type(type) {}
 };
 
 // Implemented by the embedder.
@@ -131,6 +144,10 @@ class NodeDelegate {
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
   virtual void MessagesAvailable(PortName port) = 0;
+
+  // Called when no more messages will be available on this port because the
+  // other end has been closed.
+  virtual void PeerClosed(PortName port) = 0;
 };
 
 class Node {
@@ -155,7 +172,8 @@ class Node {
   int CreatePortPair(PortName* port0, PortName* port1);
 
   // Prevents further messages from being sent from this port or delivered to
-  // this port. The port is removed, and the port's peer is notified.
+  // this port. The port is removed, and the port's peer is notified of the
+  // closure after it has consumed all pending messages.
   int ClosePort(PortName port);
 
   // Returns the next available message on the specified port or returns a null

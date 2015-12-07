@@ -118,9 +118,9 @@ int Node::Impl::ClosePort(PortName port_name) {
 
     Event event(Event::kObserveClosure);
     event.port_name = port->peer_port_name;
-    event.proxy_node_name = name_;
-    event.proxy_port_name = port_name;
-    event.last_sequence_num = port->next_sequence_num - 1;
+    event.observe_closure.closed_node_name = name_;
+    event.observe_closure.closed_port_name = port_name;
+    event.observe_closure.last_sequence_num = port->next_sequence_num - 1;
 
     delegate_->SendEvent(port->peer_node_name, std::move(event));
   }
@@ -175,11 +175,13 @@ int Node::Impl::AcceptEvent(Event event) {
     case Event::kAcceptMessage:
       return AcceptMessage(event.port_name, std::move(event.message));
     case Event::kPortAccepted:
-      return PortAccepted(event.port_name, event.proxy_to_port_name);
+      return PortAccepted(
+          event.port_name, event.port_accepted.new_port_name);
     case Event::kObserveProxy:
       return ObserveProxy(std::move(event));
     case Event::kObserveProxyAck:
-      return ObserveProxyAck(event.port_name, event.last_sequence_num);
+      return ObserveProxyAck(
+          event.port_name, event.observe_proxy_ack.last_sequence_num);
     case Event::kObserveClosure:
       return ObserveClosure(std::move(event));
     case Event::kObserveClosureAck:
@@ -317,7 +319,7 @@ int Node::Impl::AcceptPort(PortDescriptor* port_descriptor) {
 
   Event event(Event::kPortAccepted);
   event.port_name = port_descriptor->referring_port_name;
-  event.proxy_to_port_name = port_name;
+  event.port_accepted.new_port_name = port_name;
 
   delegate_->SendEvent(port_descriptor->referring_node_name, std::move(event));
   return OK;
@@ -389,10 +391,10 @@ void Node::Impl::InitiateRemoval_Locked(Port* port, PortName port_name) {
 
   Event event(Event::kObserveProxy);
   event.port_name = port->peer_port_name;
-  event.proxy_node_name = name_;
-  event.proxy_port_name = port_name;
-  event.proxy_to_node_name = port->peer_node_name;
-  event.proxy_to_port_name = port->peer_port_name;
+  event.observe_proxy.proxy_node_name = name_;
+  event.observe_proxy.proxy_port_name = port_name;
+  event.observe_proxy.proxy_to_node_name = port->peer_node_name;
+  event.observe_proxy.proxy_to_port_name = port->peer_port_name;
 
   delegate_->SendEvent(port->peer_node_name, std::move(event));
 }
@@ -421,16 +423,16 @@ int Node::Impl::ObserveProxy(Event event) {
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    if (port->peer_node_name == event.proxy_node_name &&
-        port->peer_port_name == event.proxy_port_name) {
-      port->peer_node_name = event.proxy_to_node_name; 
-      port->peer_port_name = event.proxy_to_port_name; 
+    if (port->peer_node_name == event.observe_proxy.proxy_node_name &&
+        port->peer_port_name == event.observe_proxy.proxy_port_name) {
+      port->peer_node_name = event.observe_proxy.proxy_to_node_name; 
+      port->peer_port_name = event.observe_proxy.proxy_to_port_name; 
 
       Event ack(Event::kObserveProxyAck);
-      ack.port_name = event.proxy_port_name;
-      ack.last_sequence_num = port->next_sequence_num - 1;
+      ack.port_name = event.observe_proxy.proxy_port_name;
+      ack.observe_proxy_ack.last_sequence_num = port->next_sequence_num - 1;
 
-      delegate_->SendEvent(event.proxy_node_name, std::move(ack));
+      delegate_->SendEvent(event.observe_proxy.proxy_node_name, std::move(ack));
     } else {
       // Forward this event along to our peer. Eventually, it should find the
       // port referring to the proxy.
@@ -472,8 +474,8 @@ int Node::Impl::ObserveClosure(Event event) {
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    if (port->peer_node_name == event.proxy_node_name &&
-        port->peer_port_name == event.proxy_port_name) {
+    if (port->peer_node_name == event.observe_closure.closed_node_name &&
+        port->peer_port_name == event.observe_closure.closed_port_name) {
       // TODO: Note that our peer is closed, and do not allow further sending
       // of messages. Signal to the embedder when we receive the last message
       // from our peer.

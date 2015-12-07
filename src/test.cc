@@ -133,6 +133,9 @@ class TestNodeDelegate : public NodeDelegate {
     }
   }
 
+  virtual void PeerClosed(PortName port_name) override {
+  }
+
  private:
   NodeName node_name_;
 };
