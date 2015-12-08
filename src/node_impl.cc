@@ -59,21 +59,32 @@ int Node::Impl::Shutdown() {
 
   bool has_proxies = false;
 
-  std::lock_guard<std::mutex> guard(ports_lock_);
-  for (auto iter = ports_.begin(); iter != ports_.end(); ) {
-    std::shared_ptr<Port>& port = iter->second;
+  {
+    std::lock_guard<std::mutex> guard(ports_lock_);
 
-    std::lock_guard<std::mutex> port_guard(port->lock);
-    if (port->state == Port::kReceiving) {
-      ClosePort_Locked(port.get(), iter->first);
-      iter = ports_.erase(iter);
-    } else {
-      has_proxies = true;
-      
-      // TODO: What if a port is in the buffering state and the node we are
-      // sending to is also shutting down?
+    for (auto iter = ports_.begin(); iter != ports_.end(); ) {
+      std::shared_ptr<Port>& port = iter->second;
 
-      ++iter;
+      bool should_erase = false;
+      {
+        std::lock_guard<std::mutex> port_guard(port->lock);
+
+        if (port->state == Port::kReceiving) {
+          ClosePort_Locked(port.get(), iter->first);
+          should_erase = true;
+        } else {
+          has_proxies = true;
+
+          // TODO: What if a port is in the buffering state and the node we are
+          // sending to is also shutting down?
+        }
+      }
+
+      if (should_erase) {
+        iter = ports_.erase(iter);
+      } else {
+        ++iter;
+      }
     }
   }
 
