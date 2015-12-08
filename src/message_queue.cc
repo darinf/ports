@@ -57,6 +57,7 @@ void MessageQueue::GetNextMessage(ScopedMessage* message) {
 
 void MessageQueue::AcceptMessage(ScopedMessage message,
                                  bool* has_next_message) {
+  // TODO: Handle sequence number roll-over.
   impl_.emplace(std::move(message));
   *has_next_message = (impl_.top()->sequence_num == next_sequence_num_);
 }

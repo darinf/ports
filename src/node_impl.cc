@@ -51,6 +51,7 @@ Node::Impl::~Impl() {
 }
 
 int Node::Impl::Shutdown() {
+  // TODO:
   return Oops(ERROR_NOT_IMPLEMENTED);
 }
 
@@ -177,6 +178,8 @@ int Node::Impl::AcceptEvent(Event event) {
     case Event::kPortAccepted:
       return PortAccepted(
           event.port_name, event.port_accepted.new_port_name);
+    case Event::kPortRejected:
+      return PortRejected(event.port_name);
     case Event::kObserveProxy:
       return ObserveProxy(std::move(event));
     case Event::kObserveProxyAck:
@@ -219,12 +222,23 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
 
+  // If the port is closed, then instead of accepting these ports, we should
+  // reject them.
+  bool reject_message = false;
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+    if (port->state == Port::kClosed)
+      reject_message = true;
+  }
+  if (reject_message) {
+    for (size_t i = 0; i < message->num_ports; ++i)
+      RejectPort(&message->ports[i]);
+    return OK;
+  }
+
   // Even if this port is buffering or proxying messages, we still need these
   // ports to be bound to this node. When the message is forwarded, these ports
   // will get transferred following the usual method.
-
-  // TODO: If the port is closed, then instead of accepting these ports, we
-  // should reject them.
 
   for (size_t i = 0; i < message->num_ports; ++i) {
     int rv = AcceptPort(&message->ports[i]);
@@ -237,9 +251,7 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
     std::lock_guard<std::mutex> guard(port->lock);
 
     port->message_queue.AcceptMessage(std::move(message), &has_next_message);
-    if (port->state == Port::kClosed) {
-      has_next_message = false;
-    } if (port->state == Port::kBuffering) {
+    if (port->state == Port::kBuffering) {
       has_next_message = false;
     } else if (port->state == Port::kProxying) {
       has_next_message = false;
@@ -299,6 +311,33 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
   return OK;
 }
 
+void Node::Impl::RejectPort(PortDescriptor* port_descriptor) {
+  Event event(Event::kPortRejected);
+  event.port_name = port_descriptor->referring_port_name;
+
+  delegate_->SendEvent(port_descriptor->referring_node_name, std::move(event));
+}
+
+int Node::Impl::PortRejected(PortName port_name) {
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return Oops(ERROR_PORT_UNKNOWN);
+
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+
+    if (port->state != Port::kBuffering)
+      return Oops(ERROR_PORT_STATE_UNEXPECTED);
+
+    port->state = Port::kProxying;
+    port->peer_closed = true;
+
+    // TODO: Deal with queued messages.
+    // TODO: Signal to our old peer that we are closed.
+  }
+  return OK;
+}
+
 int Node::Impl::AcceptPort(PortDescriptor* port_descriptor) {
   std::shared_ptr<Port> port =
       std::make_shared<Port>(port_descriptor->next_sequence_num);
@@ -349,6 +388,9 @@ int Node::Impl::PortAccepted(PortName port_name, PortName proxy_to_port_name) {
 }
 
 int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
+  if (port->peer_closed)
+    return Oops(ERROR_PORT_PEER_CLOSED);
+
   message->sequence_num = port->next_sequence_num++;
 
   for (size_t i = 0; i < message->num_ports; ++i) {
@@ -401,6 +443,10 @@ void Node::Impl::InitiateRemoval_Locked(Port* port, PortName port_name) {
 
 void Node::Impl::MaybeRemovePort_Locked(Port* port, PortName port_name) {
   assert(port->state == Port::kProxying);
+
+  // Make sure we have seen ObserveProxyAck before removing the port.
+  if (!port->doomed)
+    return;
 
   uint32_t last_sequence_num_proxied = 
       port->message_queue.next_sequence_num() - 1;
@@ -479,6 +525,8 @@ int Node::Impl::ObserveClosure(Event event) {
       // TODO: Note that our peer is closed, and do not allow further sending
       // of messages. Signal to the embedder when we receive the last message
       // from our peer.
+
+      port->peer_closed = true;
 
       Event ack(Event::kObserveClosureAck);
       ack.port_name = port->peer_port_name;

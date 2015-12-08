@@ -63,6 +63,8 @@ class Node::Impl {
   std::shared_ptr<Port> GetPort(PortName port_name);
   int AcceptMessage(PortName port_name, ScopedMessage message);
   int WillSendPort(NodeName to_node_name, PortDescriptor* port_descriptor);
+  void RejectPort(PortDescriptor* port_descriptor);
+  int PortRejected(PortName port_name);
   int AcceptPort(PortDescriptor* port_descriptor);
   int PortAccepted(PortName port_name, PortName proxy_to_port_name);
   int SendMessage_Locked(Port* port, ScopedMessage message);
