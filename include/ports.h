@@ -37,13 +37,15 @@
 namespace ports {
 
 enum {
+  OK_SHUTDOWN_DELAYED = 1,
   OK = 0,
-  ERROR_PORT_UNKNOWN = -1,
-  ERROR_PORT_EXISTS = -2,
-  ERROR_PORT_ALREADY_INITIALIZED = -3,
-  ERROR_PORT_STATE_UNEXPECTED = -4,
-  ERROR_PORT_CANNOT_SEND_SELF = -5,
-  ERROR_PORT_PEER_CLOSED = -6,
+  ERROR_SHUTDOWN = -1,
+  ERROR_PORT_UNKNOWN = -10,
+  ERROR_PORT_EXISTS = -11,
+  ERROR_PORT_ALREADY_INITIALIZED = -12,
+  ERROR_PORT_STATE_UNEXPECTED = -13,
+  ERROR_PORT_CANNOT_SEND_SELF = -14,
+  ERROR_PORT_PEER_CLOSED = -15,
   ERROR_NOT_IMPLEMENTED = -100,
 };
 
@@ -106,7 +108,6 @@ struct Event {
     kObserveProxy,
     kObserveProxyAck,
     kObserveClosure,
-    kObserveClosureAck,
   } type;
   PortName port_name;
   ScopedMessage message;
@@ -136,6 +137,9 @@ struct Event {
 // Implemented by the embedder.
 class NodeDelegate {
  public:
+  // The Node can now be deleted.
+  virtual void ShutdownComplete() = 0;
+
   // Port names should be difficult to guess.
   virtual PortName GenerateRandomPortName() = 0;
 
@@ -146,10 +150,6 @@ class NodeDelegate {
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
   virtual void MessagesAvailable(PortName port) = 0;
-
-  // Called when no more messages will be available on this port because the
-  // other end has been closed.
-  virtual void PeerClosed(PortName port) = 0;
 };
 
 class Node {
@@ -157,7 +157,10 @@ class Node {
   Node(NodeName name, NodeDelegate* delegate);
   ~Node();
 
-  // Closes all ports and prevents creation of new ports.
+  // Closes all ports gracefully. Returns OK if the Node can be deleted now.
+  // Otherwise, returns OK_SHUTDOWN_DELAYED to indicate that the caller should
+  // continue feeding events to the node (via AcceptEvent) and wait for
+  // ShutdownComplete before deleting the Node.
   int Shutdown();
 
   // Creates a port on this node. Before the port can be used, it must be

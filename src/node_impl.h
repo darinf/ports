@@ -60,6 +60,7 @@ class Node::Impl {
   NodeDelegate* delegate_;
 
   int AddPort(std::shared_ptr<Port> port, PortName* port_name);
+  void ErasePort(PortName port_name);
   std::shared_ptr<Port> GetPort(PortName port_name);
   int AcceptMessage(PortName port_name, ScopedMessage message);
   int WillSendPort(NodeName to_node_name, PortDescriptor* port_descriptor);
@@ -72,14 +73,15 @@ class Node::Impl {
   int SendMessage_Locked(Port* port, ScopedMessage message);
   int ForwardMessages_Locked(Port* port);
   void InitiateRemoval_Locked(Port* port, PortName port_name);
-  void MaybeRemovePort_Locked(Port* port, PortName port_name);
+  void MaybeRemoveProxy_Locked(Port* port, PortName port_name);
   int ObserveProxy(Event event);
   int ObserveProxyAck(PortName port_name, uint32_t last_sequence_num);
   int ObserveClosure(Event event);
-  int ObserveClosureAck(PortName port_name);
+  void ClosePort_Locked(Port* port, PortName port_name);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
+  bool shutting_down_;
 };
 
 }  // namespace ports

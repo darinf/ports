@@ -44,18 +44,49 @@ static int DebugError(const char* message, int error_code, const char* func) {
 
 Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
     : name_(name),
-      delegate_(delegate) {
+      delegate_(delegate),
+      shutting_down_(false) {
 }
 
 Node::Impl::~Impl() {
 }
 
 int Node::Impl::Shutdown() {
-  // TODO:
-  return Oops(ERROR_NOT_IMPLEMENTED);
+  shutting_down_ = true;
+
+  // Any receiving ports need to be closed. Any proxy ports need to stay open
+  // until they are all removed.
+
+  bool has_proxies = false;
+
+  std::lock_guard<std::mutex> guard(ports_lock_);
+  for (auto iter = ports_.begin(); iter != ports_.end(); ) {
+    std::shared_ptr<Port>& port = iter->second;
+
+    std::lock_guard<std::mutex> port_guard(port->lock);
+    if (port->state == Port::kReceiving) {
+      ClosePort_Locked(port.get(), iter->first);
+      iter = ports_.erase(iter);
+    } else {
+      has_proxies = true;
+      
+      // TODO: What if a port is in the buffering state and the node we are
+      // sending to is also shutting down?
+
+      ++iter;
+    }
+  }
+
+  if (has_proxies)
+    return OK_SHUTDOWN_DELAYED;
+
+  return OK;
 }
 
 int Node::Impl::CreatePort(PortName* port_name) {
+  if (shutting_down_)
+    return Oops(ERROR_SHUTDOWN);
+
   std::shared_ptr<Port> port = std::make_shared<Port>(kInitialSequenceNum);
   return AddPort(std::move(port), port_name);
 }
@@ -63,6 +94,9 @@ int Node::Impl::CreatePort(PortName* port_name) {
 int Node::Impl::InitializePort(PortName port_name,
                                NodeName peer_node_name,
                                PortName peer_port_name) {
+  if (shutting_down_)
+    return Oops(ERROR_SHUTDOWN);
+
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -80,6 +114,9 @@ int Node::Impl::InitializePort(PortName port_name,
 }
 
 int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
+  if (shutting_down_)
+    return Oops(ERROR_SHUTDOWN);
+
   int rv;
 
   rv = CreatePort(port_name_0);
@@ -102,6 +139,9 @@ int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
 }
 
 int Node::Impl::ClosePort(PortName port_name) {
+  if (shutting_down_)
+    return Oops(ERROR_SHUTDOWN);
+
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -111,25 +151,18 @@ int Node::Impl::ClosePort(PortName port_name) {
     if (port->state != Port::kReceiving)
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
 
-    port->state = Port::kClosed;
-
-    // We pass along the sequence number of the last message sent from this
-    // port to allow the peer to have the opportunity to consume all inbound
-    // messages before notifying the embedder that this port is closed.
-
-    Event event(Event::kObserveClosure);
-    event.port_name = port->peer_port_name;
-    event.observe_closure.closed_node_name = name_;
-    event.observe_closure.closed_port_name = port_name;
-    event.observe_closure.last_sequence_num = port->next_sequence_num - 1;
-
-    delegate_->SendEvent(port->peer_node_name, std::move(event));
+    ClosePort_Locked(port.get(), port_name);
   }
+  ErasePort(port_name);
+
   return OK;
 }
 
 int Node::Impl::GetMessage(PortName port_name, ScopedMessage* message) {
   *message = nullptr;
+
+  if (shutting_down_)
+    return Oops(ERROR_SHUTDOWN);
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -143,14 +176,24 @@ int Node::Impl::GetMessage(PortName port_name, ScopedMessage* message) {
     if (port->state != Port::kReceiving)
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
 
-    port->message_queue.GetNextMessage(message);
+    // Let the embedder get messages until there are no more before reporting
+    // that the peer closed its end.
+    if (port->peer_closed) {
+      uint32_t last_sequence_num_received = 
+          port->message_queue.next_sequence_num() - 1;
+      if (last_sequence_num_received == port->last_sequence_num_to_receive)
+        return ERROR_PORT_PEER_CLOSED;
+    }
 
-    // TODO: Signal PeerClosed here, but that means re-entering the caller :(
+    port->message_queue.GetNextMessage(message);
   }
   return OK;
 }
 
 int Node::Impl::SendMessage(PortName port_name, ScopedMessage message) {
+  if (shutting_down_)
+    return Oops(ERROR_SHUTDOWN);
+
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (message->ports[i].name == port_name)
       return Oops(ERROR_PORT_CANNOT_SEND_SELF);
@@ -191,8 +234,6 @@ int Node::Impl::AcceptEvent(Event event) {
           event.port_name, event.observe_proxy_ack.last_sequence_num);
     case Event::kObserveClosure:
       return ObserveClosure(std::move(event));
-    case Event::kObserveClosureAck:
-      return ObserveClosureAck(event.port_name);
   }
   return Oops(ERROR_NOT_IMPLEMENTED);
 }
@@ -211,6 +252,15 @@ int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
   return OK;
 }
 
+void Node::Impl::ErasePort(PortName port_name) {
+  std::lock_guard<std::mutex> guard(ports_lock_);
+  ports_.erase(port_name);
+  printf("Deleted port %lX@%lX\n", port_name.value, name_.value);
+
+  if (shutting_down_ && ports_.empty())
+    delegate_->ShutdownComplete();  
+}
+
 std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
   std::lock_guard<std::mutex> guard(ports_lock_);
 
@@ -223,21 +273,22 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
 
 int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
 
-  // If this port is closed, then we cannot accept the message, and any ports
-  // sent to us will need to be rejected. Implementation note: We can't accept
-  // and then close the ports as that would introduce a race condition between
-  // PortAccepted and ObserveClosure.
+  // If this port is closed or non-existent, then we cannot accept the message,
+  // and any ports sent to us will need to be rejected. Implementation note: We
+  // can't accept and then close the ports as that would introduce a race
+  // condition between PortAccepted and ObserveClosure.
 
-  bool reject_message = false;
-  {
+  bool reject_message;
+  if (port) {
     std::lock_guard<std::mutex> guard(port->lock);
-    if (port->state == Port::kClosed)
-      reject_message = true;
+    reject_message = (port->state == Port::kClosed);
+  } else {
+    reject_message = true;
   }
   if (reject_message) {
+    printf("Rejecting message %u to %lX@%lX\n",
+        message->sequence_num, port_name.value, name_.value);
     for (size_t i = 0; i < message->num_ports; ++i)
       RejectPort(&message->ports[i]);
     return OK;
@@ -271,7 +322,7 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
       if (rv != OK)
         return rv;
 
-      MaybeRemovePort_Locked(port.get(), port_name);
+      MaybeRemoveProxy_Locked(port.get(), port_name);
     }
   }
   if (has_next_message)
@@ -330,12 +381,10 @@ int Node::Impl::PortRejected(PortName port_name) {
     if (port->state != Port::kBuffering)
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
 
-    port->state = Port::kProxying;
-    port->peer_closed = true;
-
-    // TODO: Deal with queued messages.
-    // TODO: Signal to our old peer that we are closed.
+    ClosePort_Locked(port.get(), port_name);
   }
+  ErasePort(port_name);
+
   return OK;
 }
 
@@ -434,7 +483,8 @@ int Node::Impl::ForwardMessages_Locked(Port* port) {
 void Node::Impl::InitiateRemoval_Locked(Port* port, PortName port_name) {
   // To remove this node, we start by notifying the connected graph that we are
   // a proxy. This allows whatever port is referencing this node to skip it.
-  // Eventually, this node will receivce an ObserveProxyAck.
+  // Eventually, this node will receive ObserveProxyAck (or ObserveClosure if
+  // the peer was closed in the meantime).
 
   Event event(Event::kObserveProxy);
   event.port_name = port->peer_port_name;
@@ -446,7 +496,7 @@ void Node::Impl::InitiateRemoval_Locked(Port* port, PortName port_name) {
   delegate_->SendEvent(port->peer_node_name, std::move(event));
 }
 
-void Node::Impl::MaybeRemovePort_Locked(Port* port, PortName port_name) {
+void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
   assert(port->state == Port::kProxying);
 
   // Make sure we have seen ObserveProxyAck before removing the port.
@@ -456,20 +506,19 @@ void Node::Impl::MaybeRemovePort_Locked(Port* port, PortName port_name) {
   uint32_t last_sequence_num_proxied = 
       port->message_queue.next_sequence_num() - 1;
 
-  if (last_sequence_num_proxied == port->last_sequence_num_to_proxy) {
-    // This port is done. We can now remove it!
-    {
-      std::lock_guard<std::mutex> guard(ports_lock_);
-      ports_.erase(port_name);
-    }
-    printf("Deleted port %lX@%lX\n", port_name.value, name_.value);
+  if (last_sequence_num_proxied == port->last_sequence_num_to_receive) {
+    // This proxy port is done. We can now remove it!
+    ErasePort(port_name);
   }
 }  
 
 int Node::Impl::ObserveProxy(Event event) {
+  // The port may have already been closed locally, in which case the
+  // ObserveClosure message will contain the last_sequence_num field.
+  // We can then silently ignore this message.
   std::shared_ptr<Port> port = GetPort(event.port_name);
   if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+    return OK;
   
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -510,53 +559,61 @@ int Node::Impl::ObserveProxyAck(PortName port_name,
     // We can now remove this port once we have received and forwarded the last
     // message addressed to this port.
     port->doomed = true;
-    port->last_sequence_num_to_proxy = last_sequence_num;
+    port->last_sequence_num_to_receive = last_sequence_num;
 
-    MaybeRemovePort_Locked(port.get(), port_name);
+    MaybeRemoveProxy_Locked(port.get(), port_name);
   }
   return OK;
 }
 
 int Node::Impl::ObserveClosure(Event event) {
+  // When this message makes its way completely back around to its source,
+  // we can silently drop it.
   std::shared_ptr<Port> port = GetPort(event.port_name);
   if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+    return OK;
 
+  // This message tells every port that it should no longer expect more
+  // messages beyond last_sequence_num.
+
+  PortName port_name = event.port_name;
+  bool notify_delegate = false;
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    if (port->peer_node_name == event.observe_closure.closed_node_name &&
-        port->peer_port_name == event.observe_closure.closed_port_name) {
-      // TODO: Note that our peer is closed, and do not allow further sending
-      // of messages. Signal to the embedder when we receive the last message
-      // from our peer.
+    if (port->state == Port::kReceiving)
+      notify_delegate = true;
 
-      port->peer_closed = true;
+    port->peer_closed = true;
+    port->last_sequence_num_to_receive =
+        event.observe_closure.last_sequence_num;
 
-      Event ack(Event::kObserveClosureAck);
-      ack.port_name = port->peer_port_name;
-
-      delegate_->SendEvent(port->peer_node_name, std::move(ack));
-    } else {
-      // Forward this event along to our peer. Eventually, it should find the
-      // port referring to the closed port.
-      event.port_name = port->peer_port_name;
-
-      delegate_->SendEvent(port->peer_node_name, std::move(event));
-    }
+    // Forward this event along.
+    event.port_name = port->peer_port_name;
+    delegate_->SendEvent(port->peer_node_name, std::move(event));
   }
+  if (notify_delegate)
+    delegate_->MessagesAvailable(port_name);
   return OK;
 }
 
-int Node::Impl::ObserveClosureAck(PortName port_name) {
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+void Node::Impl::ClosePort_Locked(Port* port, PortName port_name) {
+  port->state = Port::kClosed;
 
-  // TODO: Do we need to keep this around much as if it were a proxy to help
-  // reject incoming messages with ports?
+  if (port->peer_closed)
+    return;
 
-  return OK;
+  // We pass along the sequence number of the last message sent from this
+  // port to allow the peer to have the opportunity to consume all inbound
+  // messages before notifying the embedder that this port is closed.
+
+  Event event(Event::kObserveClosure);
+  event.port_name = port->peer_port_name;
+  event.observe_closure.closed_node_name = name_;
+  event.observe_closure.closed_port_name = port_name;
+  event.observe_closure.last_sequence_num = port->next_sequence_num - 1;
+
+  delegate_->SendEvent(port->peer_node_name, std::move(event));
 }
 
 }  // namespace ports

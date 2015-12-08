@@ -105,6 +105,9 @@ class TestNodeDelegate : public NodeDelegate {
   explicit TestNodeDelegate(NodeName node_name) : node_name_(node_name) {
   }
 
+  virtual void ShutdownComplete() override {
+  }
+
   virtual PortName GenerateRandomPortName() override {
     static uint64_t next_port_name = 1;
     return PortName(next_port_name++);
@@ -131,9 +134,6 @@ class TestNodeDelegate : public NodeDelegate {
                           std::move(NewStringMessage(buf)));
       }
     }
-  }
-
-  virtual void PeerClosed(PortName port_name) override {
   }
 
  private:
@@ -175,7 +175,13 @@ static void RunTest() {
   node0.SendMessage(x0, NewStringMessageWithPort("take port (2)", b1));
   node0.SendMessage(b0, NewStringMessage("hello over there (2)"));
 
+  // This may cause a SendMessage(b1) failure.
   node0.ClosePort(b0);
+
+  PumpTasks();
+
+  node0.Shutdown();
+  node1.Shutdown();
 
   PumpTasks();
 }
