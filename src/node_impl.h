@@ -66,7 +66,9 @@ class Node::Impl {
   void RejectPort(PortDescriptor* port_descriptor);
   int PortRejected(PortName port_name);
   int AcceptPort(PortDescriptor* port_descriptor);
-  int PortAccepted(PortName port_name, PortName proxy_to_port_name);
+  int PortAccepted(PortName port_name,
+                   NodeName proxy_to_node_name,
+                   PortName proxy_to_port_name);
   int SendMessage_Locked(Port* port, ScopedMessage message);
   int ForwardMessages_Locked(Port* port);
   void InitiateRemoval_Locked(Port* port, PortName port_name);

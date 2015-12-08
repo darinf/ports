@@ -112,6 +112,7 @@ struct Event {
   ScopedMessage message;
   union {
     struct {
+      NodeName new_node_name;
       PortName new_port_name;
     } port_accepted;
     struct {
