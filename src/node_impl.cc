@@ -274,19 +274,13 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
 int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   std::shared_ptr<Port> port = GetPort(port_name);
 
-  // If this port is closed or non-existent, then we cannot accept the message,
-  // and any ports sent to us will need to be rejected. Implementation note: We
-  // can't accept and then close the ports as that would introduce a race
-  // condition between PortAccepted and ObserveClosure.
+  // If this port is already closed or doesn't exist, then we cannot accept the
+  // message, and any ports sent to us will need to be rejected. Implementation
+  // note: We can't accept and then close the ports as that would introduce a
+  // race condition between PortAccepted and ObserveClosure. TODO: We could
+  // perhaps workaround that by minting the port name in WillSendPort.
 
-  bool reject_message;
-  if (port) {
-    std::lock_guard<std::mutex> guard(port->lock);
-    reject_message = (port->state == Port::kClosed);
-  } else {
-    reject_message = true;
-  }
-  if (reject_message) {
+  if (!port) {
     printf("Rejecting message %u to %lX@%lX\n",
         message->sequence_num, port_name.value, name_.value);
     for (size_t i = 0; i < message->num_ports; ++i)
@@ -598,8 +592,6 @@ int Node::Impl::ObserveClosure(Event event) {
 }
 
 void Node::Impl::ClosePort_Locked(Port* port, PortName port_name) {
-  port->state = Port::kClosed;
-
   if (port->peer_closed)
     return;
 

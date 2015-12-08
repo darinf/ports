@@ -41,8 +41,7 @@ struct Port {
   enum State {
     kReceiving,
     kBuffering,
-    kProxying,
-    kClosed
+    kProxying
   };
 
   std::mutex lock;
