@@ -77,10 +77,16 @@ int Node::Impl::Shutdown() {
 
           // TODO: What if a port is in the buffering state and the node we are
           // sending to is also shutting down?
+          if (port->state == Port::kBuffering) {
+            printf(">>> Delaying shutdown for port %lX@%lX in buffering state\n", iter->first.value, name_.value);
+          } else {
+            printf(">>> Delaying shutdown for port %lX@%lX in proxying state\n", iter->first.value, name_.value);
+          }
         }
       }
 
       if (should_erase) {
+        printf("Deleted port %lX@%lX\n", iter->first.value, name_.value);
         iter = ports_.erase(iter);
       } else {
         ++iter;
@@ -572,30 +578,41 @@ int Node::Impl::ObserveProxyAck(PortName port_name,
 }
 
 int Node::Impl::ObserveClosure(Event event) {
-  // When this message makes its way completely back around to its source,
-  // we can silently drop it.
+  // OK if the port doesn't exist, as it may have been closed already.
   std::shared_ptr<Port> port = GetPort(event.port_name);
   if (!port)
     return OK;
 
-  // This message tells every port that it should no longer expect more
-  // messages beyond last_sequence_num.
+  // This message tells the port that it should no longer expect more messages
+  // beyond last_sequence_num. This message is forwarded along until we reach
+  // the receiving end, and this message serves as an equivalent to
+  // ObserveProxyAck.
 
   PortName port_name = event.port_name;
   bool notify_delegate = false;
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    if (port->state == Port::kReceiving)
-      notify_delegate = true;
-
     port->peer_closed = true;
     port->last_sequence_num_to_receive =
         event.observe_closure.last_sequence_num;
 
-    // Forward this event along.
-    event.port_name = port->peer_port_name;
-    delegate_->SendEvent(port->peer_node_name, std::move(event));
+    if (port->state == Port::kReceiving) {
+      notify_delegate = true;
+    } else {
+      NodeName next_node_name = port->peer_node_name;
+      PortName next_port_name = port->peer_port_name;
+
+      // See about removing the port if it is a proxy.
+      if (port->state == Port::kProxying) {
+        port->doomed = true;
+        MaybeRemoveProxy_Locked(port.get(), event.port_name);
+      }
+
+      // Forward this event along.
+      event.port_name = next_port_name;
+      delegate_->SendEvent(next_node_name, std::move(event));
+    }
   }
   if (notify_delegate)
     delegate_->MessagesAvailable(port_name);
