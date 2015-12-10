@@ -77,11 +77,8 @@ int Node::Impl::Shutdown() {
 
           // TODO: What if a port is in the buffering state and the node we are
           // sending to is also shutting down?
-          if (port->state == Port::kBuffering) {
-            printf(">>> Delaying shutdown for port %lX@%lX in buffering state\n", iter->first.value, name_.value);
-          } else {
-            printf(">>> Delaying shutdown for port %lX@%lX in proxying state\n", iter->first.value, name_.value);
-          }
+
+          printf("Delaying shutdown for port %lX@%lX\n", iter->first.value, name_.value);
         }
       }
 
@@ -225,6 +222,9 @@ int Node::Impl::SendMessage(PortName port_name, ScopedMessage message) {
 
     if (port->state != Port::kReceiving)
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
+
+    if (port->peer_closed)
+      return Oops(ERROR_PORT_PEER_CLOSED);
 
     int rv = SendMessage_Locked(port.get(), std::move(message));
     if (rv != OK)
@@ -453,9 +453,6 @@ int Node::Impl::PortAccepted(PortName port_name,
 }
 
 int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
-  if (port->peer_closed)
-    return Oops(ERROR_PORT_PEER_CLOSED);
-
   message->sequence_num = port->next_sequence_num++;
 
   for (size_t i = 0; i < message->num_ports; ++i) {
@@ -520,6 +517,9 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
   if (last_sequence_num_proxied == port->last_sequence_num_to_receive) {
     // This proxy port is done. We can now remove it!
     ErasePort(port_name);
+  } else {
+    printf("Cannot remove port %lX@%lX now; waiting for more messages\n", 
+        port_name.value, name_.value);
   }
 }  
 
@@ -597,6 +597,9 @@ int Node::Impl::ObserveClosure(Event event) {
     port->last_sequence_num_to_receive =
         event.observe_closure.last_sequence_num;
 
+    printf("Observing closure at %lX@%lX\n",
+        event.port_name.value, name_.value);
+
     if (port->state == Port::kReceiving) {
       notify_delegate = true;
     } else {
@@ -629,6 +632,7 @@ void Node::Impl::ClosePort_Locked(Port* port, PortName port_name) {
 
   Event event(Event::kObserveClosure);
   event.port_name = port->peer_port_name;
+  // XXX eliminate these fields
   event.observe_closure.closed_node_name = name_;
   event.observe_closure.closed_port_name = port_name;
   event.observe_closure.last_sequence_num = port->next_sequence_num - 1;
