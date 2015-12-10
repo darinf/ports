@@ -189,6 +189,10 @@ class Node {
   // Corresponding to NodeDelegate::SendEvent.
   int AcceptEvent(Event event);
 
+  // Called to inform this node that communication with another node is lost
+  // indefinitely. This triggers cleanup of ports bound to this node.
+  int LostConnectionToNode(NodeName node);
+
  private:
   struct Impl;
   Impl* impl_;

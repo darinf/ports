@@ -54,6 +54,7 @@ class Node::Impl {
   int GetMessage(PortName port_name, ScopedMessage* message);
   int SendMessage(PortName port_name, ScopedMessage message); 
   int AcceptEvent(Event event);
+  int LostConnectionToNode(NodeName node_name);
 
  private:
   NodeName name_;

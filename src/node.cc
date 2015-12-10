@@ -71,4 +71,8 @@ int Node::AcceptEvent(Event event) {
   return impl_->AcceptEvent(std::move(event));
 }
 
+int Node::LostConnectionToNode(NodeName node) {
+  return impl_->LostConnectionToNode(node);
+}
+
 }  // namespace ports

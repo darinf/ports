@@ -257,6 +257,11 @@ int Node::Impl::AcceptEvent(Event event) {
   return Oops(ERROR_NOT_IMPLEMENTED);
 }
 
+int Node::Impl::LostConnectionToNode(NodeName node_name) {
+  // TODO: Enumerate all ports and simulate ObserveClosure.
+  return Oops(ERROR_NOT_IMPLEMENTED);
+}
+
 int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
   // Ensure we end up with a unique port name.
   for (;;) {
