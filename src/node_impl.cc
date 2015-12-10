@@ -49,6 +49,8 @@ Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
 }
 
 Node::Impl::~Impl() {
+  if (!ports_.empty())
+    printf("Warning: unclean shutdown for node %lX!\n", name_.value);
 }
 
 int Node::Impl::Shutdown() {

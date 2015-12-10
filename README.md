@@ -92,4 +92,16 @@ are just proxy ports that are both interested in being removed. Applying the
 send an announcement algorithm from above, it is clear that the removal of
 ports A and B can happen simultaneously without it causing any inconsistencies.
 
-## TODO: Figure out shutdown
+## Shutdown and closing ports
+
+To shutdown a node, first all receiving ports are closed. Any proxy ports need
+to remain open until they can be removed, as they may still need to forward
+incoming messages along. Shutdown for a node is therefore potentially
+two-phase.
+
+Upon closing a port, a message is sent to the peer informing it that its peer
+has closed. This message includes the sequence number of the last message the
+port should expect to receive from its closed peer. The port then waits to
+receive the last message before signalling to the embedder that its peer has
+been closed. Trying to send a message from a port with a closed peer results
+in an error.
