@@ -632,9 +632,6 @@ void Node::Impl::ClosePort_Locked(Port* port, PortName port_name) {
 
   Event event(Event::kObserveClosure);
   event.port_name = port->peer_port_name;
-  // XXX eliminate these fields
-  event.observe_closure.closed_node_name = name_;
-  event.observe_closure.closed_port_name = port_name;
   event.observe_closure.last_sequence_num = port->next_sequence_num - 1;
 
   delegate_->SendEvent(port->peer_node_name, std::move(event));

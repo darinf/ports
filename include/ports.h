@@ -126,8 +126,6 @@ struct Event {
       uint32_t last_sequence_num;
     } observe_proxy_ack;
     struct {
-      NodeName closed_node_name;
-      PortName closed_port_name;
       uint32_t last_sequence_num;
     } observe_closure;
   };
