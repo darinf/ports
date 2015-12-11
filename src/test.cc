@@ -36,6 +36,8 @@
 
 #include "../include/ports.h"
 
+#include <gtest/gtest.h>
+
 namespace ports {
 namespace test {
 
@@ -102,8 +104,12 @@ static ScopedMessage NewStringMessageWithPort(const char* s, PortName port) {
 
 class TestNodeDelegate : public NodeDelegate {
  public:
-  explicit TestNodeDelegate(NodeName node_name) : node_name_(node_name) {
+  explicit TestNodeDelegate(NodeName node_name)
+      : node_name_(node_name),
+        drop_events_(false) {
   }
+
+  void DropEvents() { drop_events_ = true; }
 
   virtual PortName GenerateRandomPortName() override {
     static uint64_t next_port_name = 1;
@@ -111,6 +117,14 @@ class TestNodeDelegate : public NodeDelegate {
   }
 
   virtual void SendEvent(NodeName node_name, Event event) override {
+    if (drop_events_) {
+      printf("n%lX:dropping event %d to %lX@%lX\n",
+          node_name_.value,
+          event.type,
+          node_name.value,
+          event.port_name.value);
+      return;
+    }
     task_queue.push(new Task(node_name, std::move(event)));
   }
 
@@ -135,9 +149,18 @@ class TestNodeDelegate : public NodeDelegate {
 
  private:
   NodeName node_name_;
+  bool drop_events_;
 };
 
-static void RunTest() {
+class PortsTest : public testing::Test {
+ public:
+  PortsTest() {
+    node_map[0] = nullptr;
+    node_map[1] = nullptr;
+  }
+};
+
+TEST_F(PortsTest, Basic) {
   NodeName node0_name(0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
@@ -180,22 +203,53 @@ static void RunTest() {
   if (node0.Shutdown() == OK_SHUTDOWN_DELAYED)
     printf("n0:shutdown delayed\n");
 
+  PumpTasks();
+
   if (node1.Shutdown() == OK_SHUTDOWN_DELAYED)
     printf("n1:shutdown delayed\n");
 
   PumpTasks();
 
-  if (node0.Shutdown() == OK_SHUTDOWN_DELAYED)
-    printf("n0:shutdown still delayed!\n");
+  EXPECT_EQ(OK, node0.Shutdown());
+  EXPECT_EQ(OK, node1.Shutdown());
+}
 
-  if (node1.Shutdown() == OK_SHUTDOWN_DELAYED)
-    printf("n1:shutdown still delayed!\n");
+TEST_F(PortsTest, LostConnectionToNode) {
+  NodeName node0_name(0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  NodeName node1_name(1);
+  TestNodeDelegate node1_delegate(node1_name);
+  Node node1(node1_name, &node1_delegate);
+  node_map[1] = &node1;
+
+  // Setup pipe between node0 and node1.
+  PortName x0, x1;
+  node0.CreatePort(&x0);
+  node1.CreatePort(&x1);
+  node0.InitializePort(x0, node1_name, x1);
+  node1.InitializePort(x1, node0_name, x0);
+
+  // Transfer port to node1 and simulate a lost connection to node1. Dropping
+  // events from node1 is how we simulate the lost connection.
+
+  node1_delegate.DropEvents();
+
+  PortName a0, a1;
+  node0.CreatePortPair(&a0, &a1);
+  node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
+
+  PumpTasks();
+
+  node0.LostConnectionToNode(node1_name);
+
+  PumpTasks();
+
+  EXPECT_EQ(OK, node0.Shutdown());
+  EXPECT_EQ(OK, node1.Shutdown());
 }
 
 }  // namespace test
 }  // namespace ports
-
-int main(int argc, char** argv) {
-  ports::test::RunTest();
-  return 0;
-}

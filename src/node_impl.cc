@@ -34,9 +34,15 @@
 
 namespace ports {
 
+#ifdef NODE_LOGGING
+#define Log(...) printf(__VA_ARGS__)
+#else
+#define Log(...)
+#endif
+
 static int DebugError(const char* message, int error_code, const char* func) {
 #ifndef NDEBUG
-  printf("*** %s: %s\n", message, func);
+  Log("*** %s: %s\n", message, func);
 #endif
   return error_code;
 }
@@ -51,10 +57,12 @@ Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
 
 Node::Impl::~Impl() {
   if (!ports_.empty())
-    printf("Warning: unclean shutdown for node %lX!\n", name_.value);
+    Log("Warning: unclean shutdown for node %lX!\n", name_.value);
 }
 
 int Node::Impl::Shutdown() {
+  Log("Shutdown at node %lX\n", name_.value);
+
   // OK to call Shutdown as many times as an application wishes.
 
   // Any receiving ports need to be closed. Any proxy ports need to stay open
@@ -76,6 +84,9 @@ int Node::Impl::Shutdown() {
         std::lock_guard<std::mutex> port_guard(port->lock);
 
         if (port->state == Port::kReceiving) {
+          // TODO: This could generate ObserveClosure events to other ports
+          // bound to this node. Perhaps we should suppress those events or
+          // handle them directly?
           ClosePort_Locked(port.get(), iter->first);
           should_erase = true;
         } else {
@@ -84,18 +95,21 @@ int Node::Impl::Shutdown() {
           // TODO: What if a port is in the buffering state and the node we are
           // sending to is also shutting down?
 
-          printf("Delaying shutdown for port %lX@%lX\n",
+          Log("Delaying shutdown for port %lX@%lX\n",
               iter->first.value, name_.value);
         }
       }
 
       if (should_erase) {
-        printf("Deleted port %lX@%lX\n", iter->first.value, name_.value);
+        Log("Deleted port %lX@%lX\n", iter->first.value, name_.value);
         iter = ports_.erase(iter);
       } else {
         ++iter;
       }
     }
+
+    if (ports_.empty())
+      shutdown_complete_ = true;
   }
 
   if (shutdown_delayed)
@@ -241,6 +255,9 @@ int Node::Impl::SendMessage(PortName port_name, ScopedMessage message) {
 }
 
 int Node::Impl::AcceptEvent(Event event) {
+  Log("Accepting event %d for %lX@%lX\n",
+      event.type, event.port_name.value, name_.value);
+
   // OK to accept events while we are trying to shutdown, but not after we are
   // finally shutdown.
   if (IsShutdownComplete())
@@ -272,6 +289,9 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
   // We can no longer send events to the given node. We also can't expect any
   // AcceptPort or RejectPort events.
 
+  Log("Observing lost connection from node %lX to node %lX\n",
+      name_.value, node_name.value);
+
   {
     std::lock_guard<std::mutex> guard(lock_);
 
@@ -282,8 +302,16 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
 
     for (auto iter = ports_.begin(); iter != ports_.end(); ) {
       std::shared_ptr<Port>& port = iter->second;
+
+      bool matches;
+      if (port->state == Port::kReceiving || port->state == Port::kProxying) {
+        matches = (port->peer_node_name == node_name);
+      } else {
+        matches = (port->sending_to_node_name == node_name);
+      }
+
       bool remove_port = false;
-      if (port->peer_node_name == node_name) {
+      if (matches) {
         // We can no longer send messages to this port's peer. We don't know
         // the sequence number of the last message we will receive though.
         port->peer_closed = true;
@@ -292,7 +320,7 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
           remove_port = true;
       }
       if (remove_port) {
-        printf("Deleted port %lX@%lX\n", iter->first.value, name_.value);
+        Log("Deleted port %lX@%lX\n", iter->first.value, name_.value);
         iter = ports_.erase(iter); 
       } else {
         ++iter;
@@ -326,7 +354,7 @@ int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
       break;
   }
 
-  printf("Created port %lX@%lX\n", port_name->value, name_.value);
+  Log("Created port %lX@%lX\n", port_name->value, name_.value);
   return OK;
 }
 
@@ -334,7 +362,7 @@ void Node::Impl::ErasePort(PortName port_name) {
   std::lock_guard<std::mutex> guard(lock_);
 
   ports_.erase(port_name);
-  printf("Deleted port %lX@%lX\n", port_name.value, name_.value);
+  Log("Deleted port %lX@%lX\n", port_name.value, name_.value);
 
   if (shutting_down_ && ports_.empty())
     shutdown_complete_ = true;
@@ -360,7 +388,7 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   // perhaps workaround that by minting the port name in WillSendPort.
 
   if (!port) {
-    printf("Rejecting message %u to %lX@%lX\n",
+    Log("Rejecting message %u to %lX@%lX\n",
         message->sequence_num, port_name.value, name_.value);
     for (size_t i = 0; i < message->num_ports; ++i)
       RejectPort(&message->ports[i]);
@@ -423,6 +451,7 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
     // Make sure we don't send messages to the new peer until after we know it
     // exists. In the meantime, just buffer messages locally.
     port->state = Port::kBuffering;
+    port->sending_to_node_name = to_node_name;
 
     // Our "peer" will be updated in PortAccepted.
 
@@ -523,7 +552,7 @@ int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
       return rv;
   }
 
-  printf("Sending message %u to %lX@%lX\n",
+  Log("Sending message %u to %lX@%lX\n",
       message->sequence_num,
       port->peer_port_name.value,
       port->peer_node_name.value);
@@ -580,7 +609,7 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
     // This proxy port is done. We can now remove it!
     ErasePort(port_name);
   } else {
-    printf("Cannot remove port %lX@%lX now; waiting for more messages\n", 
+    Log("Cannot remove port %lX@%lX now; waiting for more messages\n", 
         port_name.value, name_.value);
   }
 }  
@@ -659,7 +688,7 @@ int Node::Impl::ObserveClosure(Event event) {
     port->last_sequence_num_to_receive =
         event.observe_closure.last_sequence_num;
 
-    printf("Observing closure at %lX@%lX\n",
+    Log("Observing closure at %lX@%lX\n",
         event.port_name.value, name_.value);
 
     if (port->state == Port::kReceiving) {
