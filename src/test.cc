@@ -105,10 +105,6 @@ class TestNodeDelegate : public NodeDelegate {
   explicit TestNodeDelegate(NodeName node_name) : node_name_(node_name) {
   }
 
-  virtual void ShutdownComplete() override {
-    printf("n%lX:ShutdownComplete\n", node_name_.value);
-  }
-
   virtual PortName GenerateRandomPortName() override {
     static uint64_t next_port_name = 1;
     return PortName(next_port_name++);
@@ -188,6 +184,12 @@ static void RunTest() {
     printf("n1:shutdown delayed\n");
 
   PumpTasks();
+
+  if (node0.Shutdown() == OK_SHUTDOWN_DELAYED)
+    printf("n0:shutdown still delayed!\n");
+
+  if (node1.Shutdown() == OK_SHUTDOWN_DELAYED)
+    printf("n1:shutdown still delayed!\n");
 }
 
 }  // namespace test

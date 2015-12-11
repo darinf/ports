@@ -135,9 +135,6 @@ struct Event {
 // Implemented by the embedder.
 class NodeDelegate {
  public:
-  // The Node can now be deleted.
-  virtual void ShutdownComplete() = 0;
-
   // Port names should be difficult to guess.
   virtual PortName GenerateRandomPortName() = 0;
 
@@ -156,9 +153,10 @@ class Node {
   ~Node();
 
   // Closes all ports gracefully. Returns OK if the Node can be deleted now.
-  // Otherwise, returns OK_SHUTDOWN_DELAYED to indicate that the caller should
-  // continue feeding events to the node (via AcceptEvent) and wait for
-  // ShutdownComplete before deleting the Node.
+  // Otherwise, returns OK_SHUTDOWN_DELAYED to indicate that shutdown cannot be
+  // completed synchronously, and the caller should continue feeding events to
+  // the node, via AcceptEvent and LostConnectionToNode, and then call Shutdown
+  // again to test if the Node can be deleted.
   int Shutdown();
 
   // Creates a port on this node. Before the port can be used, it must be
