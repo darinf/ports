@@ -87,6 +87,14 @@ static void PumpTasks() {
   }
 }
 
+static void DiscardPendingTasks() {
+  while (!task_queue.empty()) {
+    Task* task = task_queue.top();
+    task_queue.pop();
+    delete task;
+  }
+}
+
 static ScopedMessage NewStringMessage(const char* s) {
   size_t len = strlen(s) + 1;
   Message* message = AllocMessage(len, 0); 
@@ -106,10 +114,12 @@ class TestNodeDelegate : public NodeDelegate {
  public:
   explicit TestNodeDelegate(NodeName node_name)
       : node_name_(node_name),
-        drop_events_(false) {
+        drop_events_(false),
+        read_messages_(true) {
   }
 
-  void DropEvents() { drop_events_ = true; }
+  void set_drop_events(bool value) { drop_events_ = value; }
+  void set_read_messages(bool value) { read_messages_ = value; }
 
   virtual PortName GenerateRandomPortName() override {
     static uint64_t next_port_name = 1;
@@ -130,6 +140,8 @@ class TestNodeDelegate : public NodeDelegate {
   }
 
   virtual void MessagesAvailable(PortName port) override {
+    if (!read_messages_)
+      return;
     Node* node = node_map[node_name_.value];
     for (;;) {
       ScopedMessage message;
@@ -154,6 +166,7 @@ class TestNodeDelegate : public NodeDelegate {
  private:
   NodeName node_name_;
   bool drop_events_;
+  bool read_messages_;
 };
 
 class PortsTest : public testing::Test {
@@ -164,6 +177,7 @@ class PortsTest : public testing::Test {
   }
   
   ~PortsTest() {
+    DiscardPendingTasks();
     node_map[0] = nullptr;
     node_map[1] = nullptr;
   }
@@ -206,8 +220,6 @@ TEST_F(PortsTest, Basic1) {
 
   EXPECT_EQ(OK, node0.Shutdown());
   EXPECT_EQ(OK, node1.Shutdown());
-
-  PumpTasks();
 }
 
 TEST_F(PortsTest, Basic2) {
@@ -227,20 +239,6 @@ TEST_F(PortsTest, Basic2) {
   node1.CreatePort(&x1);
   node0.InitializePort(x0, node1_name, x1);
   node1.InitializePort(x1, node0_name, x0);
-
-  // Transfer a message from node0 to node1.
-  //XXX node0.SendMessage(x0, NewStringMessage("hello world"));
-
-/*
-  // Transfer a port from node0 to node1.
-  PortName a0, a1;
-  node0.CreatePortPair(&a0, &a1);
-  node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
-  node0.SendMessage(a0, NewStringMessage("hello over there"));
-
-  // Transfer a0 as well.
-  node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
-*/
 
   PortName b0, b1;
   node0.CreatePortPair(&b0, &b1);
@@ -264,8 +262,57 @@ TEST_F(PortsTest, Basic2) {
 
   EXPECT_EQ(OK, node0.Shutdown());
   EXPECT_EQ(OK, node1.Shutdown());
+}
+
+TEST_F(PortsTest, Basic3) {
+  NodeName node0_name(0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  NodeName node1_name(1);
+  TestNodeDelegate node1_delegate(node1_name);
+  Node node1(node1_name, &node1_delegate);
+  node_map[1] = &node1;
+
+  // Setup pipe between node0 and node1.
+  PortName x0, x1;
+  node0.CreatePort(&x0);
+  node1.CreatePort(&x1);
+  node0.InitializePort(x0, node1_name, x1);
+  node1.InitializePort(x1, node0_name, x0);
+
+  // Transfer a port from node0 to node1.
+  PortName a0, a1;
+  node0.CreatePortPair(&a0, &a1);
+  node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
+  node0.SendMessage(a0, NewStringMessage("hello over there"));
+
+  // Transfer a0 as well.
+  node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
+
+  PortName b0, b1;
+  node0.CreatePortPair(&b0, &b1);
+  node0.SendMessage(x0, NewStringMessageWithPort("take port (2)", b1));
+  node0.SendMessage(b0, NewStringMessage("hello over there (2)"));
+
+  // This may cause a SendMessage(b1) failure.
+  node0.ClosePort(b0);
 
   PumpTasks();
+
+  if (node0.Shutdown() == OK_SHUTDOWN_DELAYED)
+    printf("n0:shutdown delayed\n");
+
+  PumpTasks();
+
+  if (node1.Shutdown() == OK_SHUTDOWN_DELAYED)
+    printf("n1:shutdown delayed\n");
+
+  PumpTasks();
+
+  EXPECT_EQ(OK, node0.Shutdown());
+  EXPECT_EQ(OK, node1.Shutdown());
 }
 
 TEST_F(PortsTest, LostConnectionToNode) {
@@ -289,7 +336,7 @@ TEST_F(PortsTest, LostConnectionToNode) {
   // Transfer port to node1 and simulate a lost connection to node1. Dropping
   // events from node1 is how we simulate the lost connection.
 
-  node1_delegate.DropEvents();
+  node1_delegate.set_drop_events(true);
 
   PortName a0, a1;
   node0.CreatePortPair(&a0, &a1);
@@ -303,8 +350,94 @@ TEST_F(PortsTest, LostConnectionToNode) {
 
   EXPECT_EQ(OK, node0.Shutdown());
   EXPECT_EQ(OK, node1.Shutdown());
+}
+
+TEST_F(PortsTest, GetMessage1) {
+  NodeName node0_name(0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  PortName a0, a1;
+  node0.CreatePortPair(&a0, &a1);
+
+  ScopedMessage message;
+  EXPECT_EQ(OK, node0.GetMessage(a0, &message));
+  EXPECT_FALSE(message);
+
+  node0.ClosePort(a1);
+
+  EXPECT_EQ(OK, node0.GetMessage(a0, &message));
+  EXPECT_FALSE(message);
 
   PumpTasks();
+
+  EXPECT_EQ(ERROR_PORT_PEER_CLOSED, node0.GetMessage(a0, &message));
+  EXPECT_FALSE(message);
+
+  EXPECT_EQ(OK, node0.Shutdown());
+}
+
+TEST_F(PortsTest, GetMessage2) {
+  NodeName node0_name(0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_read_messages(false);
+
+  PortName a0, a1;
+  node0.CreatePortPair(&a0, &a1);
+
+  node0.SendMessage(a1, NewStringMessage("1"));
+
+  ScopedMessage message;
+  EXPECT_EQ(OK, node0.GetMessage(a0, &message));
+  EXPECT_FALSE(message);
+
+  PumpTasks();
+
+  EXPECT_EQ(OK, node0.GetMessage(a0, &message));
+  ASSERT_TRUE(message);
+  EXPECT_EQ(0, strcmp(static_cast<char*>(message->bytes), "1"));
+
+  EXPECT_EQ(OK, node0.Shutdown());
+}
+
+TEST_F(PortsTest, GetMessage3) {
+  NodeName node0_name(0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_read_messages(false);
+
+  PortName a0, a1;
+  node0.CreatePortPair(&a0, &a1);
+
+  const char* kStrings[] = {
+    "1",
+    "2",
+    "3"
+  };
+
+  for (size_t i = 0; i < sizeof(kStrings)/sizeof(kStrings[0]); ++i)
+    node0.SendMessage(a1, NewStringMessage(kStrings[i]));
+
+  ScopedMessage message;
+  EXPECT_EQ(OK, node0.GetMessage(a0, &message));
+  EXPECT_FALSE(message);
+
+  PumpTasks();
+
+  for (size_t i = 0; i < sizeof(kStrings)/sizeof(kStrings[0]); ++i) {
+    EXPECT_EQ(OK, node0.GetMessage(a0, &message));
+    ASSERT_TRUE(message);
+    EXPECT_EQ(0, strcmp(static_cast<char*>(message->bytes), kStrings[i]));
+    printf("got %s\n", kStrings[i]);
+  }
+
+  EXPECT_EQ(OK, node0.Shutdown());
 }
 
 }  // namespace test

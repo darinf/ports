@@ -30,10 +30,10 @@
 #ifndef PORTS_SRC_MESSAGE_QUEUE_H_
 #define PORTS_SRC_MESSAGE_QUEUE_H_
 
-#include <deque>
 #include <functional>
 #include <memory>
 #include <queue>
+#include <vector>
 
 #include "../include/ports.h"
 
@@ -43,7 +43,7 @@ template <>
 struct greater<std::unique_ptr<ports::Message>> {
   bool operator()(const std::unique_ptr<ports::Message>& a,
                   const std::unique_ptr<ports::Message>& b) {
-    return a->sequence_num > b->sequence_num;
+    return a->sequence_num < b->sequence_num;
   }
 };
 
@@ -71,7 +71,7 @@ class MessageQueue {
 
  private:
   typedef std::priority_queue<ScopedMessage,
-                              std::deque<ScopedMessage>,
+                              std::vector<ScopedMessage>,
                               std::greater<ScopedMessage>> Impl;
   Impl impl_;
   uint32_t next_sequence_num_;
