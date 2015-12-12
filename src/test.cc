@@ -125,6 +125,7 @@ class TestNodeDelegate : public NodeDelegate {
           event.port_name.value);
       return;
     }
+    printf("n%lX:send event to %lX\n", node_name_.value, node_name.value);
     task_queue.push(new Task(node_name, std::move(event)));
   }
 
@@ -143,6 +144,9 @@ class TestNodeDelegate : public NodeDelegate {
                  message->ports[i].name.value);
         node->SendMessage(message->ports[i].name,
                           std::move(NewStringMessage(buf)));
+
+        // Avoid leaking these ports.
+        node->ClosePort(message->ports[i].name);
       }
     }
   }
@@ -160,7 +164,46 @@ class PortsTest : public testing::Test {
   }
 };
 
-TEST_F(PortsTest, Basic) {
+TEST_F(PortsTest, Basic1) {
+  NodeName node0_name(0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  NodeName node1_name(1);
+  TestNodeDelegate node1_delegate(node1_name);
+  Node node1(node1_name, &node1_delegate);
+  node_map[1] = &node1;
+
+  // Setup pipe between node0 and node1.
+  PortName x0, x1;
+  node0.CreatePort(&x0);
+  node1.CreatePort(&x1);
+  node0.InitializePort(x0, node1_name, x1);
+  node1.InitializePort(x1, node0_name, x0);
+
+  // Transfer a port from node0 to node1.
+  PortName a0, a1;
+  node0.CreatePortPair(&a0, &a1);
+  node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
+
+  PumpTasks();
+
+  if (node0.Shutdown() == OK_SHUTDOWN_DELAYED)
+    printf("n0:shutdown delayed\n");
+
+  PumpTasks();
+
+  if (node1.Shutdown() == OK_SHUTDOWN_DELAYED)
+    printf("n1:shutdown delayed\n");
+
+  PumpTasks();
+
+  EXPECT_EQ(OK, node0.Shutdown());
+  EXPECT_EQ(OK, node1.Shutdown());
+}
+
+TEST_F(PortsTest, Basic2) {
   NodeName node0_name(0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);

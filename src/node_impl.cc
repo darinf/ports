@@ -95,8 +95,8 @@ int Node::Impl::Shutdown() {
           // TODO: What if a port is in the buffering state and the node we are
           // sending to is also shutting down?
 
-          Log("Delaying shutdown for port %lX@%lX\n",
-              iter->first.value, name_.value);
+          Log("Delaying shutdown for port %lX@%lX (state=%u)\n",
+              iter->first.value, name_.value, port->state);
         }
       }
 
@@ -255,9 +255,6 @@ int Node::Impl::SendMessage(PortName port_name, ScopedMessage message) {
 }
 
 int Node::Impl::AcceptEvent(Event event) {
-  Log("Accepting event %d for %lX@%lX\n",
-      event.type, event.port_name.value, name_.value);
-
   // OK to accept events while we are trying to shutdown, but not after we are
   // finally shutdown.
   if (IsShutdownComplete())
@@ -379,6 +376,9 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
 }
 
 int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
+  Log("AcceptMessage %u at %lX@%lX\n",
+      message->sequence_num, port_name.value, name_.value);
+
   std::shared_ptr<Port> port = GetPort(port_name);
 
   // If this port is already closed or doesn't exist, then we cannot accept the
@@ -473,6 +473,8 @@ void Node::Impl::RejectPort(PortDescriptor* port_descriptor) {
 }
 
 int Node::Impl::PortRejected(PortName port_name) {
+  Log("PortRejected at %lX@%lX\n", port_name.value, name_.value);
+
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -520,6 +522,10 @@ int Node::Impl::AcceptPort(PortDescriptor* port_descriptor) {
 int Node::Impl::PortAccepted(PortName port_name,
                              NodeName proxy_to_node_name,
                              PortName proxy_to_port_name) {
+  Log("PortAccepted at %lX@%lX pointing to %lX@%lX\n",
+      port_name.value, name_.value,
+      proxy_to_port_name.value, proxy_to_node_name.value);
+
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -619,8 +625,18 @@ int Node::Impl::ObserveProxy(Event event) {
   // ObserveClosure message will contain the last_sequence_num field.
   // We can then silently ignore this message.
   std::shared_ptr<Port> port = GetPort(event.port_name);
-  if (!port)
+  if (!port) {
+    Log("ObserveProxy: %lX@%lX not found\n",
+        event.port_name.value, name_.value);
     return OK;
+  }
+
+  Log("ObserveProxy at %lX@%lX, proxy at %lX@%lX pointing to %lX@%lX\n",
+      event.port_name.value, name_.value,
+      event.observe_proxy.proxy_port_name.value,
+      event.observe_proxy.proxy_node_name.value,
+      event.observe_proxy.proxy_to_port_name.value,
+      event.observe_proxy.proxy_to_node_name.value);
   
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -648,6 +664,9 @@ int Node::Impl::ObserveProxy(Event event) {
 
 int Node::Impl::ObserveProxyAck(PortName port_name,
                                 uint32_t last_sequence_num) {
+  Log("ObserveProxyAck at %lX@%lX (last_sequence_num=%u)\n",
+      port_name.value, name_.value, last_sequence_num);
+
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -688,8 +707,14 @@ int Node::Impl::ObserveClosure(Event event) {
     port->last_sequence_num_to_receive =
         event.observe_closure.last_sequence_num;
 
-    Log("Observing closure at %lX@%lX\n",
-        event.port_name.value, name_.value);
+    Log("ObserveClosure at %lX@%lX (state=%u) pointing to %lX@%lX (last_sequence_num=%u)\n",
+        event.port_name.value,
+        name_.value,
+        port->state,
+        port->peer_port_name.value,
+        port->peer_node_name.value,
+        event.observe_closure.last_sequence_num);
+
 
     if (port->state == Port::kReceiving) {
       notify_delegate = true;
@@ -715,8 +740,10 @@ int Node::Impl::ObserveClosure(Event event) {
 }
 
 void Node::Impl::ClosePort_Locked(Port* port, PortName port_name) {
-  if (port->peer_closed)
+/*
+  if (port->peer_closed)  // XXX maybe this should be removed.
     return;
+*/
 
   // We pass along the sequence number of the last message sent from this
   // port to allow the peer to have the opportunity to consume all inbound
