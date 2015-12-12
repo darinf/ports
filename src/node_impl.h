@@ -75,7 +75,7 @@ class Node::Impl {
                    PortName proxy_to_port_name);
   int SendMessage_Locked(Port* port, ScopedMessage message);
   int ForwardMessages_Locked(Port* port);
-  void InitiateRemoval_Locked(Port* port, PortName port_name);
+  void InitiateProxyRemoval_Locked(Port* port, PortName port_name);
   void MaybeRemoveProxy_Locked(Port* port, PortName port_name);
   int ObserveProxy(Event event);
   int ObserveProxyAck(PortName port_name, uint32_t last_sequence_num);

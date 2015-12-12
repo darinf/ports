@@ -544,7 +544,11 @@ int Node::Impl::PortAccepted(PortName port_name,
     if (rv != OK)
       return rv;
 
-    InitiateRemoval_Locked(port.get(), port_name);
+    if (port->doomed) {
+      MaybeRemoveProxy_Locked(port.get(), port_name);
+    } else {
+      InitiateProxyRemoval_Locked(port.get(), port_name);
+    }
   }
   return OK;
 }
@@ -585,7 +589,7 @@ int Node::Impl::ForwardMessages_Locked(Port* port) {
   return OK;
 }
 
-void Node::Impl::InitiateRemoval_Locked(Port* port, PortName port_name) {
+void Node::Impl::InitiateProxyRemoval_Locked(Port* port, PortName port_name) {
   // To remove this node, we start by notifying the connected graph that we are
   // a proxy. This allows whatever port is referencing this node to skip it.
   // Eventually, this node will receive ObserveProxyAck (or ObserveClosure if
@@ -715,23 +719,23 @@ int Node::Impl::ObserveClosure(Event event) {
         port->peer_node_name.value,
         event.observe_closure.last_sequence_num);
 
-
     if (port->state == Port::kReceiving) {
       notify_delegate = true;
     } else {
       NodeName next_node_name = port->peer_node_name;
       PortName next_port_name = port->peer_port_name;
 
-      // See about removing the port if it is a proxy.
-      if (port->state == Port::kProxying) {
-        port->doomed = true;
-        MaybeRemoveProxy_Locked(port.get(), event.port_name);
-      }
-      // TODO: Think through the buffering case.
+      port->doomed = true;
 
-      // Forward this event along.
-      event.port_name = next_port_name;
-      delegate_->SendEvent(next_node_name, std::move(event));
+      // See about removing the port if it is a proxy as our peer won't be able
+      // to participate in proxy removal.
+      if (port->state == Port::kProxying) {
+        MaybeRemoveProxy_Locked(port.get(), event.port_name);
+
+        // Forward this event along.
+        event.port_name = next_port_name;
+        delegate_->SendEvent(next_node_name, std::move(event));
+      }
     }
   }
   if (notify_delegate)
@@ -740,11 +744,6 @@ int Node::Impl::ObserveClosure(Event event) {
 }
 
 void Node::Impl::ClosePort_Locked(Port* port, PortName port_name) {
-/*
-  if (port->peer_closed)  // XXX maybe this should be removed.
-    return;
-*/
-
   // We pass along the sequence number of the last message sent from this
   // port to allow the peer to have the opportunity to consume all inbound
   // messages before notifying the embedder that this port is closed.

@@ -162,6 +162,11 @@ class PortsTest : public testing::Test {
     node_map[0] = nullptr;
     node_map[1] = nullptr;
   }
+  
+  ~PortsTest() {
+    node_map[0] = nullptr;
+    node_map[1] = nullptr;
+  }
 };
 
 TEST_F(PortsTest, Basic1) {
@@ -201,6 +206,8 @@ TEST_F(PortsTest, Basic1) {
 
   EXPECT_EQ(OK, node0.Shutdown());
   EXPECT_EQ(OK, node1.Shutdown());
+
+  PumpTasks();
 }
 
 TEST_F(PortsTest, Basic2) {
@@ -222,8 +229,9 @@ TEST_F(PortsTest, Basic2) {
   node1.InitializePort(x1, node0_name, x0);
 
   // Transfer a message from node0 to node1.
-  node0.SendMessage(x0, NewStringMessage("hello world"));
+  //XXX node0.SendMessage(x0, NewStringMessage("hello world"));
 
+/*
   // Transfer a port from node0 to node1.
   PortName a0, a1;
   node0.CreatePortPair(&a0, &a1);
@@ -232,6 +240,7 @@ TEST_F(PortsTest, Basic2) {
 
   // Transfer a0 as well.
   node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
+*/
 
   PortName b0, b1;
   node0.CreatePortPair(&b0, &b1);
@@ -255,6 +264,8 @@ TEST_F(PortsTest, Basic2) {
 
   EXPECT_EQ(OK, node0.Shutdown());
   EXPECT_EQ(OK, node1.Shutdown());
+
+  PumpTasks();
 }
 
 TEST_F(PortsTest, LostConnectionToNode) {
@@ -292,6 +303,8 @@ TEST_F(PortsTest, LostConnectionToNode) {
 
   EXPECT_EQ(OK, node0.Shutdown());
   EXPECT_EQ(OK, node1.Shutdown());
+
+  PumpTasks();
 }
 
 }  // namespace test
