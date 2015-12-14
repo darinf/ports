@@ -37,19 +37,12 @@
 
 #include "../include/ports.h"
 
-namespace std {
-
-template <>
-struct greater<std::unique_ptr<ports::Message>> {
-  bool operator()(const std::unique_ptr<ports::Message>& a,
-                  const std::unique_ptr<ports::Message>& b) {
-    return a->sequence_num < b->sequence_num;
-  }
-};
-
-}  // namespace std
-
 namespace ports {
+
+// Impacts priority_queue sorting.
+inline bool operator<(const ScopedMessage& a, const ScopedMessage& b) {
+  return a->sequence_num > b->sequence_num;
+}
 
 const uint32_t kInitialSequenceNum = 1;
 
@@ -70,10 +63,7 @@ class MessageQueue {
   void AcceptMessage(ScopedMessage message, bool* has_next_message);
 
  private:
-  typedef std::priority_queue<ScopedMessage,
-                              std::vector<ScopedMessage>,
-                              std::greater<ScopedMessage>> Impl;
-  Impl impl_;
+  std::priority_queue<ScopedMessage> impl_;
   uint32_t next_sequence_num_;
 };
 
