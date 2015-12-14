@@ -12,8 +12,7 @@ SOURCES = \
 	$(NULL)
 
 OBJECTS = $(patsubst %.cc,%.o,$(SOURCES))
-CPPFLAGS = -std=c++11 -pthread -g -Wall -isystem $(GTEST_DIR)/include \
-	-DNODE_LOGGING=1
+CPPFLAGS = -std=c++11 -pthread -g -Wall -isystem $(GTEST_DIR)/include
 LDFLAGS = -pthread
 CC = g++
 

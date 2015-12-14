@@ -34,7 +34,9 @@
 
 namespace ports {
 
-#ifdef NODE_LOGGING
+//#define DEBUG_LOGGING
+
+#ifdef DEBUG_LOGGING
 #define Log(...) printf(__VA_ARGS__)
 #else
 #define Log(...)
@@ -205,28 +207,43 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
   Log("Observing lost connection from node %lX to node %lX\n",
       name_.value, node_name.value);
 
+  std::vector<PortName> ports_to_notify;
+
   {
     std::lock_guard<std::mutex> guard(ports_lock_);
 
     for (auto iter = ports_.begin(); iter != ports_.end(); ) {
       std::shared_ptr<Port>& port = iter->second;
 
-      bool matches;
-      if (port->state == Port::kReceiving || port->state == Port::kProxying) {
-        matches = (port->peer_node_name == node_name);
-      } else {
-        matches = (port->sending_to_node_name == node_name);
+      bool remove_port = false;
+      {
+        std::lock_guard<std::mutex> port_guard(port->lock);
+
+        bool matches;
+        if (port->state == Port::kReceiving || port->state == Port::kProxying) {
+          matches = (port->peer_node_name == node_name);
+        } else {
+          matches = (port->sending_to_node_name == node_name);
+        }
+
+        if (matches) {
+          // We can no longer send messages to this port's peer. We assume we
+          // will not receive any more messages from this port's peer as well.
+          if (!port->peer_closed) {
+            port->peer_closed = true;
+            port->last_sequence_num_to_receive =
+                port->message_queue.next_sequence_num() - 1;
+
+            ports_to_notify.push_back(iter->first);
+          }
+
+          // We do not expect to forward any further messages, and we do not
+          // expect to receive a Port{Accepted,Rejected} event.
+          if (port->state != Port::kReceiving)
+            remove_port = true;
+        }
       }
 
-      bool remove_port = false;
-      if (matches) {
-        // We can no longer send messages to this port's peer. We don't know
-        // the sequence number of the last message we will receive though.
-        port->peer_closed = true;
-        port->last_sequence_num_to_receive = 0;
-        if (port->state != Port::kReceiving)
-          remove_port = true;
-      }
       if (remove_port) {
         Log("Deleted port %lX@%lX\n", iter->first.value, name_.value);
         iter = ports_.erase(iter); 
@@ -235,6 +252,9 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
       }
     }
   }
+
+  for (auto port_name : ports_to_notify)
+    delegate_->MessagesAvailable(port_name);
 
   return OK;
 }
@@ -275,6 +295,23 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
       message->sequence_num, port_name.value, name_.value);
 
   std::shared_ptr<Port> port = GetPort(port_name);
+
+  // TODO: Make sure to reject spurious messages that arrive after the expected
+  // last message.
+#if 0
+  bool reject_message = false;
+
+  if (!port) {
+    reject_message = true;
+  } else {
+    std::lock_guard<std::mutex> guard(port->lock);
+    if (port->status == Port::kReceiving) {
+      if (port->peer_closed) {
+      }
+    } else {
+    }
+  }
+#endif
 
   // If this port is already closed or doesn't exist, then we cannot accept the
   // message, and any ports sent to us will need to be rejected. Implementation
@@ -439,7 +476,7 @@ int Node::Impl::PortAccepted(PortName port_name,
     if (rv != OK)
       return rv;
 
-    if (port->doomed) {
+    if (port->remove_proxy_on_last_message) {
       MaybeRemoveProxy_Locked(port.get(), port_name);
     } else {
       InitiateProxyRemoval_Locked(port.get(), port_name);
@@ -504,7 +541,7 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
   assert(port->state == Port::kProxying);
 
   // Make sure we have seen ObserveProxyAck before removing the port.
-  if (!port->doomed)
+  if (!port->remove_proxy_on_last_message)
     return;
 
   uint32_t last_sequence_num_proxied = 
@@ -578,7 +615,7 @@ int Node::Impl::ObserveProxyAck(PortName port_name,
 
     // We can now remove this port once we have received and forwarded the last
     // message addressed to this port.
-    port->doomed = true;
+    port->remove_proxy_on_last_message = true;
     port->last_sequence_num_to_receive = last_sequence_num;
 
     MaybeRemoveProxy_Locked(port.get(), port_name);
@@ -615,12 +652,15 @@ int Node::Impl::ObserveClosure(Event event) {
         event.observe_closure.last_sequence_num);
 
     if (port->state == Port::kReceiving) {
-      notify_delegate = true;
+      uint32_t last_sequence_num_received =
+          port->message_queue.next_sequence_num() - 1;
+      if (port->last_sequence_num_to_receive == last_sequence_num_received)
+        notify_delegate = true;
     } else {
       NodeName next_node_name = port->peer_node_name;
       PortName next_port_name = port->peer_port_name;
 
-      port->doomed = true;
+      port->remove_proxy_on_last_message = true;
 
       // See about removing the port if it is a proxy as our peer won't be able
       // to participate in proxy removal.

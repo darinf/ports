@@ -38,18 +38,24 @@
 
 #include <gtest/gtest.h>
 
+#ifdef DEBUG_LOGGING
+#define Log(...) printf(__VA_ARGS__)
+#else
+#define Log(...)
+#endif
+
 namespace ports {
 namespace test {
 
 static void PrintMessage(const Message* message) {
-  printf(":[seq=%u]\"%s\"[",
+  Log(":[seq=%u]\"%s\"[",
       message->sequence_num, static_cast<const char*>(message->bytes));
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (i > 0)
-      printf(",");
-    printf("p%lX", message->ports[i].name.value);
+      Log(",");
+    Log("p%lX", message->ports[i].name.value);
   }
-  printf("]");
+  Log("]");
 }
 
 struct Task {
@@ -128,14 +134,14 @@ class TestNodeDelegate : public NodeDelegate {
 
   virtual void SendEvent(NodeName node_name, Event event) override {
     if (drop_events_) {
-      printf("n%lX:dropping event %d to %lX@%lX\n",
+      Log("n%lX:dropping event %d to %lX@%lX\n",
           node_name_.value,
           event.type,
           node_name.value,
           event.port_name.value);
       return;
     }
-    printf("n%lX:send event to %lX\n", node_name_.value, node_name.value);
+    Log("n%lX:send event to %lX\n", node_name_.value, node_name.value);
     task_queue.push(new Task(node_name, std::move(event)));
   }
 
@@ -147,9 +153,9 @@ class TestNodeDelegate : public NodeDelegate {
       ScopedMessage message;
       if (node->GetMessage(port, &message) != OK || !message)
         break;
-      printf("n%lX:MessagesAvailable(p%lX)", node_name_.value, port.value);
+      Log("n%lX:MessagesAvailable(p%lX)", node_name_.value, port.value);
       PrintMessage(message.get());
-      printf("\n");
+      Log("\n");
       for (size_t i = 0; i < message->num_ports; ++i) {
         char buf[256];
         snprintf(buf, sizeof(buf), "got port: p%lX",
@@ -281,7 +287,7 @@ TEST_F(PortsTest, Basic3) {
   EXPECT_EQ(OK, node1.ClosePort(x1));
 }
 
-TEST_F(PortsTest, LostConnectionToNode) {
+TEST_F(PortsTest, LostConnectionToNode1) {
   NodeName node0_name(0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
@@ -317,6 +323,43 @@ TEST_F(PortsTest, LostConnectionToNode) {
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(x0));
   EXPECT_EQ(OK, node1.ClosePort(x1));
+}
+
+TEST_F(PortsTest, LostConnectionToNode2) {
+  NodeName node0_name(0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  NodeName node1_name(1);
+  TestNodeDelegate node1_delegate(node1_name);
+  Node node1(node1_name, &node1_delegate);
+  node_map[1] = &node1;
+
+  // Setup pipe between node0 and node1.
+  PortName x0, x1;
+  EXPECT_EQ(OK, node0.CreatePort(&x0));
+  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
+
+  node1_delegate.set_read_messages(false);
+
+  PortName a0, a1;
+  EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
+  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("take a1", a1)));
+
+  PumpTasks();
+
+  node1_delegate.set_drop_events(true);
+
+  EXPECT_EQ(OK, node0.LostConnectionToNode(node1_name));
+
+  PumpTasks();
+
+  ScopedMessage message;
+  EXPECT_EQ(ERROR_PORT_PEER_CLOSED, node0.GetMessage(a0, &message));
+  EXPECT_FALSE(message);
 }
 
 TEST_F(PortsTest, GetMessage1) {
@@ -402,7 +445,7 @@ TEST_F(PortsTest, GetMessage3) {
     EXPECT_EQ(OK, node0.GetMessage(a0, &message));
     ASSERT_TRUE(message);
     EXPECT_EQ(0, strcmp(static_cast<char*>(message->bytes), kStrings[i]));
-    printf("got %s\n", kStrings[i]);
+    Log("got %s\n", kStrings[i]);
   }
 
   EXPECT_EQ(OK, node0.ClosePort(a0));

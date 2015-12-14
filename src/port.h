@@ -52,14 +52,14 @@ struct Port {
   uint32_t next_sequence_num;
   uint32_t last_sequence_num_to_receive;
   MessageQueue message_queue;
-  bool doomed;
+  bool remove_proxy_on_last_message;
   bool peer_closed;
 
   explicit Port(uint32_t next_sequence_num)
       : state(kReceiving),
         next_sequence_num(next_sequence_num),
         last_sequence_num_to_receive(0),
-        doomed(false),
+        remove_proxy_on_last_message(false),
         peer_closed(false) {}
 };
 
