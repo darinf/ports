@@ -39,10 +39,6 @@ Node::~Node() {
   delete impl_;
 }
 
-int Node::Shutdown() {
-  return impl_->Shutdown();
-}
-
 int Node::CreatePort(PortName* port) {
   return impl_->CreatePort(port);
 }

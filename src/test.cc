@@ -196,30 +196,20 @@ TEST_F(PortsTest, Basic1) {
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
-  node0.CreatePort(&x0);
-  node1.CreatePort(&x1);
-  node0.InitializePort(x0, node1_name, x1);
-  node1.InitializePort(x1, node0_name, x0);
+  EXPECT_EQ(OK, node0.CreatePort(&x0));
+  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
 
   // Transfer a port from node0 to node1.
   PortName a0, a1;
-  node0.CreatePortPair(&a0, &a1);
-  node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
+  EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
+  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", a1)));
 
-  PumpTasks();
+  EXPECT_EQ(OK, node0.ClosePort(a0));
 
-  if (node0.Shutdown() == OK_SHUTDOWN_DELAYED)
-    printf("n0:shutdown delayed\n");
-
-  PumpTasks();
-
-  if (node1.Shutdown() == OK_SHUTDOWN_DELAYED)
-    printf("n1:shutdown delayed\n");
-
-  PumpTasks();
-
-  EXPECT_EQ(OK, node0.Shutdown());
-  EXPECT_EQ(OK, node1.Shutdown());
+  EXPECT_EQ(OK, node0.ClosePort(x0));
+  EXPECT_EQ(OK, node1.ClosePort(x1));
 }
 
 TEST_F(PortsTest, Basic2) {
@@ -235,33 +225,21 @@ TEST_F(PortsTest, Basic2) {
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
-  node0.CreatePort(&x0);
-  node1.CreatePort(&x1);
-  node0.InitializePort(x0, node1_name, x1);
-  node1.InitializePort(x1, node0_name, x0);
+  EXPECT_EQ(OK, node0.CreatePort(&x0));
+  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
 
   PortName b0, b1;
-  node0.CreatePortPair(&b0, &b1);
-  node0.SendMessage(x0, NewStringMessageWithPort("take port (2)", b1));
-  node0.SendMessage(b0, NewStringMessage("hello over there (2)"));
+  EXPECT_EQ(OK, node0.CreatePortPair(&b0, &b1));
+  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", b1)));
+  EXPECT_EQ(OK, node0.SendMessage(b0, NewStringMessage("hello again")));
 
   // This may cause a SendMessage(b1) failure.
-  node0.ClosePort(b0);
+  EXPECT_EQ(OK, node0.ClosePort(b0));
 
-  PumpTasks();
-
-  if (node0.Shutdown() == OK_SHUTDOWN_DELAYED)
-    printf("n0:shutdown delayed\n");
-
-  PumpTasks();
-
-  if (node1.Shutdown() == OK_SHUTDOWN_DELAYED)
-    printf("n1:shutdown delayed\n");
-
-  PumpTasks();
-
-  EXPECT_EQ(OK, node0.Shutdown());
-  EXPECT_EQ(OK, node1.Shutdown());
+  EXPECT_EQ(OK, node0.ClosePort(x0));
+  EXPECT_EQ(OK, node1.ClosePort(x1));
 }
 
 TEST_F(PortsTest, Basic3) {
@@ -277,42 +255,30 @@ TEST_F(PortsTest, Basic3) {
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
-  node0.CreatePort(&x0);
-  node1.CreatePort(&x1);
-  node0.InitializePort(x0, node1_name, x1);
-  node1.InitializePort(x1, node0_name, x0);
+  EXPECT_EQ(OK, node0.CreatePort(&x0));
+  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
 
   // Transfer a port from node0 to node1.
   PortName a0, a1;
-  node0.CreatePortPair(&a0, &a1);
-  node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
-  node0.SendMessage(a0, NewStringMessage("hello over there"));
+  EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
+  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", a1)));
+  EXPECT_EQ(OK, node0.SendMessage(a0, NewStringMessage("hello again")));
 
   // Transfer a0 as well.
-  node0.SendMessage(x0, NewStringMessageWithPort("take another port", a0));
+  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("foo", a0)));
 
   PortName b0, b1;
-  node0.CreatePortPair(&b0, &b1);
-  node0.SendMessage(x0, NewStringMessageWithPort("take port (2)", b1));
-  node0.SendMessage(b0, NewStringMessage("hello over there (2)"));
+  EXPECT_EQ(OK, node0.CreatePortPair(&b0, &b1));
+  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("bar", b1)));
+  EXPECT_EQ(OK, node0.SendMessage(b0, NewStringMessage("baz")));
 
   // This may cause a SendMessage(b1) failure.
-  node0.ClosePort(b0);
+  EXPECT_EQ(OK, node0.ClosePort(b0));
 
-  PumpTasks();
-
-  if (node0.Shutdown() == OK_SHUTDOWN_DELAYED)
-    printf("n0:shutdown delayed\n");
-
-  PumpTasks();
-
-  if (node1.Shutdown() == OK_SHUTDOWN_DELAYED)
-    printf("n1:shutdown delayed\n");
-
-  PumpTasks();
-
-  EXPECT_EQ(OK, node0.Shutdown());
-  EXPECT_EQ(OK, node1.Shutdown());
+  EXPECT_EQ(OK, node0.ClosePort(x0));
+  EXPECT_EQ(OK, node1.ClosePort(x1));
 }
 
 TEST_F(PortsTest, LostConnectionToNode) {
@@ -328,10 +294,10 @@ TEST_F(PortsTest, LostConnectionToNode) {
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
-  node0.CreatePort(&x0);
-  node1.CreatePort(&x1);
-  node0.InitializePort(x0, node1_name, x1);
-  node1.InitializePort(x1, node0_name, x0);
+  EXPECT_EQ(OK, node0.CreatePort(&x0));
+  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
 
   // Transfer port to node1 and simulate a lost connection to node1. Dropping
   // events from node1 is how we simulate the lost connection.
@@ -339,17 +305,18 @@ TEST_F(PortsTest, LostConnectionToNode) {
   node1_delegate.set_drop_events(true);
 
   PortName a0, a1;
-  node0.CreatePortPair(&a0, &a1);
-  node0.SendMessage(x0, NewStringMessageWithPort("take port", a1));
+  EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
+  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("foo", a1)));
 
   PumpTasks();
 
-  node0.LostConnectionToNode(node1_name);
+  EXPECT_EQ(OK, node0.LostConnectionToNode(node1_name));
 
   PumpTasks();
 
-  EXPECT_EQ(OK, node0.Shutdown());
-  EXPECT_EQ(OK, node1.Shutdown());
+  EXPECT_EQ(OK, node0.ClosePort(a0));
+  EXPECT_EQ(OK, node0.ClosePort(x0));
+  EXPECT_EQ(OK, node1.ClosePort(x1));
 }
 
 TEST_F(PortsTest, GetMessage1) {
@@ -359,13 +326,13 @@ TEST_F(PortsTest, GetMessage1) {
   node_map[0] = &node0;
 
   PortName a0, a1;
-  node0.CreatePortPair(&a0, &a1);
+  EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
   ScopedMessage message;
   EXPECT_EQ(OK, node0.GetMessage(a0, &message));
   EXPECT_FALSE(message);
 
-  node0.ClosePort(a1);
+  EXPECT_EQ(OK, node0.ClosePort(a1));
 
   EXPECT_EQ(OK, node0.GetMessage(a0, &message));
   EXPECT_FALSE(message);
@@ -375,7 +342,7 @@ TEST_F(PortsTest, GetMessage1) {
   EXPECT_EQ(ERROR_PORT_PEER_CLOSED, node0.GetMessage(a0, &message));
   EXPECT_FALSE(message);
 
-  EXPECT_EQ(OK, node0.Shutdown());
+  EXPECT_EQ(OK, node0.ClosePort(a0));
 }
 
 TEST_F(PortsTest, GetMessage2) {
@@ -387,9 +354,9 @@ TEST_F(PortsTest, GetMessage2) {
   node0_delegate.set_read_messages(false);
 
   PortName a0, a1;
-  node0.CreatePortPair(&a0, &a1);
+  EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
-  node0.SendMessage(a1, NewStringMessage("1"));
+  EXPECT_EQ(OK, node0.SendMessage(a1, NewStringMessage("1")));
 
   ScopedMessage message;
   EXPECT_EQ(OK, node0.GetMessage(a0, &message));
@@ -401,7 +368,8 @@ TEST_F(PortsTest, GetMessage2) {
   ASSERT_TRUE(message);
   EXPECT_EQ(0, strcmp(static_cast<char*>(message->bytes), "1"));
 
-  EXPECT_EQ(OK, node0.Shutdown());
+  EXPECT_EQ(OK, node0.ClosePort(a0));
+  EXPECT_EQ(OK, node0.ClosePort(a1));
 }
 
 TEST_F(PortsTest, GetMessage3) {
@@ -413,7 +381,7 @@ TEST_F(PortsTest, GetMessage3) {
   node0_delegate.set_read_messages(false);
 
   PortName a0, a1;
-  node0.CreatePortPair(&a0, &a1);
+  EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
   const char* kStrings[] = {
     "1",
@@ -422,7 +390,7 @@ TEST_F(PortsTest, GetMessage3) {
   };
 
   for (size_t i = 0; i < sizeof(kStrings)/sizeof(kStrings[0]); ++i)
-    node0.SendMessage(a1, NewStringMessage(kStrings[i]));
+    EXPECT_EQ(OK, node0.SendMessage(a1, NewStringMessage(kStrings[i])));
 
   ScopedMessage message;
   EXPECT_EQ(OK, node0.GetMessage(a0, &message));
@@ -437,7 +405,8 @@ TEST_F(PortsTest, GetMessage3) {
     printf("got %s\n", kStrings[i]);
   }
 
-  EXPECT_EQ(OK, node0.Shutdown());
+  EXPECT_EQ(OK, node0.ClosePort(a0));
+  EXPECT_EQ(OK, node0.ClosePort(a1));
 }
 
 }  // namespace test

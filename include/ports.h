@@ -37,9 +37,7 @@
 namespace ports {
 
 enum {
-  OK_SHUTDOWN_DELAYED = 1,
   OK = 0,
-  ERROR_SHUTDOWN = -1,
   ERROR_PORT_UNKNOWN = -10,
   ERROR_PORT_EXISTS = -11,
   ERROR_PORT_ALREADY_INITIALIZED = -12,
@@ -151,13 +149,6 @@ class Node {
  public:
   Node(NodeName name, NodeDelegate* delegate);
   ~Node();
-
-  // Closes all ports gracefully. Returns OK if the Node can be deleted now.
-  // Otherwise, returns OK_SHUTDOWN_DELAYED to indicate that shutdown cannot be
-  // completed synchronously, and the caller should continue feeding events to
-  // the node, via AcceptEvent and LostConnectionToNode, and then call Shutdown
-  // again to test if the Node can be deleted.
-  int Shutdown();
 
   // Creates a port on this node. Before the port can be used, it must be
   // initialized using InitializePort. This method is useful for bootstrapping

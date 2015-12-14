@@ -44,7 +44,6 @@ class Node::Impl {
   Impl(NodeName name, NodeDelegate* delegate);
   ~Impl();
 
-  int Shutdown();
   int CreatePort(PortName* port_name);
   int InitializePort(PortName port_name,
                      NodeName peer_node_name,
@@ -60,8 +59,6 @@ class Node::Impl {
   NodeName name_;
   NodeDelegate* delegate_;
 
-  bool IsShuttingDown();
-  bool IsShutdownComplete();
   int AddPort(std::shared_ptr<Port> port, PortName* port_name);
   void ErasePort(PortName port_name);
   std::shared_ptr<Port> GetPort(PortName port_name);
@@ -82,10 +79,8 @@ class Node::Impl {
   int ObserveClosure(Event event);
   void ClosePort_Locked(Port* port, PortName port_name);
 
-  std::mutex lock_;  // Protects all member variables.
+  std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
-  bool shutting_down_;
-  bool shutdown_complete_;
 };
 
 }  // namespace ports

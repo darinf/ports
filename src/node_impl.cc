@@ -50,9 +50,7 @@ static int DebugError(const char* message, int error_code, const char* func) {
 
 Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
     : name_(name),
-      delegate_(delegate),
-      shutting_down_(false),
-      shutdown_complete_(false) {
+      delegate_(delegate) {
 }
 
 Node::Impl::~Impl() {
@@ -60,68 +58,7 @@ Node::Impl::~Impl() {
     Log("Warning: unclean shutdown for node %lX!\n", name_.value);
 }
 
-int Node::Impl::Shutdown() {
-  Log("Shutdown at node %lX\n", name_.value);
-
-  // OK to call Shutdown as many times as an application wishes.
-
-  // Any receiving ports need to be closed. Any proxy ports need to stay open
-  // until they are all removed to ensure that any messages needing to be
-  // forwarded through the proxies get forwarded.
-
-  bool shutdown_delayed = false;
-
-  {
-    std::lock_guard<std::mutex> guard(lock_);
-
-    shutting_down_ = true;
-
-    for (auto iter = ports_.begin(); iter != ports_.end(); ) {
-      std::shared_ptr<Port>& port = iter->second;
-
-      bool should_erase = false;
-      {
-        std::lock_guard<std::mutex> port_guard(port->lock);
-
-        if (port->state == Port::kReceiving) {
-          // TODO: This could generate ObserveClosure events to other ports
-          // bound to this node. Perhaps we should suppress those events or
-          // handle them directly?
-          ClosePort_Locked(port.get(), iter->first);
-          should_erase = true;
-        } else {
-          shutdown_delayed = true;
-
-          // TODO: What if a port is in the buffering state and the node we are
-          // sending to is also shutting down?
-
-          Log("Delaying shutdown for port %lX@%lX (state=%u)\n",
-              iter->first.value, name_.value, port->state);
-        }
-      }
-
-      if (should_erase) {
-        Log("Deleted port %lX@%lX\n", iter->first.value, name_.value);
-        iter = ports_.erase(iter);
-      } else {
-        ++iter;
-      }
-    }
-
-    if (ports_.empty())
-      shutdown_complete_ = true;
-  }
-
-  if (shutdown_delayed)
-    return OK_SHUTDOWN_DELAYED;
-
-  return OK;
-}
-
 int Node::Impl::CreatePort(PortName* port_name) {
-  if (IsShuttingDown())
-    return Oops(ERROR_SHUTDOWN);
-
   std::shared_ptr<Port> port = std::make_shared<Port>(kInitialSequenceNum);
   return AddPort(std::move(port), port_name);
 }
@@ -129,9 +66,6 @@ int Node::Impl::CreatePort(PortName* port_name) {
 int Node::Impl::InitializePort(PortName port_name,
                                NodeName peer_node_name,
                                PortName peer_port_name) {
-  if (IsShuttingDown())
-    return Oops(ERROR_SHUTDOWN);
-
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -149,9 +83,6 @@ int Node::Impl::InitializePort(PortName port_name,
 }
 
 int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
-  if (IsShuttingDown())
-    return Oops(ERROR_SHUTDOWN);
-
   int rv;
 
   rv = CreatePort(port_name_0);
@@ -174,9 +105,6 @@ int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
 }
 
 int Node::Impl::ClosePort(PortName port_name) {
-  if (IsShuttingDown())
-    return Oops(ERROR_SHUTDOWN);
-
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -195,9 +123,6 @@ int Node::Impl::ClosePort(PortName port_name) {
 
 int Node::Impl::GetMessage(PortName port_name, ScopedMessage* message) {
   *message = nullptr;
-
-  if (IsShuttingDown())
-    return Oops(ERROR_SHUTDOWN);
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -226,9 +151,6 @@ int Node::Impl::GetMessage(PortName port_name, ScopedMessage* message) {
 }
 
 int Node::Impl::SendMessage(PortName port_name, ScopedMessage message) {
-  if (IsShuttingDown())
-    return Oops(ERROR_SHUTDOWN);
-
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (message->ports[i].name == port_name)
       return Oops(ERROR_PORT_CANNOT_SEND_SELF);
@@ -255,11 +177,6 @@ int Node::Impl::SendMessage(PortName port_name, ScopedMessage message) {
 }
 
 int Node::Impl::AcceptEvent(Event event) {
-  // OK to accept events while we are trying to shutdown, but not after we are
-  // finally shutdown.
-  if (IsShutdownComplete())
-    return Oops(ERROR_SHUTDOWN);
-
   switch (event.type) {
     case Event::kAcceptMessage:
       return AcceptMessage(event.port_name, std::move(event.message));
@@ -278,7 +195,6 @@ int Node::Impl::AcceptEvent(Event event) {
     case Event::kObserveClosure:
       return ObserveClosure(std::move(event));
   }
-
   return Oops(ERROR_NOT_IMPLEMENTED);
 }
 
@@ -290,12 +206,7 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
       name_.value, node_name.value);
 
   {
-    std::lock_guard<std::mutex> guard(lock_);
-
-    // OK to call LostConnectionToNode while we are shutting down, but not
-    // before that.
-    if (shutdown_complete_)
-      Oops(ERROR_SHUTDOWN);
+    std::lock_guard<std::mutex> guard(ports_lock_);
 
     for (auto iter = ports_.begin(); iter != ports_.end(); ) {
       std::shared_ptr<Port>& port = iter->second;
@@ -323,22 +234,9 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
         ++iter;
       }
     }
-
-    if (shutting_down_ && ports_.empty())
-      shutdown_complete_ = true;
   }
 
   return OK;
-}
-
-bool Node::Impl::IsShuttingDown() {
-  std::lock_guard<std::mutex> guard(lock_);
-  return shutting_down_;
-}
-
-bool Node::Impl::IsShutdownComplete() {
-  std::lock_guard<std::mutex> guard(lock_);
-  return shutdown_complete_;
 }
 
 int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
@@ -346,7 +244,7 @@ int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
   for (;;) {
     *port_name = delegate_->GenerateRandomPortName();
 
-    std::lock_guard<std::mutex> guard(lock_);
+    std::lock_guard<std::mutex> guard(ports_lock_);
     if (ports_.insert(std::make_pair(*port_name, port)).second)
       break;
   }
@@ -356,17 +254,14 @@ int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
 }
 
 void Node::Impl::ErasePort(PortName port_name) {
-  std::lock_guard<std::mutex> guard(lock_);
+  std::lock_guard<std::mutex> guard(ports_lock_);
 
   ports_.erase(port_name);
   Log("Deleted port %lX@%lX\n", port_name.value, name_.value);
-
-  if (shutting_down_ && ports_.empty())
-    shutdown_complete_ = true;
 }
 
 std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
-  std::lock_guard<std::mutex> guard(lock_);
+  std::lock_guard<std::mutex> guard(ports_lock_);
 
   auto iter = ports_.find(port_name);
   if (iter == ports_.end())
