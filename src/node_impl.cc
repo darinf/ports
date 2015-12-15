@@ -27,25 +27,17 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "node_impl.h"
+#include "ports/src/node_impl.h"
 
 #include <cassert>
 #include <cstdio>
 
+#include "ports/src/logging.h"
+
 namespace ports {
 
-//#define DEBUG_LOGGING
-
-#ifdef DEBUG_LOGGING
-#define Log(...) printf(__VA_ARGS__)
-#else
-#define Log(...)
-#endif
-
 static int DebugError(const char* message, int error_code, const char* func) {
-#ifndef NDEBUG
-  Log("*** %s: %s\n", message, func);
-#endif
+  DLOG(ERROR) << "Oops: " << message << " @ " << func;
   return error_code;
 }
 #define Oops(x) DebugError(#x, x, __func__)
@@ -57,7 +49,7 @@ Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
 
 Node::Impl::~Impl() {
   if (!ports_.empty())
-    Log("Warning: unclean shutdown for node %lX!\n", name_.value);
+    DLOG(WARNING) << "Unclean shutdown for node " << name_;
 }
 
 int Node::Impl::CreatePort(PortName* port_name) {
@@ -74,8 +66,8 @@ int Node::Impl::InitializePort(PortName port_name,
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
-    if (port->peer_node_name.value != NodeName().value ||
-        port->peer_port_name.value != PortName().value)
+    if (port->peer_node_name != NodeName() ||
+        port->peer_port_name != PortName())
       return Oops(ERROR_PORT_ALREADY_INITIALIZED);
 
     port->peer_node_name = peer_node_name;
@@ -204,8 +196,8 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
   // We can no longer send events to the given node. We also can't expect any
   // AcceptPort or RejectPort events.
 
-  Log("Observing lost connection from node %lX to node %lX\n",
-      name_.value, node_name.value);
+  DLOG(INFO) << "Observing lost connection from node " << name_
+             << " to node " << node_name;
 
   std::vector<PortName> ports_to_notify;
 
@@ -245,7 +237,7 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
       }
 
       if (remove_port) {
-        Log("Deleted port %lX@%lX\n", iter->first.value, name_.value);
+        DLOG(INFO) << "Deleted port " << iter->first << "@" << name_;
         iter = ports_.erase(iter); 
       } else {
         ++iter;
@@ -269,7 +261,7 @@ int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
       break;
   }
 
-  Log("Created port %lX@%lX\n", port_name->value, name_.value);
+  DLOG(INFO) << "Created port " << *port_name << "@" << name_;
   return OK;
 }
 
@@ -277,7 +269,7 @@ void Node::Impl::ErasePort(PortName port_name) {
   std::lock_guard<std::mutex> guard(ports_lock_);
 
   ports_.erase(port_name);
-  Log("Deleted port %lX@%lX\n", port_name.value, name_.value);
+  DLOG(INFO) << "Deleted port " << port_name << "@" << name_;
 }
 
 std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
@@ -291,8 +283,8 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
 }
 
 int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
-  Log("AcceptMessage %u at %lX@%lX\n",
-      message->sequence_num, port_name.value, name_.value);
+  DLOG(INFO) << "AcceptMessage " << message->sequence_num
+             << " at " << port_name << "@" << name_;
 
   std::shared_ptr<Port> port = GetPort(port_name);
 
@@ -320,8 +312,8 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   // perhaps workaround that by minting the port name in WillSendPort.
 
   if (!port) {
-    Log("Rejecting message %u to %lX@%lX\n",
-        message->sequence_num, port_name.value, name_.value);
+    DLOG(INFO) << "Rejecting message " << message->sequence_num
+               << " to " << port_name << "@" << name_;
     for (size_t i = 0; i < message->num_ports; ++i)
       RejectPort(&message->ports[i]);
     return OK;
@@ -405,7 +397,7 @@ void Node::Impl::RejectPort(PortDescriptor* port_descriptor) {
 }
 
 int Node::Impl::PortRejected(PortName port_name) {
-  Log("PortRejected at %lX@%lX\n", port_name.value, name_.value);
+  DLOG(INFO) << "PortRejected at " << port_name << "@" << name_;
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -454,9 +446,9 @@ int Node::Impl::AcceptPort(PortDescriptor* port_descriptor) {
 int Node::Impl::PortAccepted(PortName port_name,
                              NodeName proxy_to_node_name,
                              PortName proxy_to_port_name) {
-  Log("PortAccepted at %lX@%lX pointing to %lX@%lX\n",
-      port_name.value, name_.value,
-      proxy_to_port_name.value, proxy_to_node_name.value);
+  DLOG(INFO) << "PortAccepted at " << port_name << "@" << name_
+             << " pointing to "
+             << proxy_to_port_name << "@" << proxy_to_node_name;
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -494,10 +486,8 @@ int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
       return rv;
   }
 
-  Log("Sending message %u to %lX@%lX\n",
-      message->sequence_num,
-      port->peer_port_name.value,
-      port->peer_node_name.value);
+  DLOG(INFO) << "Sending message " << message->sequence_num << " to "
+             << port->peer_port_name << "@" << port->peer_node_name;
 
   Event event(Event::kAcceptMessage);
   event.port_name = port->peer_port_name;
@@ -551,8 +541,8 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
     // This proxy port is done. We can now remove it!
     ErasePort(port_name);
   } else {
-    Log("Cannot remove port %lX@%lX now; waiting for more messages\n", 
-        port_name.value, name_.value);
+    DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
+               << " now; waiting for more messages";
   }
 }  
 
@@ -562,17 +552,18 @@ int Node::Impl::ObserveProxy(Event event) {
   // We can then silently ignore this message.
   std::shared_ptr<Port> port = GetPort(event.port_name);
   if (!port) {
-    Log("ObserveProxy: %lX@%lX not found\n",
-        event.port_name.value, name_.value);
+    DLOG(INFO) << "ObserveProxy: " << event.port_name << "@" << name_
+               << " not found";
     return OK;
   }
 
-  Log("ObserveProxy at %lX@%lX, proxy at %lX@%lX pointing to %lX@%lX\n",
-      event.port_name.value, name_.value,
-      event.observe_proxy.proxy_port_name.value,
-      event.observe_proxy.proxy_node_name.value,
-      event.observe_proxy.proxy_to_port_name.value,
-      event.observe_proxy.proxy_to_node_name.value);
+  DLOG(INFO) << "ObserveProxy at " << event.port_name << "@" << name_
+             << ", proxy at "
+             << event.observe_proxy.proxy_port_name << "@"
+             << event.observe_proxy.proxy_node_name
+             << " pointing to "
+             << event.observe_proxy.proxy_to_port_name << "@"
+             << event.observe_proxy.proxy_to_node_name;
   
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -600,8 +591,8 @@ int Node::Impl::ObserveProxy(Event event) {
 
 int Node::Impl::ObserveProxyAck(PortName port_name,
                                 uint32_t last_sequence_num) {
-  Log("ObserveProxyAck at %lX@%lX (last_sequence_num=%u)\n",
-      port_name.value, name_.value, last_sequence_num);
+  DLOG(INFO) << "ObserveProxyAck at " << port_name << "@" << name_
+             << " (last_sequence_num=" << last_sequence_num << ")";
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -643,13 +634,11 @@ int Node::Impl::ObserveClosure(Event event) {
     port->last_sequence_num_to_receive =
         event.observe_closure.last_sequence_num;
 
-    Log("ObserveClosure at %lX@%lX (state=%u) pointing to %lX@%lX (last_sequence_num=%u)\n",
-        event.port_name.value,
-        name_.value,
-        port->state,
-        port->peer_port_name.value,
-        port->peer_node_name.value,
-        event.observe_closure.last_sequence_num);
+    DLOG(INFO) << "ObserveClosure at " << event.port_name << "@" << name_
+               << " (state=" << port->state << ") pointing to "
+               << port->peer_port_name << "@" << port->peer_node_name
+               << " (last_sequence_num="
+               << event.observe_closure.last_sequence_num << ")";
 
     if (port->state == Port::kReceiving) {
       uint32_t last_sequence_num_received =

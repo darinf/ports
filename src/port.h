@@ -33,7 +33,7 @@
 #include <mutex>
 #include <vector>
 
-#include "message_queue.h"
+#include "ports/src/message_queue.h"
 
 namespace ports {
 

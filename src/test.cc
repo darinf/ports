@@ -33,29 +33,26 @@
 #include <map>
 #include <memory>
 #include <queue>
+#include <sstream>
 
-#include "../include/ports.h"
+#include "ports/include/ports.h"
+#include "ports/src/logging.h"
 
 #include <gtest/gtest.h>
-
-#ifdef DEBUG_LOGGING
-#define Log(...) printf(__VA_ARGS__)
-#else
-#define Log(...)
-#endif
 
 namespace ports {
 namespace test {
 
-static void PrintMessage(const Message* message) {
-  Log(":[seq=%u]\"%s\"[",
-      message->sequence_num, static_cast<const char*>(message->bytes));
+static void LogMessage(const Message* message) {
+  std::stringstream ports;
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (i > 0)
-      Log(",");
-    Log("p%lX", message->ports[i].name.value);
+      ports << ",";
+    ports << message->ports[i].name;
   }
-  Log("]");
+  DLOG(INFO) << "message: seq_num=" << message->sequence_num
+             << " payload=\"" << static_cast<const char*>(message->bytes)
+             << "\" ports=[" << ports << "]";
 }
 
 struct Task {
@@ -81,12 +78,19 @@ static std::priority_queue<Task*,
                            TaskComparator> task_queue;
 static Node* node_map[2];
 
+static Node* GetNode(const NodeName& name) {
+  return node_map[name.value_major];
+}
+static void SetNode(const NodeName& name, Node* node) {
+  node_map[name.value_major] = node;
+}
+
 static void PumpTasks() {
   while (!task_queue.empty()) {
     Task* task = task_queue.top();
     task_queue.pop();
 
-    Node* node = node_map[task->node_name.value];
+    Node* node = GetNode(task->node_name);
     node->AcceptEvent(std::move(task->event));
 
     delete task;
@@ -101,17 +105,18 @@ static void DiscardPendingTasks() {
   }
 }
 
-static ScopedMessage NewStringMessage(const char* s) {
-  size_t len = strlen(s) + 1;
-  Message* message = AllocMessage(len, 0); 
-  memcpy(message->bytes, s, len);
+static ScopedMessage NewStringMessage(const std::string& s) {
+  size_t size = s.size() + 1;
+  Message* message = AllocMessage(size, 0); 
+  memcpy(message->bytes, s.data(), size);
   return ScopedMessage(message);
 }
 
-static ScopedMessage NewStringMessageWithPort(const char* s, PortName port) {
-  size_t len = strlen(s) + 1;
-  Message* message = AllocMessage(len, 1); 
-  memcpy(message->bytes, s, len);
+static ScopedMessage NewStringMessageWithPort(const std::string& s,
+                                              PortName port) {
+  size_t size = s.size() + 1;
+  Message* message = AllocMessage(size, 1); 
+  memcpy(message->bytes, s.data(), size);
   message->ports[0].name = port;
   return ScopedMessage(message);
 }
@@ -129,39 +134,37 @@ class TestNodeDelegate : public NodeDelegate {
 
   virtual PortName GenerateRandomPortName() override {
     static uint64_t next_port_name = 1;
-    return PortName(next_port_name++);
+    return PortName(next_port_name++, 0);
   }
 
   virtual void SendEvent(NodeName node_name, Event event) override {
     if (drop_events_) {
-      Log("n%lX:dropping event %d to %lX@%lX\n",
-          node_name_.value,
-          event.type,
-          node_name.value,
-          event.port_name.value);
+      DLOG(INFO) << "Dropping SendEvent(" << event.type << ") from node "
+                 << node_name_ << " to "
+                 << event.port_name << "@" << node_name;
       return;
     }
-    Log("n%lX:send event to %lX\n", node_name_.value, node_name.value);
+    DLOG(INFO) << "SendEvent(" << event.type << ") from node "
+               << node_name_ << " to "
+               << event.port_name << "@" << node_name;
     task_queue.push(new Task(node_name, std::move(event)));
   }
 
   virtual void MessagesAvailable(PortName port) override {
+    DLOG(INFO) << "MessagesAvailable for " << port << "@" << node_name_;
     if (!read_messages_)
       return;
-    Node* node = node_map[node_name_.value];
+    Node* node = GetNode(node_name_);
     for (;;) {
       ScopedMessage message;
       if (node->GetMessage(port, &message) != OK || !message)
         break;
-      Log("n%lX:MessagesAvailable(p%lX)", node_name_.value, port.value);
-      PrintMessage(message.get());
-      Log("\n");
+      LogMessage(message.get());
       for (size_t i = 0; i < message->num_ports; ++i) {
-        char buf[256];
-        snprintf(buf, sizeof(buf), "got port: p%lX",
-                 message->ports[i].name.value);
+        std::stringstream buf;
+        buf << "got port: " << message->ports[i].name;
         node->SendMessage(message->ports[i].name,
-                          std::move(NewStringMessage(buf)));
+                          std::move(NewStringMessage(buf.str())));
 
         // Avoid leaking these ports.
         node->ClosePort(message->ports[i].name);
@@ -178,27 +181,27 @@ class TestNodeDelegate : public NodeDelegate {
 class PortsTest : public testing::Test {
  public:
   PortsTest() {
-    node_map[0] = nullptr;
-    node_map[1] = nullptr;
+    SetNode(NodeName(0, 0), nullptr);
+    SetNode(NodeName(1, 0), nullptr);
   }
   
   ~PortsTest() {
     DiscardPendingTasks();
-    node_map[0] = nullptr;
-    node_map[1] = nullptr;
+    SetNode(NodeName(0, 0), nullptr);
+    SetNode(NodeName(1, 0), nullptr);
   }
 };
 
 TEST_F(PortsTest, Basic1) {
-  NodeName node0_name(0);
+  NodeName node0_name(0, 0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
-  node_map[0] = &node0;
+  SetNode(node0_name, &node0);
 
-  NodeName node1_name(1);
+  NodeName node1_name(1, 0);
   TestNodeDelegate node1_delegate(node1_name);
   Node node1(node1_name, &node1_delegate);
-  node_map[1] = &node1;
+  SetNode(node1_name, &node1);
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
@@ -219,15 +222,15 @@ TEST_F(PortsTest, Basic1) {
 }
 
 TEST_F(PortsTest, Basic2) {
-  NodeName node0_name(0);
+  NodeName node0_name(0, 0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
-  node_map[0] = &node0;
+  SetNode(node0_name, &node0);
 
-  NodeName node1_name(1);
+  NodeName node1_name(1, 0);
   TestNodeDelegate node1_delegate(node1_name);
   Node node1(node1_name, &node1_delegate);
-  node_map[1] = &node1;
+  SetNode(node1_name, &node1);
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
@@ -249,15 +252,15 @@ TEST_F(PortsTest, Basic2) {
 }
 
 TEST_F(PortsTest, Basic3) {
-  NodeName node0_name(0);
+  NodeName node0_name(0, 0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
-  node_map[0] = &node0;
+  SetNode(node0_name, &node0);
 
-  NodeName node1_name(1);
+  NodeName node1_name(1, 0);
   TestNodeDelegate node1_delegate(node1_name);
   Node node1(node1_name, &node1_delegate);
-  node_map[1] = &node1;
+  SetNode(node1_name, &node1);
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
@@ -288,15 +291,15 @@ TEST_F(PortsTest, Basic3) {
 }
 
 TEST_F(PortsTest, LostConnectionToNode1) {
-  NodeName node0_name(0);
+  NodeName node0_name(0, 0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
-  node_map[0] = &node0;
+  SetNode(node0_name, &node0);
 
-  NodeName node1_name(1);
+  NodeName node1_name(1, 0);
   TestNodeDelegate node1_delegate(node1_name);
   Node node1(node1_name, &node1_delegate);
-  node_map[1] = &node1;
+  SetNode(node1_name, &node1);
 
   // Setup pipe between node0 and node1.
   PortName x0, x1;
@@ -326,12 +329,12 @@ TEST_F(PortsTest, LostConnectionToNode1) {
 }
 
 TEST_F(PortsTest, LostConnectionToNode2) {
-  NodeName node0_name(0);
+  NodeName node0_name(0, 0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
   node_map[0] = &node0;
 
-  NodeName node1_name(1);
+  NodeName node1_name(1, 0);
   TestNodeDelegate node1_delegate(node1_name);
   Node node1(node1_name, &node1_delegate);
   node_map[1] = &node1;
@@ -363,7 +366,7 @@ TEST_F(PortsTest, LostConnectionToNode2) {
 }
 
 TEST_F(PortsTest, GetMessage1) {
-  NodeName node0_name(0);
+  NodeName node0_name(0, 0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
   node_map[0] = &node0;
@@ -389,7 +392,7 @@ TEST_F(PortsTest, GetMessage1) {
 }
 
 TEST_F(PortsTest, GetMessage2) {
-  NodeName node0_name(0);
+  NodeName node0_name(0, 0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
   node_map[0] = &node0;
@@ -416,7 +419,7 @@ TEST_F(PortsTest, GetMessage2) {
 }
 
 TEST_F(PortsTest, GetMessage3) {
-  NodeName node0_name(0);
+  NodeName node0_name(0, 0);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
   node_map[0] = &node0;
@@ -445,7 +448,7 @@ TEST_F(PortsTest, GetMessage3) {
     EXPECT_EQ(OK, node0.GetMessage(a0, &message));
     ASSERT_TRUE(message);
     EXPECT_EQ(0, strcmp(static_cast<char*>(message->bytes), kStrings[i]));
-    Log("got %s\n", kStrings[i]);
+    DLOG(INFO) << "got " << kStrings[i];
   }
 
   EXPECT_EQ(OK, node0.ClosePort(a0));

@@ -3,6 +3,7 @@
 GTEST_DIR = ../../googletest/googletest
 
 SOURCES = \
+	logging.cc \
 	message.cc \
 	message_queue.cc \
 	node_impl.cc \
@@ -12,7 +13,7 @@ SOURCES = \
 	$(NULL)
 
 OBJECTS = $(patsubst %.cc,%.o,$(SOURCES))
-CPPFLAGS = -std=c++11 -pthread -g -Wall -isystem $(GTEST_DIR)/include
+CPPFLAGS = -std=c++11 -pthread -g -Wall -I ../.. -isystem $(GTEST_DIR)/include
 LDFLAGS = -pthread
 CC = g++
 
@@ -20,4 +21,4 @@ test: test.o $(OBJECTS) $(GTEST_DIR)/libgtest.a
 
 .PHONY: clean
 clean:
-	rm *.o test
+	rm -f *.o test

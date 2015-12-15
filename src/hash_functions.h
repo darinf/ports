@@ -30,7 +30,7 @@
 #ifndef PORTS_SRC_HASH_FUNCTIONS_H_
 #define PORTS_SRC_HASH_FUNCTIONS_H_
 
-#include "../include/ports.h"
+#include "ports/include/ports.h"
 
 #include <functional>
 
@@ -39,7 +39,9 @@ namespace std {
 template <>
 struct hash<ports::PortName> {
   std::size_t operator()(const ports::PortName& port_name) const {
-    return hash<uint64_t>()(port_name.value);
+    size_t h1 = hash<uint64_t>()(port_name.value_major);
+    size_t h2 = hash<uint64_t>()(port_name.value_minor);
+    return h1 ^ (h2 << 1);
   }
 };
 
