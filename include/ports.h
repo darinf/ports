@@ -52,14 +52,12 @@ struct PortName {
   PortName() : value_major(0), value_minor(0) {}
   PortName(uint64_t value_major, uint64_t value_minor)
       : value_major(value_major), value_minor(value_minor) {}
-
   uint64_t value_major;
   uint64_t value_minor;
 };
 
 inline bool operator==(const PortName& a, const PortName& b) {
-  return a.value_major == b.value_major &&
-         a.value_minor == b.value_minor;
+  return a.value_major == b.value_major && a.value_minor == b.value_minor;
 }
 inline bool operator!=(const PortName& a, const PortName& b) {
   return !(a == b);
@@ -70,14 +68,12 @@ struct NodeName {
   NodeName() : value_major(0), value_minor(0) {}
   NodeName(uint64_t value_major, uint64_t value_minor)
       : value_major(value_major), value_minor(value_minor) {}
-
   uint64_t value_major;
   uint64_t value_minor;
 };
 
 inline bool operator==(const NodeName& a, const NodeName& b) {
-  return a.value_major == b.value_major &&
-         a.value_minor == b.value_minor;
+  return a.value_major == b.value_major && a.value_minor == b.value_minor;
 }
 inline bool operator!=(const NodeName& a, const NodeName& b) {
   return !(a == b);

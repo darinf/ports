@@ -126,11 +126,23 @@ class TestNodeDelegate : public NodeDelegate {
   explicit TestNodeDelegate(NodeName node_name)
       : node_name_(node_name),
         drop_events_(false),
-        read_messages_(true) {
+        read_messages_(true),
+        save_messages_(false) {
   }
 
   void set_drop_events(bool value) { drop_events_ = value; }
   void set_read_messages(bool value) { read_messages_ = value; }
+  void set_save_messages(bool value) { save_messages_ = value; }
+
+  bool GetSavedMessage(ScopedMessage* message) {
+    if (saved_messages_.empty()) {
+      message->reset();
+      return false;
+    }
+    *message = std::move(saved_messages_.front());
+    saved_messages_.pop();
+    return true;
+  }
 
   virtual PortName GenerateRandomPortName() override {
     static uint64_t next_port_name = 1;
@@ -159,23 +171,33 @@ class TestNodeDelegate : public NodeDelegate {
       ScopedMessage message;
       if (node->GetMessage(port, &message) != OK || !message)
         break;
-      LogMessage(message.get());
-      for (size_t i = 0; i < message->num_ports; ++i) {
-        std::stringstream buf;
-        buf << "got port: " << message->ports[i].name;
-        node->SendMessage(message->ports[i].name,
-                          std::move(NewStringMessage(buf.str())));
+      if (save_messages_) {
+        SaveMessage(std::move(message));
+      } else {
+        LogMessage(message.get());
+        for (size_t i = 0; i < message->num_ports; ++i) {
+          std::stringstream buf;
+          buf << "got port: " << message->ports[i].name;
+          node->SendMessage(message->ports[i].name,
+                            std::move(NewStringMessage(buf.str())));
 
-        // Avoid leaking these ports.
-        node->ClosePort(message->ports[i].name);
+          // Avoid leaking these ports.
+          node->ClosePort(message->ports[i].name);
+        }
       }
     }
   }
 
  private:
+  void SaveMessage(ScopedMessage message) {
+    saved_messages_.emplace(std::move(message));
+  }
+
+  std::queue<ScopedMessage> saved_messages_;
   NodeName node_name_;
   bool drop_events_;
   bool read_messages_;
+  bool save_messages_;
 };
 
 class PortsTest : public testing::Test {
@@ -453,6 +475,73 @@ TEST_F(PortsTest, GetMessage3) {
 
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(a1));
+}
+
+TEST_F(PortsTest, Delegation1) {
+  NodeName node0_name(0, 0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  SetNode(node0_name, &node0);
+
+  NodeName node1_name(1, 0);
+  TestNodeDelegate node1_delegate(node1_name);
+  Node node1(node1_name, &node1_delegate);
+  node_map[1] = &node1;
+
+  node0_delegate.set_save_messages(true);
+  node1_delegate.set_save_messages(true);
+
+  // Setup pipe between node0 and node1.
+  PortName x0, x1;
+  EXPECT_EQ(OK, node0.CreatePort(&x0));
+  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
+
+  // In this test, we send a message to a port that has been moved.
+
+  PortName a0, a1;
+  EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
+
+  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("a1", a1)));
+
+  PumpTasks();
+
+  ScopedMessage message;
+  ASSERT_TRUE(node1_delegate.GetSavedMessage(&message));
+
+  ASSERT_EQ(1, message->num_ports);
+
+  // This is "a1" from the point of view of node1.
+  PortName a2 = message->ports[0].name;
+
+  EXPECT_EQ(OK, node1.SendMessage(x1, NewStringMessageWithPort("a2", a2)));
+
+  PumpTasks();
+
+  EXPECT_EQ(OK, node0.SendMessage(a0, NewStringMessage("hello")));
+
+  PumpTasks();
+
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+
+  ASSERT_EQ(1, message->num_ports);
+
+  // This is "a2" from the point of view of node1.
+  PortName a3 = message->ports[0].name;
+
+  EXPECT_EQ(0, strcmp("a2", static_cast<char*>(message->bytes)));
+
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+
+  EXPECT_EQ(0, message->num_ports);
+  EXPECT_EQ(0, strcmp("hello", static_cast<char*>(message->bytes)));
+
+  EXPECT_EQ(OK, node0.ClosePort(a0));
+  EXPECT_EQ(OK, node0.ClosePort(a3));
+
+  EXPECT_EQ(OK, node0.ClosePort(x0));
+  EXPECT_EQ(OK, node1.ClosePort(x1));
 }
 
 }  // namespace test
