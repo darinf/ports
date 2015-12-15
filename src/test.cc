@@ -107,7 +107,7 @@ static void DiscardPendingTasks() {
 
 static ScopedMessage NewStringMessage(const std::string& s) {
   size_t size = s.size() + 1;
-  Message* message = AllocMessage(size, 0); 
+  Message* message = AllocMessage(size, 0);
   memcpy(message->bytes, s.data(), size);
   return ScopedMessage(message);
 }
@@ -115,7 +115,7 @@ static ScopedMessage NewStringMessage(const std::string& s) {
 static ScopedMessage NewStringMessageWithPort(const std::string& s,
                                               PortName port) {
   size_t size = s.size() + 1;
-  Message* message = AllocMessage(size, 1); 
+  Message* message = AllocMessage(size, 1);
   memcpy(message->bytes, s.data(), size);
   message->ports[0].name = port;
   return ScopedMessage(message);
@@ -144,13 +144,13 @@ class TestNodeDelegate : public NodeDelegate {
     return true;
   }
 
-  virtual void GenerateRandomPortName(PortName* port_name) override {
+  void GenerateRandomPortName(PortName* port_name) override {
     static uint64_t next_port_name = 1;
     port_name->value_major = next_port_name++;
     port_name->value_minor = 0;
   }
 
-  virtual void SendEvent(const NodeName& node_name, Event event) override {
+  void SendEvent(const NodeName& node_name, Event event) override {
     if (drop_events_) {
       DLOG(INFO) << "Dropping SendEvent(" << event.type << ") from node "
                  << node_name_ << " to "
@@ -163,7 +163,7 @@ class TestNodeDelegate : public NodeDelegate {
     task_queue.push(new Task(node_name, std::move(event)));
   }
 
-  virtual void MessagesAvailable(const PortName& port) override {
+  void MessagesAvailable(const PortName& port) override {
     DLOG(INFO) << "MessagesAvailable for " << port << "@" << node_name_;
     if (!read_messages_)
       return;
@@ -182,7 +182,7 @@ class TestNodeDelegate : public NodeDelegate {
           std::stringstream buf;
           buf << "got port: " << message->ports[i].name;
           node->SendMessage(message->ports[i].name,
-                            std::move(NewStringMessage(buf.str())));
+                            NewStringMessage(buf.str()));
 
           // Avoid leaking these ports.
           node->ClosePort(message->ports[i].name);
@@ -209,8 +209,8 @@ class PortsTest : public testing::Test {
     SetNode(NodeName(0, 0), nullptr);
     SetNode(NodeName(1, 0), nullptr);
   }
-  
-  ~PortsTest() {
+
+  ~PortsTest() override {
     DiscardPendingTasks();
     SetNode(NodeName(0, 0), nullptr);
     SetNode(NodeName(1, 0), nullptr);
@@ -513,7 +513,7 @@ TEST_F(PortsTest, Delegation1) {
   ScopedMessage message;
   ASSERT_TRUE(node1_delegate.GetSavedMessage(&message));
 
-  ASSERT_EQ(1, message->num_ports);
+  ASSERT_EQ(1u, message->num_ports);
 
   // This is "a1" from the point of view of node1.
   PortName a2 = message->ports[0].name;
@@ -528,7 +528,7 @@ TEST_F(PortsTest, Delegation1) {
 
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
 
-  ASSERT_EQ(1, message->num_ports);
+  ASSERT_EQ(1u, message->num_ports);
 
   // This is "a2" from the point of view of node1.
   PortName a3 = message->ports[0].name;
@@ -537,7 +537,7 @@ TEST_F(PortsTest, Delegation1) {
 
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
 
-  EXPECT_EQ(0, message->num_ports);
+  EXPECT_EQ(0u, message->num_ports);
   EXPECT_EQ(0, strcmp("hello", static_cast<char*>(message->bytes)));
 
   EXPECT_EQ(OK, node0.ClosePort(a0));

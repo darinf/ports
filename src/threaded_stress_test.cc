@@ -131,13 +131,13 @@ static ScopedMessage NewMessageWithNumPorts(size_t num_ports) {
   const char kMessageText[] = "hello";
   ScopedMessage message(AllocMessage(sizeof(kMessageText), num_ports));
   strcpy(static_cast<char*>(message->bytes), kMessageText);
-  return std::move(message);
+  return message;
 }
 
 static ScopedMessage NewMessageWithPort(PortName port) {
   ScopedMessage message(NewMessageWithNumPorts(1));
   message->ports[0].name = port;
-  return std::move(message);
+  return message;
 }
 
 static ScopedMessage NewMessageWithRandomNumPorts(
@@ -154,7 +154,7 @@ static ScopedMessage NewMessageWithRandomNumPorts(
     other_ports->push_back(b);
   }
 
-  return std::move(message);
+  return message;
 }
 
 static void DoRandomActivity(Node* node, ScopedMessage message) {
@@ -205,16 +205,16 @@ class TestNodeDelegate : public NodeDelegate {
       : node_name_(node_name) {
   }
 
-  virtual void GenerateRandomPortName(PortName* port_name) override {
+  void GenerateRandomPortName(PortName* port_name) override {
     port_name->value_major = GenerateUniqueUint64();
     port_name->value_minor = 0;
   }
 
-  virtual void SendEvent(const NodeName& node_name, Event event) override {
+  void SendEvent(const NodeName& node_name, Event event) override {
     PutEvent(kNodeData[node_name.value_major], std::move(event));
   }
 
-  virtual void MessagesAvailable(const PortName& port) override {
+  void MessagesAvailable(const PortName& port) override {
     Node* node = kNodeData[node_name_.value_major]->node.get();
     for (;;) {
       ScopedMessage message;
@@ -227,14 +227,14 @@ class TestNodeDelegate : public NodeDelegate {
       }
     }
   }
-  
+
  private:
   NodeName node_name_;
 };
 
 static void ThreadFunc(size_t thread_index) {
   this_thread_data = kThreadData[thread_index];
-  
+
   NodeData* node_data = kNodeData[this_thread_data->node_name.value_major];
 
   for (;;) {
@@ -304,7 +304,7 @@ TEST(ThreadedStressTest, RandomDance) {
   std::thread threads[kNumThreads];
 
   for (size_t i = 0; i < kNumThreads; ++i)
-    threads[i] = std::move(std::thread(ThreadFunc, i));
+    threads[i] = std::thread(ThreadFunc, i);
 
   KickOffTest();
 

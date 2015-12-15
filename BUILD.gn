@@ -1,0 +1,38 @@
+# Copyright 2015 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+source_set("ports") {
+  sources = [
+    "include/ports.h",
+    "src/hash_functions.h",
+    "src/logging.cc",
+    "src/logging.h",
+    "src/message.cc",
+    "src/message_queue.cc",
+    "src/message_queue.h",
+    "src/node.cc",
+    "src/node_impl.cc",
+    "src/node_impl.h",
+    "src/port.cc",
+    "src/port.h",
+    "src/ports.cc",
+  ]
+
+  include_dirs = [ ".." ]
+}
+
+executable("ports_unittests") {
+  sources = [
+    "src/test.cc",
+    "src/threaded_stress_test.cc",
+  ]
+
+  deps = [
+    ":ports",
+    "//testing/gtest",
+    "//testing/gtest:gtest_main",
+  ]
+
+  include_dirs = [ ".." ]
+}

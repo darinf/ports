@@ -1,0 +1,161 @@
+// Copyright 2015 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#ifndef PORTS_MOJO_SYSTEM_CORE_H_
+#define PORTS_MOJO_SYSTEM_CORE_H_
+
+#include "base/callback.h"
+#include "base/macros.h"
+#include "mojo/edk/system/system_impl_export.h"
+#include "mojo/public/c/system/buffer.h"
+#include "mojo/public/c/system/data_pipe.h"
+#include "mojo/public/c/system/message_pipe.h"
+#include "mojo/public/c/system/types.h"
+#include "ports/mojo_system/dispatcher.h"
+
+namespace mojo {
+namespace edk {
+
+class PlatformSupport;
+
+// |Core| is an object that implements the Mojo system calls. All public methods
+// are thread-safe.
+class MOJO_SYSTEM_IMPL_EXPORT Core {
+ public:
+  // ---------------------------------------------------------------------------
+  // These methods are only to be used by via the embedder API (and internally):
+  // |*platform_support| must outlive this object.
+  explicit Core(PlatformSupport* platform_support);
+  virtual ~Core();
+
+  // Adds |dispatcher| to the handle table, returning the handle for it. Returns
+  // |MOJO_HANDLE_INVALID| on failure, namely if the handle table is full.
+  MojoHandle AddDispatcher(const scoped_refptr<Dispatcher>& dispatcher);
+
+  // Looks up the dispatcher for the given handle. Returns null if the handle is
+  // invalid.
+  scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
+
+  // Watches on the given handle for the given signals, calling |callback| when
+  // a signal is satisfied or when all signals become unsatisfiable. |callback|
+  // must satisfy stringent requirements -- see |Awakable::Awake()| in
+  // awakable.h. In particular, it must not call any Mojo system functions.
+  MojoResult AsyncWait(MojoHandle handle,
+                       MojoHandleSignals signals,
+                       const base::Callback<void(MojoResult)>& callback);
+
+  PlatformSupport* platform_support() const {
+    return platform_support_;
+  }
+
+  // ---------------------------------------------------------------------------
+
+  // The following methods are essentially implementations of the Mojo Core
+  // functions of the Mojo API, with the C interface translated to C++ by
+  // "mojo/edk/embedder/entrypoints.cc". The best way to understand the contract
+  // of these methods is to look at the header files defining the corresponding
+  // API functions, referenced below.
+
+  // These methods correspond to the API functions defined in
+  // "mojo/public/c/system/functions.h":
+  MojoTimeTicks GetTimeTicksNow();
+  MojoResult Close(MojoHandle handle);
+  MojoResult Wait(MojoHandle handle,
+                  MojoHandleSignals signals,
+                  MojoDeadline deadline,
+                  MojoHandleSignalsState* signals_state);
+  MojoResult WaitMany(const MojoHandle* handles,
+                      const MojoHandleSignals* signals,
+                      uint32_t num_handles,
+                      MojoDeadline deadline,
+                      uint32_t* result_index,
+                      MojoHandleSignalsState* signals_states);
+
+  // These methods correspond to the API functions defined in
+  // "mojo/public/c/system/wait_set.h":
+  MojoResult CreateWaitSet(MojoHandle* wait_set_handle);
+  MojoResult AddHandle(MojoHandle wait_set_handle,
+                       MojoHandle handle,
+                       MojoHandleSignals signals);
+  MojoResult RemoveHandle(MojoHandle wait_set_handle,
+                          MojoHandle handle);
+  MojoResult GetReadyHandles(MojoHandle wait_set_handle,
+                             uint32_t* count,
+                             MojoHandle* handles,
+                             MojoResult* results,
+                             MojoHandleSignalsState* signals_states);
+
+  // These methods correspond to the API functions defined in
+  // "mojo/public/c/system/message_pipe.h":
+  MojoResult CreateMessagePipe(
+      const MojoCreateMessagePipeOptions* options,
+      MojoHandle* message_pipe_handle0,
+      MojoHandle* message_pipe_handle1);
+  MojoResult WriteMessage(MojoHandle message_pipe_handle,
+                          const void* bytes,
+                          uint32_t num_bytes,
+                          const MojoHandle* handles,
+                          uint32_t num_handles,
+                          MojoWriteMessageFlags flags);
+  MojoResult ReadMessage(MojoHandle message_pipe_handle,
+                         void* bytes,
+                         uint32_t* num_bytes,
+                         MojoHandle* handles,
+                         uint32_t* num_handles,
+                         MojoReadMessageFlags flags);
+
+  // These methods correspond to the API functions defined in
+  // "mojo/public/c/system/data_pipe.h":
+  MojoResult CreateDataPipe(
+      const MojoCreateDataPipeOptions* options,
+      MojoHandle* data_pipe_producer_handle,
+      MojoHandle* data_pipe_consumer_handle);
+  MojoResult WriteData(MojoHandle data_pipe_producer_handle,
+                       const void* elements,
+                       uint32_t* num_bytes,
+                       MojoWriteDataFlags flags);
+  MojoResult BeginWriteData(MojoHandle data_pipe_producer_handle,
+                            void** buffer,
+                            uint32_t* buffer_num_bytes,
+                            MojoWriteDataFlags flags);
+  MojoResult EndWriteData(MojoHandle data_pipe_producer_handle,
+                          uint32_t num_bytes_written);
+  MojoResult ReadData(MojoHandle data_pipe_consumer_handle,
+                      void* elements,
+                      uint32_t* num_bytes,
+                      MojoReadDataFlags flags);
+  MojoResult BeginReadData(MojoHandle data_pipe_consumer_handle,
+                           const void** buffer,
+                           uint32_t* buffer_num_bytes,
+                           MojoReadDataFlags flags);
+  MojoResult EndReadData(MojoHandle data_pipe_consumer_handle,
+                         uint32_t num_bytes_read);
+
+  // These methods correspond to the API functions defined in
+  // "mojo/public/c/system/buffer.h":
+  MojoResult CreateSharedBuffer(
+      const MojoCreateSharedBufferOptions* options,
+      uint64_t num_bytes,
+      MojoHandle* shared_buffer_handle);
+  MojoResult DuplicateBufferHandle(
+      MojoHandle buffer_handle,
+      const MojoDuplicateBufferHandleOptions* options,
+      MojoHandle* new_buffer_handle);
+  MojoResult MapBuffer(MojoHandle buffer_handle,
+                       uint64_t offset,
+                       uint64_t num_bytes,
+                       void** buffer,
+                       MojoMapBufferFlags flags);
+  MojoResult UnmapBuffer(void* buffer);
+
+ private:
+  PlatformSupport* const platform_support_;
+
+  DISALLOW_COPY_AND_ASSIGN(Core);
+};
+
+}  // namespace edk
+}  // namespace mojo
+
+#endif  // PORTS_MOJO_SYSTEM_CORE_H_
