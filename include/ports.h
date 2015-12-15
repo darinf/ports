@@ -178,7 +178,9 @@ class Node {
   int ClosePort(const PortName& port);
 
   // Returns the next available message on the specified port or returns a null
-  // message if there are none available.
+  // message if there are none available. Returns ERROR_PORT_PEER_CLOSED to
+  // indicate that this port's peer has closed, meaning that no further
+  // messages will be readable from this port.
   int GetMessage(const PortName& port, ScopedMessage* message);
 
   // Sends a message from the specified port to its peer.
