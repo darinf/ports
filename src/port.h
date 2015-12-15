@@ -48,7 +48,6 @@ struct Port {
   State state;
   NodeName peer_node_name;
   PortName peer_port_name;
-  NodeName sending_to_node_name;
   uint32_t next_sequence_num;
   uint32_t last_sequence_num_to_receive;
   MessageQueue message_queue;

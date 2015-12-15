@@ -59,24 +59,27 @@ class Node::Impl {
   NodeName name_;
   NodeDelegate* delegate_;
 
+  int AcceptMessage(PortName port_name, ScopedMessage message);
+  int PortAccepted(PortName port_name);
+  int PortRejected(PortName port_name);
+  int ObserveProxy(Event event);
+  int ObserveProxyAck(PortName port_name, uint32_t last_sequence_num);
+  int ObserveClosure(Event event);
+
   int AddPort(std::shared_ptr<Port> port, PortName* port_name);
+  int AddPortWithName(const PortName& port_name,
+                      std::shared_ptr<Port> port);
   void ErasePort(PortName port_name);
   std::shared_ptr<Port> GetPort(PortName port_name);
-  int AcceptMessage(PortName port_name, ScopedMessage message);
+
   int WillSendPort(NodeName to_node_name, PortDescriptor* port_descriptor);
   void RejectPort(PortDescriptor* port_descriptor);
-  int PortRejected(PortName port_name);
-  int AcceptPort(PortDescriptor* port_descriptor);
-  int PortAccepted(PortName port_name,
-                   NodeName proxy_to_node_name,
-                   PortName proxy_to_port_name);
+  int AcceptPort(const PortDescriptor& port_descriptor);
+
   int SendMessage_Locked(Port* port, ScopedMessage message);
   int ForwardMessages_Locked(Port* port);
   void InitiateProxyRemoval_Locked(Port* port, PortName port_name);
   void MaybeRemoveProxy_Locked(Port* port, PortName port_name);
-  int ObserveProxy(Event event);
-  int ObserveProxyAck(PortName port_name, uint32_t last_sequence_num);
-  int ObserveClosure(Event event);
   void ClosePort_Locked(Port* port, PortName port_name);
 
   std::mutex ports_lock_;

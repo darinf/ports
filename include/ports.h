@@ -82,8 +82,7 @@ inline bool operator!=(const NodeName& a, const NodeName& b) {
 struct PortDescriptor {
   PortName name;
 
-  // The following fields are used by the implementation and should not be set
-  // before calling SendMessage.
+  // The following fields should be ignored by the embedder.
   NodeName peer_node_name;
   PortName peer_port_name;
   NodeName referring_node_name;
@@ -123,10 +122,6 @@ struct Event {
   PortName port_name;
   ScopedMessage message;
   union {
-    struct {
-      NodeName new_node_name;
-      PortName new_port_name;
-    } port_accepted;
     struct {
       NodeName proxy_node_name;
       PortName proxy_port_name;

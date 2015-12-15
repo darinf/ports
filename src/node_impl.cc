@@ -175,10 +175,7 @@ int Node::Impl::AcceptEvent(Event event) {
     case Event::kAcceptMessage:
       return AcceptMessage(event.port_name, std::move(event.message));
     case Event::kPortAccepted:
-      return PortAccepted(
-          event.port_name,
-          event.port_accepted.new_node_name,
-          event.port_accepted.new_port_name);
+      return PortAccepted(event.port_name);
     case Event::kPortRejected:
       return PortRejected(event.port_name);
     case Event::kObserveProxy:
@@ -211,14 +208,7 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
       {
         std::lock_guard<std::mutex> port_guard(port->lock);
 
-        bool matches;
-        if (port->state == Port::kReceiving || port->state == Port::kProxying) {
-          matches = (port->peer_node_name == node_name);
-        } else {
-          matches = (port->sending_to_node_name == node_name);
-        }
-
-        if (matches) {
+        if (port->peer_node_name == node_name) {
           // We can no longer send messages to this port's peer. We assume we
           // will not receive any more messages from this port's peer as well.
           if (!port->peer_closed) {
@@ -249,37 +239,6 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
     delegate_->MessagesAvailable(port_name);
 
   return OK;
-}
-
-int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
-  // Ensure we end up with a unique port name.
-  for (;;) {
-    *port_name = delegate_->GenerateRandomPortName();
-
-    std::lock_guard<std::mutex> guard(ports_lock_);
-    if (ports_.insert(std::make_pair(*port_name, port)).second)
-      break;
-  }
-
-  DLOG(INFO) << "Created port " << *port_name << "@" << name_;
-  return OK;
-}
-
-void Node::Impl::ErasePort(PortName port_name) {
-  std::lock_guard<std::mutex> guard(ports_lock_);
-
-  ports_.erase(port_name);
-  DLOG(INFO) << "Deleted port " << port_name << "@" << name_;
-}
-
-std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
-  std::lock_guard<std::mutex> guard(ports_lock_);
-
-  auto iter = ports_.find(port_name);
-  if (iter == ports_.end())
-    return std::shared_ptr<Port>();
-
-  return iter->second;
 }
 
 int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
@@ -324,7 +283,7 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   // will get transferred following the usual method.
 
   for (size_t i = 0; i < message->num_ports; ++i) {
-    int rv = AcceptPort(&message->ports[i]);
+    int rv = AcceptPort(message->ports[i]);
     if (rv != OK)
       return rv;
   }
@@ -356,44 +315,34 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   return OK;
 }
 
-int Node::Impl::WillSendPort(NodeName to_node_name,
-                             PortDescriptor* port_descriptor) {
-  PortName local_port_name = port_descriptor->name;
-
-  std::shared_ptr<Port> port = GetPort(local_port_name);
+int Node::Impl::PortAccepted(PortName port_name) {
+  std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    if (port->state != Port::kReceiving) {
-      // Oops, the port can only be moved if it is bound to this node.
+    DLOG(INFO) << "PortAccepted at " << port_name << "@" << name_
+               << " pointing to "
+               << port->peer_port_name << "@" << port->peer_node_name;
+
+    if (port->state != Port::kBuffering)
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
+
+    port->state = Port::kProxying;
+
+    int rv = ForwardMessages_Locked(port.get());
+    if (rv != OK)
+      return rv;
+
+    if (port->remove_proxy_on_last_message) {
+      MaybeRemoveProxy_Locked(port.get(), port_name);
+    } else {
+      InitiateProxyRemoval_Locked(port.get(), port_name);
     }
-
-    // Make sure we don't send messages to the new peer until after we know it
-    // exists. In the meantime, just buffer messages locally.
-    port->state = Port::kBuffering;
-    port->sending_to_node_name = to_node_name;
-
-    // Our "peer" will be updated in PortAccepted.
-
-    port_descriptor->name = PortName();  // To be assigned.
-    port_descriptor->peer_node_name = port->peer_node_name;
-    port_descriptor->peer_port_name = port->peer_port_name;
-    port_descriptor->referring_node_name = name_;
-    port_descriptor->referring_port_name = local_port_name;
-    port_descriptor->next_sequence_num = port->next_sequence_num;
   }
   return OK;
-}
-
-void Node::Impl::RejectPort(PortDescriptor* port_descriptor) {
-  Event event(Event::kPortRejected);
-  event.port_name = port_descriptor->referring_port_name;
-
-  delegate_->SendEvent(port_descriptor->referring_node_name, std::move(event));
 }
 
 int Node::Impl::PortRejected(PortName port_name) {
@@ -415,136 +364,6 @@ int Node::Impl::PortRejected(PortName port_name) {
 
   return OK;
 }
-
-int Node::Impl::AcceptPort(PortDescriptor* port_descriptor) {
-  std::shared_ptr<Port> port =
-      std::make_shared<Port>(port_descriptor->next_sequence_num);
-  port->peer_node_name = port_descriptor->peer_node_name;
-  port->peer_port_name = port_descriptor->peer_port_name;
-
-  PortName port_name;
-  int rv = AddPort(std::move(port), &port_name);
-  if (rv != OK)
-    return rv;
-
-  // Provide the port name here so that it will be visible to the eventual
-  // recipient of the message containing this PortDescriptor.
-  port_descriptor->name = port_name;
-
-  // Provide the referring port w/ the name of this new port, so it can allow
-  // new messages to flow.
-
-  Event event(Event::kPortAccepted);
-  event.port_name = port_descriptor->referring_port_name;
-  event.port_accepted.new_node_name = name_;
-  event.port_accepted.new_port_name = port_name;
-
-  delegate_->SendEvent(port_descriptor->referring_node_name, std::move(event));
-  return OK;
-}
-
-int Node::Impl::PortAccepted(PortName port_name,
-                             NodeName proxy_to_node_name,
-                             PortName proxy_to_port_name) {
-  DLOG(INFO) << "PortAccepted at " << port_name << "@" << name_
-             << " pointing to "
-             << proxy_to_port_name << "@" << proxy_to_node_name;
-
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
-
-  {
-    std::lock_guard<std::mutex> guard(port->lock);
-
-    if (port->state != Port::kBuffering)
-      return Oops(ERROR_PORT_STATE_UNEXPECTED);
-
-    port->state = Port::kProxying;
-    port->peer_node_name = proxy_to_node_name;
-    port->peer_port_name = proxy_to_port_name;
-
-    int rv = ForwardMessages_Locked(port.get());
-    if (rv != OK)
-      return rv;
-
-    if (port->remove_proxy_on_last_message) {
-      MaybeRemoveProxy_Locked(port.get(), port_name);
-    } else {
-      InitiateProxyRemoval_Locked(port.get(), port_name);
-    }
-  }
-  return OK;
-}
-
-int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
-  message->sequence_num = port->next_sequence_num++;
-
-  for (size_t i = 0; i < message->num_ports; ++i) {
-    int rv = WillSendPort(port->peer_node_name, &message->ports[i]);
-    if (rv != OK)
-      return rv;
-  }
-
-  DLOG(INFO) << "Sending message " << message->sequence_num << " to "
-             << port->peer_port_name << "@" << port->peer_node_name;
-
-  Event event(Event::kAcceptMessage);
-  event.port_name = port->peer_port_name;
-  event.message = std::move(message);
-
-  delegate_->SendEvent(port->peer_node_name, std::move(event));
-  return OK;
-}
-
-int Node::Impl::ForwardMessages_Locked(Port* port) {
-  for (;;) {
-    ScopedMessage message;
-    port->message_queue.GetNextMessage(&message);
-    if (!message)
-      break;
-
-    int rv = SendMessage_Locked(port, std::move(message));
-    if (rv != OK)
-      return rv;
-  }
-  return OK;
-}
-
-void Node::Impl::InitiateProxyRemoval_Locked(Port* port, PortName port_name) {
-  // To remove this node, we start by notifying the connected graph that we are
-  // a proxy. This allows whatever port is referencing this node to skip it.
-  // Eventually, this node will receive ObserveProxyAck (or ObserveClosure if
-  // the peer was closed in the meantime).
-
-  Event event(Event::kObserveProxy);
-  event.port_name = port->peer_port_name;
-  event.observe_proxy.proxy_node_name = name_;
-  event.observe_proxy.proxy_port_name = port_name;
-  event.observe_proxy.proxy_to_node_name = port->peer_node_name;
-  event.observe_proxy.proxy_to_port_name = port->peer_port_name;
-
-  delegate_->SendEvent(port->peer_node_name, std::move(event));
-}
-
-void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
-  assert(port->state == Port::kProxying);
-
-  // Make sure we have seen ObserveProxyAck before removing the port.
-  if (!port->remove_proxy_on_last_message)
-    return;
-
-  uint32_t last_sequence_num_proxied = 
-      port->message_queue.next_sequence_num() - 1;
-
-  if (last_sequence_num_proxied == port->last_sequence_num_to_receive) {
-    // This proxy port is done. We can now remove it!
-    ErasePort(port_name);
-  } else {
-    DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
-               << " now; waiting for more messages";
-  }
-}  
 
 int Node::Impl::ObserveProxy(Event event) {
   // The port may have already been closed locally, in which case the
@@ -666,6 +485,169 @@ int Node::Impl::ObserveClosure(Event event) {
     delegate_->MessagesAvailable(port_name);
   return OK;
 }
+
+int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
+  *port_name = delegate_->GenerateRandomPortName();
+  return AddPortWithName(*port_name, std::move(port));
+}
+
+int Node::Impl::AddPortWithName(const PortName& port_name,
+                                std::shared_ptr<Port> port) {
+  std::lock_guard<std::mutex> guard(ports_lock_);
+
+  if (!ports_.insert(std::make_pair(port_name, port)).second)
+    return Oops(ERROR_PORT_EXISTS);  // Suggests a bad UUID generator.
+
+  DLOG(INFO) << "Created port " << port_name << "@" << name_;
+  return OK;
+}
+
+void Node::Impl::ErasePort(PortName port_name) {
+  std::lock_guard<std::mutex> guard(ports_lock_);
+
+  ports_.erase(port_name);
+  DLOG(INFO) << "Deleted port " << port_name << "@" << name_;
+}
+
+std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
+  std::lock_guard<std::mutex> guard(ports_lock_);
+
+  auto iter = ports_.find(port_name);
+  if (iter == ports_.end())
+    return std::shared_ptr<Port>();
+
+  return iter->second;
+}
+
+int Node::Impl::WillSendPort(NodeName to_node_name,
+                             PortDescriptor* port_descriptor) {
+  PortName local_port_name = port_descriptor->name;
+
+  std::shared_ptr<Port> port = GetPort(local_port_name);
+  if (!port)
+    return Oops(ERROR_PORT_UNKNOWN);
+
+  PortName new_port_name = delegate_->GenerateRandomPortName();
+
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+
+    if (port->state != Port::kReceiving) {
+      // Oops, the port can only be moved if it is bound to this node.
+      return Oops(ERROR_PORT_STATE_UNEXPECTED);
+    }
+
+    // Make sure we don't send messages to the new peer until after we know it
+    // exists. In the meantime, just buffer messages locally.
+    port->state = Port::kBuffering;
+
+    port_descriptor->name = new_port_name;
+    port_descriptor->peer_node_name = port->peer_node_name;
+    port_descriptor->peer_port_name = port->peer_port_name;
+    port_descriptor->referring_node_name = name_;
+    port_descriptor->referring_port_name = local_port_name;
+    port_descriptor->next_sequence_num = port->next_sequence_num;
+
+    // Configure the local port to point to the new port.
+    port->peer_node_name = to_node_name;
+    port->peer_port_name = new_port_name;
+  }
+  return OK;
+}
+
+void Node::Impl::RejectPort(PortDescriptor* port_descriptor) {
+  Event event(Event::kPortRejected);
+  event.port_name = port_descriptor->referring_port_name;
+
+  delegate_->SendEvent(port_descriptor->referring_node_name, std::move(event));
+}
+
+int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
+  std::shared_ptr<Port> port =
+      std::make_shared<Port>(port_descriptor.next_sequence_num);
+  port->peer_node_name = port_descriptor.peer_node_name;
+  port->peer_port_name = port_descriptor.peer_port_name;
+
+  int rv = AddPortWithName(port_descriptor.name, std::move(port));
+  if (rv != OK)
+    return rv;
+
+  // Allow referring port to forward messages.
+  Event event(Event::kPortAccepted);
+  event.port_name = port_descriptor.referring_port_name;
+
+  delegate_->SendEvent(port_descriptor.referring_node_name, std::move(event));
+  return OK;
+}
+
+int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
+  message->sequence_num = port->next_sequence_num++;
+
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    int rv = WillSendPort(port->peer_node_name, &message->ports[i]);
+    if (rv != OK)
+      return rv;
+  }
+
+  DLOG(INFO) << "Sending message " << message->sequence_num << " to "
+             << port->peer_port_name << "@" << port->peer_node_name;
+
+  Event event(Event::kAcceptMessage);
+  event.port_name = port->peer_port_name;
+  event.message = std::move(message);
+
+  delegate_->SendEvent(port->peer_node_name, std::move(event));
+  return OK;
+}
+
+int Node::Impl::ForwardMessages_Locked(Port* port) {
+  for (;;) {
+    ScopedMessage message;
+    port->message_queue.GetNextMessage(&message);
+    if (!message)
+      break;
+
+    int rv = SendMessage_Locked(port, std::move(message));
+    if (rv != OK)
+      return rv;
+  }
+  return OK;
+}
+
+void Node::Impl::InitiateProxyRemoval_Locked(Port* port, PortName port_name) {
+  // To remove this node, we start by notifying the connected graph that we are
+  // a proxy. This allows whatever port is referencing this node to skip it.
+  // Eventually, this node will receive ObserveProxyAck (or ObserveClosure if
+  // the peer was closed in the meantime).
+
+  Event event(Event::kObserveProxy);
+  event.port_name = port->peer_port_name;
+  event.observe_proxy.proxy_node_name = name_;
+  event.observe_proxy.proxy_port_name = port_name;
+  event.observe_proxy.proxy_to_node_name = port->peer_node_name;
+  event.observe_proxy.proxy_to_port_name = port->peer_port_name;
+
+  delegate_->SendEvent(port->peer_node_name, std::move(event));
+}
+
+void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
+  assert(port->state == Port::kProxying);
+
+  // Make sure we have seen ObserveProxyAck before removing the port.
+  if (!port->remove_proxy_on_last_message)
+    return;
+
+  uint32_t last_sequence_num_proxied = 
+      port->message_queue.next_sequence_num() - 1;
+
+  if (last_sequence_num_proxied == port->last_sequence_num_to_receive) {
+    // This proxy port is done. We can now remove it!
+    ErasePort(port_name);
+  } else {
+    DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
+               << " now; waiting for more messages";
+  }
+}  
 
 void Node::Impl::ClosePort_Locked(Port* port, PortName port_name) {
   // We pass along the sequence number of the last message sent from this
