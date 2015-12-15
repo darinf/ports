@@ -176,8 +176,6 @@ int Node::Impl::AcceptEvent(Event event) {
       return AcceptMessage(event.port_name, std::move(event.message));
     case Event::kPortAccepted:
       return PortAccepted(event.port_name);
-    case Event::kPortRejected:
-      return PortRejected(event.port_name);
     case Event::kObserveProxy:
       return ObserveProxy(std::move(event));
     case Event::kObserveProxyAck:
@@ -191,7 +189,7 @@ int Node::Impl::AcceptEvent(Event event) {
 
 int Node::Impl::LostConnectionToNode(NodeName node_name) {
   // We can no longer send events to the given node. We also can't expect any
-  // AcceptPort or RejectPort events.
+  // PortAccepted events.
 
   DLOG(INFO) << "Observing lost connection from node " << name_
              << " to node " << node_name;
@@ -247,40 +245,11 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
 
   std::shared_ptr<Port> port = GetPort(port_name);
 
-  // TODO: Make sure to reject spurious messages that arrive after the expected
-  // last message.
-#if 0
-  bool reject_message = false;
-
-  if (!port) {
-    reject_message = true;
-  } else {
-    std::lock_guard<std::mutex> guard(port->lock);
-    if (port->status == Port::kReceiving) {
-      if (port->peer_closed) {
-      }
-    } else {
-    }
-  }
-#endif
-
-  // If this port is already closed or doesn't exist, then we cannot accept the
-  // message, and any ports sent to us will need to be rejected. Implementation
-  // note: We can't accept and then close the ports as that would introduce a
-  // race condition between PortAccepted and ObserveClosure. TODO: We could
-  // perhaps workaround that by minting the port name in WillSendPort.
-
-  if (!port) {
-    DLOG(INFO) << "Rejecting message " << message->sequence_num
-               << " to " << port_name << "@" << name_;
-    for (size_t i = 0; i < message->num_ports; ++i)
-      RejectPort(&message->ports[i]);
-    return OK;
-  }
-
-  // Even if this port is buffering or proxying messages, we still need these
-  // ports to be bound to this node. When the message is forwarded, these ports
-  // will get transferred following the usual method.
+  // Even if this port does not exist, cannot receive anymore messages or is
+  // buffering or proxying messages, we still need these ports to be bound to
+  // this node. When the message is forwarded, these ports will get transferred
+  // following the usual method. If the message cannot be accepted, then the
+  // newly bound ports will simply be closed.
 
   for (size_t i = 0; i < message->num_ports; ++i) {
     int rv = AcceptPort(message->ports[i]);
@@ -289,10 +258,17 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   }
 
   bool has_next_message = false;
-  {
+  bool message_accepted = false;
+
+  if (port) {
     std::lock_guard<std::mutex> guard(port->lock);
 
+    // TODO: Reject spurious messages if we've already received the last
+    // expected message.
+
     port->message_queue.AcceptMessage(std::move(message), &has_next_message);
+    message_accepted = true;
+
     if (port->state == Port::kBuffering) {
       has_next_message = false;
     } else if (port->state == Port::kProxying) {
@@ -309,8 +285,14 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
       MaybeRemoveProxy_Locked(port.get(), port_name);
     }
   }
-  if (has_next_message)
+
+  if (!message_accepted) {
+    // Close all newly accepted ports as they are effectively orphaned.
+    for (size_t i = 0; i < message->num_ports; ++i)
+      ClosePort(message->ports[i].name);
+  } else if (has_next_message) {
     delegate_->MessagesAvailable(port_name);
+  }
 
   return OK;
 }
@@ -336,32 +318,16 @@ int Node::Impl::PortAccepted(PortName port_name) {
     if (rv != OK)
       return rv;
 
+    // We may have observed closure before receiving PortAccepted. In that
+    // case, we can advance to removing the proxy without sending out an
+    // ObserveProxy message. We already know the last expected message, etc.
+
     if (port->remove_proxy_on_last_message) {
       MaybeRemoveProxy_Locked(port.get(), port_name);
     } else {
       InitiateProxyRemoval_Locked(port.get(), port_name);
     }
   }
-  return OK;
-}
-
-int Node::Impl::PortRejected(PortName port_name) {
-  DLOG(INFO) << "PortRejected at " << port_name << "@" << name_;
-
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
-
-  {
-    std::lock_guard<std::mutex> guard(port->lock);
-
-    if (port->state != Port::kBuffering)
-      return Oops(ERROR_PORT_STATE_UNEXPECTED);
-
-    ClosePort_Locked(port.get(), port_name);
-  }
-  ErasePort(port_name);
-
   return OK;
 }
 
@@ -553,13 +519,6 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
     port->peer_port_name = new_port_name;
   }
   return OK;
-}
-
-void Node::Impl::RejectPort(PortDescriptor* port_descriptor) {
-  Event event(Event::kPortRejected);
-  event.port_name = port_descriptor->referring_port_name;
-
-  delegate_->SendEvent(port_descriptor->referring_node_name, std::move(event));
 }
 
 int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {

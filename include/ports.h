@@ -114,7 +114,6 @@ struct Event {
   enum Type {
     kAcceptMessage,
     kPortAccepted,
-    kPortRejected,
     kObserveProxy,
     kObserveProxyAck,
     kObserveClosure,
