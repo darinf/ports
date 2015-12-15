@@ -27,37 +27,21 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef PORTS_SRC_PORT_H_
-#define PORTS_SRC_PORT_H_
-
-#include <mutex>
-#include <vector>
-
-#include "ports/src/message_queue.h"
+#include "ports/include/ports.h"
 
 namespace ports {
 
-struct Port {
-  enum State {
-    kReceiving,
-    kBuffering,
-    kProxying
-  };
+Event::Event(Type type) : type(type) {}
 
-  std::mutex lock;
-  State state;
-  NodeName peer_node_name;
-  PortName peer_port_name;
-  uint32_t next_sequence_num;
-  uint32_t last_sequence_num_to_receive;
-  MessageQueue message_queue;
-  bool remove_proxy_on_last_message;
-  bool peer_closed;
+Event::Event(Event&& other) { *this = std::move(other); }
 
-  explicit Port(uint32_t next_sequence_num);
-  ~Port();
-};
+Event::~Event() {}
+
+Event& Event::operator=(Event&& other) {
+  type = other.type;
+  message = std::move(other.message);
+  observe_proxy = other.observe_proxy;
+  return *this;
+}
 
 }  // namespace ports
-
-#endif  // PORTS_SRC_PORT_H_
