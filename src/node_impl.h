@@ -41,44 +41,45 @@ namespace ports {
 
 class Node::Impl {
  public:
-  Impl(NodeName name, NodeDelegate* delegate);
+  Impl(const NodeName& name, NodeDelegate* delegate);
   ~Impl();
 
   int CreatePort(PortName* port_name);
-  int InitializePort(PortName port_name,
-                     NodeName peer_node_name,
-                     PortName peer_port_name);
+  int InitializePort(const PortName& port_name,
+                     const NodeName& peer_node_name,
+                     const PortName& peer_port_name);
   int CreatePortPair(PortName* port_name_0, PortName* port_name_1);
-  int ClosePort(PortName port_name);
-  int GetMessage(PortName port_name, ScopedMessage* message);
-  int SendMessage(PortName port_name, ScopedMessage message); 
+  int ClosePort(const PortName& port_name);
+  int GetMessage(const PortName& port_name, ScopedMessage* message);
+  int SendMessage(const PortName& port_name, ScopedMessage message); 
   int AcceptEvent(Event event);
-  int LostConnectionToNode(NodeName node_name);
+  int LostConnectionToNode(const NodeName& node_name);
 
  private:
   NodeName name_;
   NodeDelegate* delegate_;
 
-  int AcceptMessage(PortName port_name, ScopedMessage message);
-  int PortAccepted(PortName port_name);
+  int AcceptMessage(const PortName& port_name, ScopedMessage message);
+  int PortAccepted(const PortName& port_name);
   int ObserveProxy(Event event);
-  int ObserveProxyAck(PortName port_name, uint32_t last_sequence_num);
+  int ObserveProxyAck(const PortName& port_name, uint32_t last_sequence_num);
   int ObserveClosure(Event event);
 
   int AddPort(std::shared_ptr<Port> port, PortName* port_name);
   int AddPortWithName(const PortName& port_name,
                       std::shared_ptr<Port> port);
-  void ErasePort(PortName port_name);
-  std::shared_ptr<Port> GetPort(PortName port_name);
+  void ErasePort(const PortName& port_name);
+  std::shared_ptr<Port> GetPort(const PortName& port_name);
 
-  int WillSendPort(NodeName to_node_name, PortDescriptor* port_descriptor);
+  int WillSendPort(const NodeName& to_node_name,
+                   PortDescriptor* port_descriptor);
   int AcceptPort(const PortDescriptor& port_descriptor);
 
   int SendMessage_Locked(Port* port, ScopedMessage message);
   int ForwardMessages_Locked(Port* port);
-  void InitiateProxyRemoval_Locked(Port* port, PortName port_name);
-  void MaybeRemoveProxy_Locked(Port* port, PortName port_name);
-  void ClosePort_Locked(Port* port, PortName port_name);
+  void InitiateProxyRemoval_Locked(Port* port, const PortName& port_name);
+  void MaybeRemoveProxy_Locked(Port* port, const PortName& port_name);
+  void ClosePort_Locked(Port* port, const PortName& port_name);
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
