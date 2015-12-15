@@ -48,7 +48,7 @@ struct Port {
   State state;
   NodeName peer_node_name;
   PortName peer_port_name;
-  uint32_t next_sequence_num;
+  uint32_t next_sequence_num_to_send;
   uint32_t last_sequence_num_to_receive;
   MessageQueue message_queue;
   bool remove_proxy_on_last_message;
@@ -56,7 +56,7 @@ struct Port {
 
   explicit Port(uint32_t next_sequence_num)
       : state(kReceiving),
-        next_sequence_num(next_sequence_num),
+        next_sequence_num_to_send(next_sequence_num),
         last_sequence_num_to_receive(0),
         remove_proxy_on_last_message(false),
         peer_closed(false) {}

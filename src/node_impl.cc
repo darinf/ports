@@ -42,6 +42,17 @@ static int DebugError(const char* message, int error_code, const char* func) {
 }
 #define Oops(x) DebugError(#x, x, __func__)
 
+static bool CanAcceptMoreMessages(const Port* port) {
+  // Have we already doled out the last message (i.e., do we expect to NOT
+  // receive further messages)?
+  uint32_t next_sequence_num = port->message_queue.next_sequence_num();
+  if (port->peer_closed || port->remove_proxy_on_last_message) {
+    if (port->last_sequence_num_to_receive == next_sequence_num - 1)
+      return false;
+  }
+  return true;
+}
+
 Node::Impl::Impl(const NodeName& name, NodeDelegate* delegate)
     : name_(name),
       delegate_(delegate) {
@@ -132,12 +143,8 @@ int Node::Impl::GetMessage(const PortName& port_name, ScopedMessage* message) {
 
     // Let the embedder get messages until there are no more before reporting
     // that the peer closed its end.
-    if (port->peer_closed) {
-      uint32_t last_sequence_num_received = 
-          port->message_queue.next_sequence_num() - 1;
-      if (last_sequence_num_received == port->last_sequence_num_to_receive)
-        return ERROR_PORT_PEER_CLOSED;
-    }
+    if (!CanAcceptMoreMessages(port.get()))
+      return ERROR_PORT_PEER_CLOSED;
 
     port->message_queue.GetNextMessage(message);
   }
@@ -265,26 +272,27 @@ int Node::Impl::AcceptMessage(const PortName& port_name,
   if (port) {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    // TODO: Reject spurious messages if we've already received the last
-    // expected message.
+    // Reject spurious messages if we've already received the last expected
+    // message.
+    if (CanAcceptMoreMessages(port.get())) {
+      message_accepted = true;
+      port->message_queue.AcceptMessage(std::move(message), &has_next_message);
 
-    port->message_queue.AcceptMessage(std::move(message), &has_next_message);
-    message_accepted = true;
+      if (port->state == Port::kBuffering) {
+        has_next_message = false;
+      } else if (port->state == Port::kProxying) {
+        has_next_message = false;
 
-    if (port->state == Port::kBuffering) {
-      has_next_message = false;
-    } else if (port->state == Port::kProxying) {
-      has_next_message = false;
+        // Forward messages. We forward messages in sequential order here so
+        // that we maintain the message queue's notion of next sequence number.
+        // That's useful for the proxy removal process as we can tell when this
+        // port has seen all of the messages it is expected to see.
+        int rv = ForwardMessages_Locked(port.get());
+        if (rv != OK)
+          return rv;
 
-      // Forward messages. We forward messages in sequential order here so that
-      // we maintain the message queue's notion of next sequence number. That's
-      // useful for the proxy removal process as we can tell when this port has
-      // seen all of the messages it is expected to see.
-      int rv = ForwardMessages_Locked(port.get());
-      if (rv != OK)
-        return rv;
-
-      MaybeRemoveProxy_Locked(port.get(), port_name);
+        MaybeRemoveProxy_Locked(port.get(), port_name);
+      }
     }
   }
 
@@ -362,7 +370,8 @@ int Node::Impl::ObserveProxy(Event event) {
 
       Event ack(Event::kObserveProxyAck);
       ack.port_name = event.observe_proxy.proxy_port_name;
-      ack.observe_proxy_ack.last_sequence_num = port->next_sequence_num - 1;
+      ack.observe_proxy_ack.last_sequence_num =
+          port->next_sequence_num_to_send - 1;
 
       delegate_->SendEvent(event.observe_proxy.proxy_node_name, std::move(ack));
     } else {
@@ -428,9 +437,7 @@ int Node::Impl::ObserveClosure(Event event) {
                << event.observe_closure.last_sequence_num << ")";
 
     if (port->state == Port::kReceiving) {
-      uint32_t last_sequence_num_received =
-          port->message_queue.next_sequence_num() - 1;
-      if (port->last_sequence_num_to_receive == last_sequence_num_received)
+      if (!CanAcceptMoreMessages(port.get()))
         notify_delegate = true;
     } else {
       NodeName next_node_name = port->peer_node_name;
@@ -515,7 +522,7 @@ int Node::Impl::WillSendPort(const NodeName& to_node_name,
     port_descriptor->peer_port_name = port->peer_port_name;
     port_descriptor->referring_node_name = name_;
     port_descriptor->referring_port_name = local_port_name;
-    port_descriptor->next_sequence_num = port->next_sequence_num;
+    port_descriptor->next_sequence_num = port->next_sequence_num_to_send;
 
     // Configure the local port to point to the new port.
     port->peer_node_name = to_node_name;
@@ -543,7 +550,7 @@ int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
 }
 
 int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
-  message->sequence_num = port->next_sequence_num++;
+  message->sequence_num = port->next_sequence_num_to_send++;
 
   for (size_t i = 0; i < message->num_ports; ++i) {
     int rv = WillSendPort(port->peer_node_name, &message->ports[i]);
@@ -601,10 +608,7 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
   if (!port->remove_proxy_on_last_message)
     return;
 
-  uint32_t last_sequence_num_proxied = 
-      port->message_queue.next_sequence_num() - 1;
-
-  if (last_sequence_num_proxied == port->last_sequence_num_to_receive) {
+  if (!CanAcceptMoreMessages(port)) {
     // This proxy port is done. We can now remove it!
     ErasePort(port_name);
   } else {
@@ -620,7 +624,7 @@ void Node::Impl::ClosePort_Locked(Port* port, const PortName& port_name) {
 
   Event event(Event::kObserveClosure);
   event.port_name = port->peer_port_name;
-  event.observe_closure.last_sequence_num = port->next_sequence_num - 1;
+  event.observe_closure.last_sequence_num = port->next_sequence_num_to_send - 1;
 
   delegate_->SendEvent(port->peer_node_name, std::move(event));
 }
