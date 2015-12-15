@@ -134,7 +134,11 @@ struct Event {
       uint32_t last_sequence_num;
     } observe_closure;
   };
-  explicit Event(Type type) : type(type) {}
+  explicit Event(Type type);
+  Event(Event&& other);
+  ~Event();
+
+  Event& operator=(Event&& other);
 };
 
 // Implemented by the embedder.
@@ -190,7 +194,7 @@ class Node {
   int LostConnectionToNode(NodeName node);
 
  private:
-  struct Impl;
+  class Impl;
   Impl* impl_;
 };
 
