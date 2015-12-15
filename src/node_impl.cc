@@ -42,7 +42,7 @@ static int DebugError(const char* message, int error_code, const char* func) {
 }
 #define Oops(x) DebugError(#x, x, __func__)
 
-Node::Impl::Impl(NodeName name, NodeDelegate* delegate)
+Node::Impl::Impl(const NodeName& name, NodeDelegate* delegate)
     : name_(name),
       delegate_(delegate) {
 }
@@ -57,9 +57,9 @@ int Node::Impl::CreatePort(PortName* port_name) {
   return AddPort(std::move(port), port_name);
 }
 
-int Node::Impl::InitializePort(PortName port_name,
-                               NodeName peer_node_name,
-                               PortName peer_port_name) {
+int Node::Impl::InitializePort(const PortName& port_name,
+                               const NodeName& peer_node_name,
+                               const PortName& peer_port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -98,7 +98,7 @@ int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
   return OK;
 }
 
-int Node::Impl::ClosePort(PortName port_name) {
+int Node::Impl::ClosePort(const PortName& port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -115,7 +115,7 @@ int Node::Impl::ClosePort(PortName port_name) {
   return OK;
 }
 
-int Node::Impl::GetMessage(PortName port_name, ScopedMessage* message) {
+int Node::Impl::GetMessage(const PortName& port_name, ScopedMessage* message) {
   *message = nullptr;
 
   std::shared_ptr<Port> port = GetPort(port_name);
@@ -144,7 +144,7 @@ int Node::Impl::GetMessage(PortName port_name, ScopedMessage* message) {
   return OK;
 }
 
-int Node::Impl::SendMessage(PortName port_name, ScopedMessage message) {
+int Node::Impl::SendMessage(const PortName& port_name, ScopedMessage message) {
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (message->ports[i].name == port_name)
       return Oops(ERROR_PORT_CANNOT_SEND_SELF);
@@ -187,7 +187,7 @@ int Node::Impl::AcceptEvent(Event event) {
   return Oops(ERROR_NOT_IMPLEMENTED);
 }
 
-int Node::Impl::LostConnectionToNode(NodeName node_name) {
+int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
   // We can no longer send events to the given node. We also can't expect any
   // PortAccepted events.
 
@@ -214,7 +214,8 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
             port->last_sequence_num_to_receive =
                 port->message_queue.next_sequence_num() - 1;
 
-            ports_to_notify.push_back(iter->first);
+            if (port->state == Port::kReceiving)
+              ports_to_notify.push_back(iter->first);
           }
 
           // We do not expect to forward any further messages, and we do not
@@ -239,7 +240,8 @@ int Node::Impl::LostConnectionToNode(NodeName node_name) {
   return OK;
 }
 
-int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
+int Node::Impl::AcceptMessage(const PortName& port_name,
+                              ScopedMessage message) {
   DLOG(INFO) << "AcceptMessage " << message->sequence_num
              << " at " << port_name << "@" << name_;
 
@@ -297,7 +299,7 @@ int Node::Impl::AcceptMessage(PortName port_name, ScopedMessage message) {
   return OK;
 }
 
-int Node::Impl::PortAccepted(PortName port_name) {
+int Node::Impl::PortAccepted(const PortName& port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
@@ -374,7 +376,7 @@ int Node::Impl::ObserveProxy(Event event) {
   return OK;
 }
 
-int Node::Impl::ObserveProxyAck(PortName port_name,
+int Node::Impl::ObserveProxyAck(const PortName& port_name,
                                 uint32_t last_sequence_num) {
   DLOG(INFO) << "ObserveProxyAck at " << port_name << "@" << name_
              << " (last_sequence_num=" << last_sequence_num << ")";
@@ -453,7 +455,7 @@ int Node::Impl::ObserveClosure(Event event) {
 }
 
 int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
-  *port_name = delegate_->GenerateRandomPortName();
+  delegate_->GenerateRandomPortName(port_name);
   return AddPortWithName(*port_name, std::move(port));
 }
 
@@ -468,14 +470,14 @@ int Node::Impl::AddPortWithName(const PortName& port_name,
   return OK;
 }
 
-void Node::Impl::ErasePort(PortName port_name) {
+void Node::Impl::ErasePort(const PortName& port_name) {
   std::lock_guard<std::mutex> guard(ports_lock_);
 
   ports_.erase(port_name);
   DLOG(INFO) << "Deleted port " << port_name << "@" << name_;
 }
 
-std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
+std::shared_ptr<Port> Node::Impl::GetPort(const PortName& port_name) {
   std::lock_guard<std::mutex> guard(ports_lock_);
 
   auto iter = ports_.find(port_name);
@@ -485,7 +487,7 @@ std::shared_ptr<Port> Node::Impl::GetPort(PortName port_name) {
   return iter->second;
 }
 
-int Node::Impl::WillSendPort(NodeName to_node_name,
+int Node::Impl::WillSendPort(const NodeName& to_node_name,
                              PortDescriptor* port_descriptor) {
   PortName local_port_name = port_descriptor->name;
 
@@ -493,7 +495,8 @@ int Node::Impl::WillSendPort(NodeName to_node_name,
   if (!port)
     return Oops(ERROR_PORT_UNKNOWN);
 
-  PortName new_port_name = delegate_->GenerateRandomPortName();
+  PortName new_port_name;
+  delegate_->GenerateRandomPortName(&new_port_name);
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -573,7 +576,8 @@ int Node::Impl::ForwardMessages_Locked(Port* port) {
   return OK;
 }
 
-void Node::Impl::InitiateProxyRemoval_Locked(Port* port, PortName port_name) {
+void Node::Impl::InitiateProxyRemoval_Locked(Port* port,
+                                             const PortName& port_name) {
   // To remove this node, we start by notifying the connected graph that we are
   // a proxy. This allows whatever port is referencing this node to skip it.
   // Eventually, this node will receive ObserveProxyAck (or ObserveClosure if
@@ -589,7 +593,8 @@ void Node::Impl::InitiateProxyRemoval_Locked(Port* port, PortName port_name) {
   delegate_->SendEvent(port->peer_node_name, std::move(event));
 }
 
-void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
+void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
+                                         const PortName& port_name) {
   assert(port->state == Port::kProxying);
 
   // Make sure we have seen ObserveProxyAck before removing the port.
@@ -608,7 +613,7 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port, PortName port_name) {
   }
 }  
 
-void Node::Impl::ClosePort_Locked(Port* port, PortName port_name) {
+void Node::Impl::ClosePort_Locked(Port* port, const PortName& port_name) {
   // We pass along the sequence number of the last message sent from this
   // port to allow the peer to have the opportunity to consume all inbound
   // messages before notifying the embedder that this port is closed.

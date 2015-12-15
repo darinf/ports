@@ -31,7 +31,7 @@
 
 namespace ports {
 
-Node::Node(NodeName name, NodeDelegate* delegate)
+Node::Node(const NodeName& name, NodeDelegate* delegate)
     : impl_(new Impl(name, delegate)) {
 }
 
@@ -43,7 +43,9 @@ int Node::CreatePort(PortName* port) {
   return impl_->CreatePort(port);
 }
 
-int Node::InitializePort(PortName port, NodeName peer_node, PortName peer) {
+int Node::InitializePort(const PortName& port,
+                         const NodeName& peer_node,
+                         const PortName& peer) {
   return impl_->InitializePort(port, peer_node, peer);
 }
 
@@ -51,15 +53,15 @@ int Node::CreatePortPair(PortName* port0, PortName* port1) {
   return impl_->CreatePortPair(port0, port1);
 }
 
-int Node::ClosePort(PortName port_name) {
+int Node::ClosePort(const PortName& port_name) {
   return impl_->ClosePort(port_name);
 }
 
-int Node::GetMessage(PortName port, ScopedMessage* message) {
+int Node::GetMessage(const PortName& port, ScopedMessage* message) {
   return impl_->GetMessage(port, message);
 }
 
-int Node::SendMessage(PortName port, ScopedMessage message) {
+int Node::SendMessage(const PortName& port, ScopedMessage message) {
   return impl_->SendMessage(port, std::move(message));
 }
 
@@ -67,7 +69,7 @@ int Node::AcceptEvent(Event event) {
   return impl_->AcceptEvent(std::move(event));
 }
 
-int Node::LostConnectionToNode(NodeName node) {
+int Node::LostConnectionToNode(const NodeName& node) {
   return impl_->LostConnectionToNode(node);
 }
 

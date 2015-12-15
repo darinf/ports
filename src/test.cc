@@ -52,7 +52,7 @@ static void LogMessage(const Message* message) {
   }
   DLOG(INFO) << "message: seq_num=" << message->sequence_num
              << " payload=\"" << static_cast<const char*>(message->bytes)
-             << "\" ports=[" << ports << "]";
+             << "\" ports=[" << ports.str() << "]";
 }
 
 struct Task {
@@ -123,7 +123,7 @@ static ScopedMessage NewStringMessageWithPort(const std::string& s,
 
 class TestNodeDelegate : public NodeDelegate {
  public:
-  explicit TestNodeDelegate(NodeName node_name)
+  explicit TestNodeDelegate(const NodeName& node_name)
       : node_name_(node_name),
         drop_events_(false),
         read_messages_(true),
@@ -144,12 +144,13 @@ class TestNodeDelegate : public NodeDelegate {
     return true;
   }
 
-  PortName GenerateRandomPortName() override {
+  void GenerateRandomPortName(PortName* port_name) override {
     static uint64_t next_port_name = 1;
-    return PortName(next_port_name++, 0);
+    port_name->value_major = next_port_name++;
+    port_name->value_minor = 0;
   }
 
-  void SendEvent(NodeName node_name, Event event) override {
+  void SendEvent(const NodeName& node_name, Event event) override {
     if (drop_events_) {
       DLOG(INFO) << "Dropping SendEvent(" << event.type << ") from node "
                  << node_name_ << " to "
@@ -162,14 +163,16 @@ class TestNodeDelegate : public NodeDelegate {
     task_queue.push(new Task(node_name, std::move(event)));
   }
 
-  void MessagesAvailable(PortName port) override {
+  void MessagesAvailable(const PortName& port) override {
     DLOG(INFO) << "MessagesAvailable for " << port << "@" << node_name_;
     if (!read_messages_)
       return;
     Node* node = GetNode(node_name_);
     for (;;) {
       ScopedMessage message;
-      if (node->GetMessage(port, &message) != OK || !message)
+      int rv = node->GetMessage(port, &message);
+      EXPECT_TRUE(rv == OK || rv == ERROR_PORT_PEER_CLOSED);
+      if (rv == ERROR_PORT_PEER_CLOSED || !message)
         break;
       if (save_messages_) {
         SaveMessage(std::move(message));

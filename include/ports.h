@@ -145,20 +145,20 @@ struct Event {
 class NodeDelegate {
  public:
   // Port names should be difficult to guess.
-  virtual PortName GenerateRandomPortName() = 0;
+  virtual void GenerateRandomPortName(PortName* port_name) = 0;
 
   // Send an event asynchronously to the specified node. This method MUST NOT
   // synchronously call any methods on Node.
-  virtual void SendEvent(NodeName node, Event event) = 0;
+  virtual void SendEvent(const NodeName& node, Event event) = 0;
 
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
-  virtual void MessagesAvailable(PortName port) = 0;
+  virtual void MessagesAvailable(const PortName& port) = 0;
 };
 
 class Node {
  public:
-  Node(NodeName name, NodeDelegate* delegate);
+  Node(const NodeName& name, NodeDelegate* delegate);
   ~Node();
 
   // Creates a port on this node. Before the port can be used, it must be
@@ -168,7 +168,9 @@ class Node {
   int CreatePort(PortName* port);
 
   // Initializes a newly created port.
-  int InitializePort(PortName port, NodeName peer_node, PortName peer_port);
+  int InitializePort(const PortName& port,
+                     const NodeName& peer_node,
+                     const PortName& peer_port);
 
   // Generates a new connected pair of ports bound to this node. These ports
   // are initialized and ready to go.
@@ -177,21 +179,21 @@ class Node {
   // Prevents further messages from being sent from this port or delivered to
   // this port. The port is removed, and the port's peer is notified of the
   // closure after it has consumed all pending messages.
-  int ClosePort(PortName port);
+  int ClosePort(const PortName& port);
 
   // Returns the next available message on the specified port or returns a null
   // message if there are none available.
-  int GetMessage(PortName port, ScopedMessage* message);
+  int GetMessage(const PortName& port, ScopedMessage* message);
 
   // Sends a message from the specified port to its peer.
-  int SendMessage(PortName port, ScopedMessage message);
+  int SendMessage(const PortName& port, ScopedMessage message);
 
   // Corresponding to NodeDelegate::SendEvent.
   int AcceptEvent(Event event);
 
   // Called to inform this node that communication with another node is lost
   // indefinitely. This triggers cleanup of ports bound to this node.
-  int LostConnectionToNode(NodeName node);
+  int LostConnectionToNode(const NodeName& node);
 
  private:
   class Impl;
