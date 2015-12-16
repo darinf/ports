@@ -92,12 +92,7 @@ are just proxy ports that are both interested in being removed. Applying the
 send an announcement algorithm from above, it is clear that the removal of
 ports A and B can happen simultaneously without it causing any inconsistencies.
 
-## Shutdown and closing ports
-
-To shutdown a node, first all receiving ports are closed. Any proxy ports need
-to remain open until they can be removed, as they may still need to forward
-incoming messages along. Shutdown for a node is therefore potentially
-two-phase.
+## Closing a port
 
 Upon closing a port, a message is sent to the peer informing it that its peer
 has closed. This message includes the sequence number of the last message the
