@@ -51,11 +51,10 @@
 //
 //   1. Forward the message to a random thread.
 //   2. Forward the received ports to a random assortment of threads.
-//   3. Send a message with a random number of ports to the received ports,
-//      and then close the received ports.
-//   4. Send a message with a random number of ports to a random thread,
-//      and then close the received ports.
-//   5. Close the received ports.
+//   3  Send a message with a random number of ports to the received ports,
+//      send the peer ports to other random threads, and then close the
+//      received ports.
+//   4. Close the received ports. Send a new message to a random port.
 //
 // The test concludes after N messages have been received.
 
