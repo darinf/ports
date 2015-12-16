@@ -70,7 +70,7 @@ class Voidify {
 #define PORTS_LOG_NONE(severity) \
     true ? (void) 0 : ::ports::Voidify() & ::ports::Logger().stream()
 
-#define PORTS_LOGGING_ENABLED 1
+//#define PORTS_LOGGING_ENABLED 1
 
 #ifdef PORTS_LOGGING_ENABLED
 #define LOG PORTS_LOG

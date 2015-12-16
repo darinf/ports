@@ -74,13 +74,13 @@ int Node::Impl::InitializePort(const PortName& port_name,
                                const PortName& peer_port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+    return ERROR_PORT_UNKNOWN;
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
     if (port->peer_node_name != NodeName() ||
         port->peer_port_name != PortName())
-      return Oops(ERROR_PORT_ALREADY_INITIALIZED);
+      return ERROR_PORT_ALREADY_INITIALIZED;
 
     port->peer_node_name = peer_node_name;
     port->peer_port_name = peer_port_name;
@@ -113,12 +113,12 @@ int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
 int Node::Impl::ClosePort(const PortName& port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+    return ERROR_PORT_UNKNOWN;
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
     if (port->state != Port::kReceiving)
-      return Oops(ERROR_PORT_STATE_UNEXPECTED);
+      return ERROR_PORT_STATE_UNEXPECTED;
 
     ClosePort_Locked(port.get(), port_name);
   }
@@ -130,19 +130,19 @@ int Node::Impl::ClosePort(const PortName& port_name) {
 int Node::Impl::GetMessage(const PortName& port_name, ScopedMessage* message) {
   *message = nullptr;
 
+  DLOG(INFO) << "GetMessage for " << port_name << "@" << name_;
+
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+    return ERROR_PORT_UNKNOWN;
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
     // This could also be treated like the port being unknown since the
     // embedder should no longer be referring to a port that has been sent.
-    if (port->state != Port::kReceiving) {
-      DLOG(INFO) << "port: " << port_name << " state=" << port->state;
-      return Oops(ERROR_PORT_STATE_UNEXPECTED);
-    }
+    if (port->state != Port::kReceiving)
+      return ERROR_PORT_STATE_UNEXPECTED;
 
     // Let the embedder get messages until there are no more before reporting
     // that the peer closed its end.
@@ -157,21 +157,21 @@ int Node::Impl::GetMessage(const PortName& port_name, ScopedMessage* message) {
 int Node::Impl::SendMessage(const PortName& port_name, ScopedMessage message) {
   for (size_t i = 0; i < message->num_ports; ++i) {
     if (message->ports[i].name == port_name)
-      return Oops(ERROR_PORT_CANNOT_SEND_SELF);
+      return ERROR_PORT_CANNOT_SEND_SELF;
   }
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+    return ERROR_PORT_UNKNOWN;
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
     if (port->state != Port::kReceiving)
-      return Oops(ERROR_PORT_STATE_UNEXPECTED);
+      return ERROR_PORT_STATE_UNEXPECTED;
 
     if (port->peer_closed)
-      return ERROR_PORT_PEER_CLOSED;  // Signally EOF; not an "Oops".
+      return ERROR_PORT_PEER_CLOSED;
 
     int rv = SendMessage_Locked(port.get(), port_name, std::move(message));
     if (rv != OK)
