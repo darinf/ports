@@ -60,9 +60,10 @@
 
 namespace ports {
 
-static const size_t kNumThreads = 10;
+static const size_t kNumThreads = 100;
+static const size_t kNumNodes = 10;
 
-static const uint32_t kMaxMessages = 5000000;
+static const uint32_t kMaxMessages = 1000000;
 static std::atomic<uint32_t> message_counter(1);
 static bool ShouldExit() {
   return message_counter.load() > kMaxMessages;
@@ -77,33 +78,37 @@ static void MessageWasRead() {
     printf("\n");
 }
 
-// One node per thread.
-struct ThreadData {
+struct NodeData {
   std::unique_ptr<Node> node;
   std::unique_ptr<NodeDelegate> delegate;
   std::mutex lock;
-  std::queue<Event> event_queue;
+  std::queue<Event> events;
   std::condition_variable cvar;
+};
+
+struct ThreadData {
+  NodeName node_name;
   PortName ports[kNumThreads];  // Ports to all of the other threads.
   PortName self_port;           // The peer of the port to ourselves.
 };
+static thread_local ThreadData* this_thread_data;
 
-static void PutEvent(ThreadData* thread_data, Event event) {
+static void PutEvent(NodeData* node_data, Event event) {
   {
-    std::lock_guard<std::mutex> guard(thread_data->lock);
-    thread_data->event_queue.emplace(std::move(event));
+    std::lock_guard<std::mutex> guard(node_data->lock);
+    node_data->events.emplace(std::move(event));
   }
-  thread_data->cvar.notify_one();
+  node_data->cvar.notify_one();
 }
 
-static bool GetEvent(ThreadData* thread_data, Event* event) {
+static bool GetEvent(NodeData* node_data, Event* event) {
   while (!ShouldExit()) {
-    std::unique_lock<std::mutex> guard(thread_data->lock);
-    if (thread_data->event_queue.empty()) {
-      thread_data->cvar.wait(guard);
+    std::unique_lock<std::mutex> guard(node_data->lock);
+    if (node_data->events.empty()) {
+      node_data->cvar.wait(guard);
     } else {
-      *event = std::move(thread_data->event_queue.front());
-      thread_data->event_queue.pop();
+      *event = std::move(node_data->events.front());
+      node_data->events.pop();
       return true;
     }
   }
@@ -116,6 +121,7 @@ static uint64_t GenerateUniqueUint64() {
 }
 
 static ThreadData* kThreadData[kNumThreads];
+static NodeData* kNodeData[kNumNodes];
 
 static int RandomDestination() {
   return rand() % kNumThreads;
@@ -151,14 +157,12 @@ static ScopedMessage NewMessageWithRandomNumPorts(
   return std::move(message);
 }
 
-static void DoRandomActivity(ThreadData* thread_data, ScopedMessage message) {
-  Node* node = thread_data->node.get();
-
+static void DoRandomActivity(Node* node, ScopedMessage message) {
   switch (rand() % 3) {
     case 0: {
       // Forward the message to a random thread.
       node->SendMessage(
-          thread_data->ports[RandomDestination()], std::move(message));
+          this_thread_data->ports[RandomDestination()], std::move(message));
       break;
     }
     case 1:
@@ -166,7 +170,8 @@ static void DoRandomActivity(ThreadData* thread_data, ScopedMessage message) {
       for (size_t i = 0; i < message->num_ports; ++i) {
         ScopedMessage new_message = NewMessageWithPort(message->ports[i].name);
         node->SendMessage(
-            thread_data->ports[RandomDestination()], std::move(new_message));
+            this_thread_data->ports[RandomDestination()],
+            std::move(new_message));
       }
       break;
     case 2:
@@ -178,7 +183,7 @@ static void DoRandomActivity(ThreadData* thread_data, ScopedMessage message) {
         ScopedMessage new_message(
             NewMessageWithRandomNumPorts(node, &other_ports));
         for (size_t i = 0; i < other_ports.size(); ++i) {
-          node->SendMessage(thread_data->ports[RandomDestination()],
+          node->SendMessage(this_thread_data->ports[RandomDestination()],
                             NewMessageWithPort(other_ports[i]));
         }
         node->SendMessage(message->ports[i].name, std::move(new_message));
@@ -190,15 +195,16 @@ static void DoRandomActivity(ThreadData* thread_data, ScopedMessage message) {
       for (size_t i = 0; i < message->num_ports; ++i)
         node->ClosePort(message->ports[i].name);
       node->SendMessage(
-          thread_data->ports[RandomDestination()], NewMessageWithNumPorts(0));
+          this_thread_data->ports[RandomDestination()],
+          NewMessageWithNumPorts(0));
       break;
   }
 }
 
 class TestNodeDelegate : public NodeDelegate {
  public:
-  explicit TestNodeDelegate(size_t index)
-      : index_(index) {
+  explicit TestNodeDelegate(const NodeName& node_name)
+      : node_name_(node_name) {
   }
 
   virtual void GenerateRandomPortName(PortName* port_name) override {
@@ -206,31 +212,37 @@ class TestNodeDelegate : public NodeDelegate {
     port_name->value_minor = 0;
   }
 
-  virtual void SendEvent(const NodeName& node, Event event) override {
-    size_t index = static_cast<size_t>(node.value_major);
-    PutEvent(kThreadData[index], std::move(event));
+  virtual void SendEvent(const NodeName& node_name, Event event) override {
+    PutEvent(kNodeData[node_name.value_major], std::move(event));
   }
 
   virtual void MessagesAvailable(const PortName& port) override {
-    ScopedMessage message;
-    thread_data()->node->GetMessage(port, &message);
-    if (message) {
-      MessageWasRead();
-      DoRandomActivity(thread_data(), std::move(message));
+    Node* node = kNodeData[node_name_.value_major]->node.get();
+    for (;;) {
+      ScopedMessage message;
+      node->GetMessage(port, &message);
+      if (message) {
+        DoRandomActivity(node, std::move(message));
+        MessageWasRead();
+      } else {
+        break;
+      }
     }
   }
   
  private:
-  ThreadData* thread_data() { return kThreadData[index_]; }
-  size_t index_;
+  NodeName node_name_;
 };
 
-static void ThreadFunc(size_t index) {
-  ThreadData* thread_data = kThreadData[index];
+static void ThreadFunc(size_t thread_index) {
+  this_thread_data = kThreadData[thread_index];
+  
+  NodeData* node_data = kNodeData[this_thread_data->node_name.value_major];
+
   for (;;) {
     Event event(Event::kAcceptMessage);  // dummy event
-    if (GetEvent(thread_data, &event)) {
-      thread_data->node->AcceptEvent(std::move(event));
+    if (GetEvent(node_data, &event)) {
+      node_data->node->AcceptEvent(std::move(event));
     } else {
       break;
     }
@@ -239,38 +251,47 @@ static void ThreadFunc(size_t index) {
 
 static void KickOffTest() {
   ThreadData* thread_data = kThreadData[0];
+  NodeData* node_data = kNodeData[thread_data->node_name.value_major];
 
   std::vector<PortName> other_ports;
   ScopedMessage message(
-      NewMessageWithRandomNumPorts(thread_data->node.get(), &other_ports));
+      NewMessageWithRandomNumPorts(node_data->node.get(), &other_ports));
   for (size_t i = 0; i < other_ports.size(); ++i) {
-    thread_data->node->SendMessage(
+    node_data->node->SendMessage(
         thread_data->ports[RandomDestination()],
         NewMessageWithPort(other_ports[i]));
   }
-  thread_data->node->SendMessage(
+  node_data->node->SendMessage(
       thread_data->ports[RandomDestination()], std::move(message));
 }
 
 TEST(ThreadedStressTest, RandomDance) {
+  for (size_t i = 0; i < kNumNodes; ++i) {
+    NodeName node_name(i, 0);
+    kNodeData[i] = new NodeData();
+    kNodeData[i]->delegate.reset(new TestNodeDelegate(node_name));
+    kNodeData[i]->node.reset(new Node(node_name, kNodeData[i]->delegate.get()));
+  }
+
   for (size_t i = 0; i < kNumThreads; ++i) {
     kThreadData[i] = new ThreadData();
-    kThreadData[i]->delegate.reset(new TestNodeDelegate(i));
-    kThreadData[i]->node.reset(
-        new Node(NodeName(i, 0), kThreadData[i]->delegate.get()));
+    kThreadData[i]->node_name = NodeName(i % kNumNodes, 0);
   }
 
   // Create web of ports between threads.
   for (size_t i = 0; i < kNumThreads; ++i) {
     for (size_t j = i; j < kNumThreads; ++j) {
-      Node* node_i = kThreadData[i]->node.get();
-      Node* node_j = kThreadData[j]->node.get();
+      NodeName node_name_i = kThreadData[i]->node_name;
+      NodeName node_name_j = kThreadData[j]->node_name;
+
+      Node* node_i = kNodeData[node_name_i.value_major]->node.get();
+      Node* node_j = kNodeData[node_name_j.value_major]->node.get();
 
       PortName port_i, port_j;
       node_i->CreatePort(&port_i);
       node_j->CreatePort(&port_j);
-      node_i->InitializePort(port_i, NodeName(j, 0), port_j);
-      node_j->InitializePort(port_j, NodeName(i, 0), port_i);
+      node_i->InitializePort(port_i, node_name_j, port_j);
+      node_j->InitializePort(port_j, node_name_i, port_i);
 
       if (i == j) {
         kThreadData[i]->ports[j] = port_i;
@@ -291,6 +312,12 @@ TEST(ThreadedStressTest, RandomDance) {
 
   for (size_t i = 0; i < kNumThreads; ++i)
     threads[i].join();
+
+  for (size_t i = 0; i < kNumThreads; ++i)
+    delete kThreadData[i];
+
+  for (size_t i = 0; i < kNumNodes; ++i)
+    delete kNodeData[i];
 }
 
 }  // namespace ports

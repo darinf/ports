@@ -34,7 +34,8 @@
 namespace ports {
 
 MessageQueue::MessageQueue()
-    : next_sequence_num_(kInitialSequenceNum) {
+    : next_sequence_num_(kInitialSequenceNum),
+      may_signal_(true) {
   // The message queue is blocked waiting for a message with sequence number
   // equal to kInitialSequenceNum.
 }
@@ -45,6 +46,7 @@ MessageQueue::~MessageQueue() {
 void MessageQueue::GetNextMessage(ScopedMessage* message) {
   if (impl_.empty() || impl_.top()->sequence_num != next_sequence_num_) {
     message->reset();
+    may_signal_ = true;
   } else {
     // TODO: Surely there is a better way?
     const ScopedMessage* message_ptr = &impl_.top();
@@ -59,7 +61,8 @@ void MessageQueue::AcceptMessage(ScopedMessage message,
                                  bool* has_next_message) {
   // TODO: Handle sequence number roll-over.
   impl_.emplace(std::move(message));
-  *has_next_message = (impl_.top()->sequence_num == next_sequence_num_);
+  *has_next_message =
+      may_signal_ && (impl_.top()->sequence_num == next_sequence_num_);
 }
 
 }  // namespace ports

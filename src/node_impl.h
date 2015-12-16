@@ -72,8 +72,10 @@ class Node::Impl {
                    PortDescriptor* port_descriptor);
   int AcceptPort(const PortDescriptor& port_descriptor);
 
-  int SendMessage_Locked(Port* port, ScopedMessage message);
-  int ForwardMessages_Locked(Port* port);
+  int SendMessage_Locked(Port* port,
+                         const PortName& port_name,
+                         ScopedMessage message);
+  int ForwardMessages_Locked(Port* port, const PortName& port_name);
   void InitiateProxyRemoval_Locked(Port* port, const PortName& port_name);
   void MaybeRemoveProxy_Locked(Port* port, const PortName& port_name);
   void ClosePort_Locked(Port* port, const PortName& port_name);

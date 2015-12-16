@@ -52,6 +52,7 @@ inline std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
 
 class Logger {
  public:
+  Logger();
   ~Logger();
   std::ostream& stream() { return stream_; }
  private:
@@ -69,7 +70,7 @@ class Voidify {
 #define PORTS_LOG_NONE(severity) \
     true ? (void) 0 : ::ports::Voidify() & ::ports::Logger().stream()
 
-//#define PORTS_LOGGING_ENABLED 1
+#define PORTS_LOGGING_ENABLED 1
 
 #ifdef PORTS_LOGGING_ENABLED
 #define LOG PORTS_LOG

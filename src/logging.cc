@@ -30,8 +30,13 @@
 #include "ports/src/logging.h"
 
 #include <iostream>
+#include <thread>
 
 namespace ports {
+
+Logger::Logger() {
+  stream_ << std::this_thread::get_id() << ": ";
+}
 
 Logger::~Logger() {
   stream_ << std::endl;

@@ -139,8 +139,10 @@ int Node::Impl::GetMessage(const PortName& port_name, ScopedMessage* message) {
 
     // This could also be treated like the port being unknown since the
     // embedder should no longer be referring to a port that has been sent.
-    if (port->state != Port::kReceiving)
+    if (port->state != Port::kReceiving) {
+      DLOG(INFO) << "port: " << port_name << " state=" << port->state;
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
+    }
 
     // Let the embedder get messages until there are no more before reporting
     // that the peer closed its end.
@@ -169,9 +171,9 @@ int Node::Impl::SendMessage(const PortName& port_name, ScopedMessage message) {
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
 
     if (port->peer_closed)
-      return Oops(ERROR_PORT_PEER_CLOSED);
+      return ERROR_PORT_PEER_CLOSED;  // Signally EOF; not an "Oops".
 
-    int rv = SendMessage_Locked(port.get(), std::move(message));
+    int rv = SendMessage_Locked(port.get(), port_name, std::move(message));
     if (rv != OK)
       return rv;
   }
@@ -250,8 +252,18 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
 
 int Node::Impl::AcceptMessage(const PortName& port_name,
                               ScopedMessage message) {
+#ifndef NDEBUG
+  std::ostringstream ports_buf;
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    if (i > 0)
+      ports_buf << ",";
+    ports_buf << message->ports[i].name;
+  }
+
   DLOG(INFO) << "AcceptMessage " << message->sequence_num
+             << " [ports=" << ports_buf.str() << "]"
              << " at " << port_name << "@" << name_;
+#endif
 
   std::shared_ptr<Port> port = GetPort(port_name);
 
@@ -288,7 +300,7 @@ int Node::Impl::AcceptMessage(const PortName& port_name,
         // that we maintain the message queue's notion of next sequence number.
         // That's useful for the proxy removal process as we can tell when this
         // port has seen all of the messages it is expected to see.
-        int rv = ForwardMessages_Locked(port.get());
+        int rv = ForwardMessages_Locked(port.get(), port_name);
         if (rv != OK)
           return rv;
 
@@ -325,7 +337,7 @@ int Node::Impl::PortAccepted(const PortName& port_name) {
 
     port->state = Port::kProxying;
 
-    int rv = ForwardMessages_Locked(port.get());
+    int rv = ForwardMessages_Locked(port.get(), port_name);
     if (rv != OK)
       return rv;
 
@@ -393,7 +405,8 @@ int Node::Impl::ObserveProxyAck(const PortName& port_name,
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+    return ERROR_PORT_UNKNOWN;  // The port may have observed closure first, so
+                                // this is not an "Oops".
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -438,8 +451,10 @@ int Node::Impl::ObserveClosure(Event event) {
                << event.observe_closure.last_sequence_num << ")";
 
     if (port->state == Port::kReceiving) {
-      if (!CanAcceptMoreMessages(port.get()))
+      if (!CanAcceptMoreMessages(port.get())) {
+        assert(port->message_queue.may_signal());
         notify_delegate = true;
+      }
     } else {
       NodeName next_node_name = port->peer_node_name;
       PortName next_port_name = port->peer_port_name;
@@ -550,8 +565,19 @@ int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
   return OK;
 }
 
-int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
+int Node::Impl::SendMessage_Locked(Port* port,
+                                   const PortName& port_name,
+                                   ScopedMessage message) {
   message->sequence_num = port->next_sequence_num_to_send++;
+
+#ifndef NDEBUG
+  std::ostringstream ports_buf;
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    if (i > 0)
+      ports_buf << ",";
+    ports_buf << message->ports[i].name;
+  }
+#endif
 
   for (size_t i = 0; i < message->num_ports; ++i) {
     int rv = WillSendPort(port->peer_node_name, &message->ports[i]);
@@ -559,8 +585,12 @@ int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
       return rv;
   }
 
-  DLOG(INFO) << "Sending message " << message->sequence_num << " to "
-             << port->peer_port_name << "@" << port->peer_node_name;
+#ifndef NDEBUG
+  DLOG(INFO) << "Sending message " << message->sequence_num
+             << " [ports=" << ports_buf.str() << "]"
+             << " from " << port_name << "@" << name_
+             << " to " << port->peer_port_name << "@" << port->peer_node_name;
+#endif
 
   Event event(Event::kAcceptMessage);
   event.port_name = port->peer_port_name;
@@ -570,14 +600,14 @@ int Node::Impl::SendMessage_Locked(Port* port, ScopedMessage message) {
   return OK;
 }
 
-int Node::Impl::ForwardMessages_Locked(Port* port) {
+int Node::Impl::ForwardMessages_Locked(Port* port, const PortName &port_name) {
   for (;;) {
     ScopedMessage message;
     port->message_queue.GetNextMessage(&message);
     if (!message)
       break;
 
-    int rv = SendMessage_Locked(port, std::move(message));
+    int rv = SendMessage_Locked(port, port_name, std::move(message));
     if (rv != OK)
       return rv;
   }

@@ -52,6 +52,7 @@ class MessageQueue {
   ~MessageQueue();
 
   uint32_t next_sequence_num() const { return next_sequence_num_; }
+  bool may_signal() const { return may_signal_; }
 
   // Gives ownership of the message.
   void GetNextMessage(ScopedMessage* message);
@@ -60,11 +61,17 @@ class MessageQueue {
   // have added a message to the queue, we may still be waiting on a message
   // ahead of this one before we can let any of the messages be returned by
   // GetNextMessage.
+  //
+  // Furthermore, once has_next_message is set to true, it will remain false
+  // until GetNextMessage is called enough times to return a null message.
+  // In other words, has_next_message acts like an edge trigger.
+  //
   void AcceptMessage(ScopedMessage message, bool* has_next_message);
 
  private:
   std::priority_queue<ScopedMessage> impl_;
   uint32_t next_sequence_num_;
+  bool may_signal_;
 };
 
 }  // namespace ports
