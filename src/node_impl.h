@@ -56,9 +56,6 @@ class Node::Impl {
   int LostConnectionToNode(const NodeName& node_name);
 
  private:
-  NodeName name_;
-  NodeDelegate* delegate_;
-
   int AcceptMessage(const PortName& port_name, ScopedMessage message);
   int PortAccepted(const PortName& port_name);
   int ObserveProxy(Event event);
@@ -80,6 +77,9 @@ class Node::Impl {
   void InitiateProxyRemoval_Locked(Port* port, const PortName& port_name);
   void MaybeRemoveProxy_Locked(Port* port, const PortName& port_name);
   void ClosePort_Locked(Port* port, const PortName& port_name);
+
+  NodeName name_;
+  NodeDelegate* delegate_;
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;

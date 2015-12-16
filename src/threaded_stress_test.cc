@@ -27,7 +27,15 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <atomic>
+#include <condition_variable>
+#include <thread>
+#include <memory>
+#include <mutex>
+#include <queue>
+
 #include "ports/include/ports.h"
+#include "ports/src/logging.h"
 
 #include <gtest/gtest.h>
 
@@ -48,5 +56,243 @@
 //   4. Send a message with a random number of ports to a random thread,
 //      and then close the received ports.
 //   5. Close the received ports.
+//
+// The test concludes after N messages have been received.
 
+namespace ports {
+
+static const size_t kNumThreads = 10;
+
+static const uint32_t kMaxMessages = 5000000;
+static std::atomic<uint32_t> message_counter(1);
+static bool ShouldExit() {
+  return message_counter.load() > kMaxMessages;
+}
+static void MessageWasRead() {
+  uint32_t value = message_counter.fetch_add(1);
+  if (value % (kMaxMessages / 1000) == 0) {
+    printf(".");
+    fflush(stdout);
+  }
+  if (value % (kMaxMessages / 10) == 0)
+    printf("\n");
+}
+
+// One node per thread.
+struct ThreadData {
+  std::unique_ptr<Node> node;
+  std::unique_ptr<NodeDelegate> delegate;
+  std::mutex lock;
+  std::queue<Event> event_queue;
+  std::condition_variable cvar;
+  PortName ports[kNumThreads];  // Ports to all of the other threads.
+  PortName self_port;           // The peer of the port to ourselves.
+};
+
+static void PutEvent(ThreadData* thread_data, Event event) {
+  {
+    std::lock_guard<std::mutex> guard(thread_data->lock);
+    thread_data->event_queue.emplace(std::move(event));
+  }
+  thread_data->cvar.notify_one();
+}
+
+static bool GetEvent(ThreadData* thread_data, Event* event) {
+  while (!ShouldExit()) {
+    std::unique_lock<std::mutex> guard(thread_data->lock);
+    if (thread_data->event_queue.empty()) {
+      thread_data->cvar.wait(guard);
+    } else {
+      *event = std::move(thread_data->event_queue.front());
+      thread_data->event_queue.pop();
+      return true;
+    }
+  }
+  return false;
+}
+
+static std::atomic<uint64_t> next_unique_uint64;
+static uint64_t GenerateUniqueUint64() {
+  return next_unique_uint64.fetch_add(1, std::memory_order_relaxed);
+}
+
+static ThreadData* kThreadData[kNumThreads];
+
+static int RandomDestination() {
+  return rand() % kNumThreads;
+}
+
+static ScopedMessage NewMessageWithNumPorts(size_t num_ports) {
+  const char kMessageText[] = "hello";
+  ScopedMessage message(AllocMessage(sizeof(kMessageText), num_ports));
+  strcpy(static_cast<char*>(message->bytes), kMessageText);
+  return std::move(message);
+}
+
+static ScopedMessage NewMessageWithPort(PortName port) {
+  ScopedMessage message(NewMessageWithNumPorts(1));
+  message->ports[0].name = port;
+  return std::move(message);
+}
+
+static ScopedMessage NewMessageWithRandomNumPorts(
+    Node* node, std::vector<PortName>* other_ports) {
+  size_t num_ports = rand() % 10;
+
+  ScopedMessage message(NewMessageWithNumPorts(num_ports));
+
+  other_ports->clear();
+  for (size_t i = 0; i < num_ports; ++i) {
+    PortName a, b;
+    node->CreatePortPair(&a, &b);
+    message->ports[i].name = a;
+    other_ports->push_back(b);
+  }
+
+  return std::move(message);
+}
+
+static void DoRandomActivity(ThreadData* thread_data, ScopedMessage message) {
+  Node* node = thread_data->node.get();
+
+  switch (rand() % 3) {
+    case 0: {
+      // Forward the message to a random thread.
+      node->SendMessage(
+          thread_data->ports[RandomDestination()], std::move(message));
+      break;
+    }
+    case 1:
+      // Forward the received ports to a random assortment of threads.
+      for (size_t i = 0; i < message->num_ports; ++i) {
+        ScopedMessage new_message = NewMessageWithPort(message->ports[i].name);
+        node->SendMessage(
+            thread_data->ports[RandomDestination()], std::move(new_message));
+      }
+      break;
+    case 2:
+      // Send a message with a random number of ports to the received ports,
+      // send the peer ports to other random threads, and then close the
+      // received ports.
+      for (size_t i = 0; i < message->num_ports; ++i) {
+        std::vector<PortName> other_ports;
+        ScopedMessage new_message(
+            NewMessageWithRandomNumPorts(node, &other_ports));
+        for (size_t i = 0; i < other_ports.size(); ++i) {
+          node->SendMessage(thread_data->ports[RandomDestination()],
+                            NewMessageWithPort(other_ports[i]));
+        }
+        node->SendMessage(message->ports[i].name, std::move(new_message));
+        node->ClosePort(message->ports[i].name);
+      }
+      break;
+    case 3:
+      // Close the received ports. Send a new message to a random port.
+      for (size_t i = 0; i < message->num_ports; ++i)
+        node->ClosePort(message->ports[i].name);
+      node->SendMessage(
+          thread_data->ports[RandomDestination()], NewMessageWithNumPorts(0));
+      break;
+  }
+}
+
+class TestNodeDelegate : public NodeDelegate {
+ public:
+  explicit TestNodeDelegate(size_t index)
+      : index_(index) {
+  }
+
+  virtual void GenerateRandomPortName(PortName* port_name) override {
+    port_name->value_major = GenerateUniqueUint64();
+    port_name->value_minor = 0;
+  }
+
+  virtual void SendEvent(const NodeName& node, Event event) override {
+    size_t index = static_cast<size_t>(node.value_major);
+    PutEvent(kThreadData[index], std::move(event));
+  }
+
+  virtual void MessagesAvailable(const PortName& port) override {
+    ScopedMessage message;
+    thread_data()->node->GetMessage(port, &message);
+    if (message) {
+      MessageWasRead();
+      DoRandomActivity(thread_data(), std::move(message));
+    }
+  }
+  
+ private:
+  ThreadData* thread_data() { return kThreadData[index_]; }
+  size_t index_;
+};
+
+static void ThreadFunc(size_t index) {
+  ThreadData* thread_data = kThreadData[index];
+  for (;;) {
+    Event event(Event::kAcceptMessage);  // dummy event
+    if (GetEvent(thread_data, &event)) {
+      thread_data->node->AcceptEvent(std::move(event));
+    } else {
+      break;
+    }
+  }
+}
+
+static void KickOffTest() {
+  ThreadData* thread_data = kThreadData[0];
+
+  std::vector<PortName> other_ports;
+  ScopedMessage message(
+      NewMessageWithRandomNumPorts(thread_data->node.get(), &other_ports));
+  for (size_t i = 0; i < other_ports.size(); ++i) {
+    thread_data->node->SendMessage(
+        thread_data->ports[RandomDestination()],
+        NewMessageWithPort(other_ports[i]));
+  }
+  thread_data->node->SendMessage(
+      thread_data->ports[RandomDestination()], std::move(message));
+}
+
+TEST(ThreadedStressTest, RandomDance) {
+  for (size_t i = 0; i < kNumThreads; ++i) {
+    kThreadData[i] = new ThreadData();
+    kThreadData[i]->delegate.reset(new TestNodeDelegate(i));
+    kThreadData[i]->node.reset(
+        new Node(NodeName(i, 0), kThreadData[i]->delegate.get()));
+  }
+
+  // Create web of ports between threads.
+  for (size_t i = 0; i < kNumThreads; ++i) {
+    for (size_t j = i; j < kNumThreads; ++j) {
+      Node* node_i = kThreadData[i]->node.get();
+      Node* node_j = kThreadData[j]->node.get();
+
+      PortName port_i, port_j;
+      node_i->CreatePort(&port_i);
+      node_j->CreatePort(&port_j);
+      node_i->InitializePort(port_i, NodeName(j, 0), port_j);
+      node_j->InitializePort(port_j, NodeName(i, 0), port_i);
+
+      if (i == j) {
+        kThreadData[i]->ports[j] = port_i;
+        kThreadData[i]->self_port = port_j;
+      } else {
+        kThreadData[i]->ports[j] = port_i;
+        kThreadData[j]->ports[i] = port_j;
+      }
+    }
+  }
+
+  std::thread threads[kNumThreads];
+
+  for (size_t i = 0; i < kNumThreads; ++i)
+    threads[i] = std::move(std::thread(ThreadFunc, i));
+
+  KickOffTest();
+
+  for (size_t i = 0; i < kNumThreads; ++i)
+    threads[i].join();
+}
+
+}  // namespace ports
 

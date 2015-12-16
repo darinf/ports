@@ -34,11 +34,8 @@
 namespace ports {
 
 Logger::~Logger() {
-  std::cout << std::endl;
-}
-
-std::ostream& Logger::stream() {
-  return std::cout;
+  stream_ << std::endl;
+  std::cout << stream_.str();
 }
 
 }  // namespace ports

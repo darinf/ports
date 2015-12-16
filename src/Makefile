@@ -8,7 +8,6 @@ SOURCES = \
 	message_queue.cc \
 	node_impl.cc \
 	node.cc \
-	test.cc \
 	$(GTEST_DIR)/src/gtest_main.cc \
 	$(NULL)
 
@@ -17,8 +16,11 @@ CPPFLAGS = -std=c++11 -pthread -g -Wall -I ../.. -isystem $(GTEST_DIR)/include
 LDFLAGS = -pthread
 CC = g++
 
+all: test threaded_stress_test
+
 test: test.o $(OBJECTS) $(GTEST_DIR)/libgtest.a
+threaded_stress_test: threaded_stress_test.o $(OBJECTS) $(GTEST_DIR)/libgtest.a
 
 .PHONY: clean
 clean:
-	rm -f *.o test
+	rm -f *.o test threaded_stress_test

@@ -38,6 +38,7 @@ namespace ports {
 
 static int DebugError(const char* message, int error_code, const char* func) {
   DLOG(ERROR) << "Oops: " << message << " @ " << func;
+  abort();
   return error_code;
 }
 #define Oops(x) DebugError(#x, x, __func__)

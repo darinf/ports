@@ -140,6 +140,8 @@ struct Event {
 // Implemented by the embedder.
 class NodeDelegate {
  public:
+  virtual ~NodeDelegate() {}
+
   // Port names should be difficult to guess.
   virtual void GenerateRandomPortName(PortName* port_name) = 0;
 
@@ -154,6 +156,7 @@ class NodeDelegate {
 
 class Node {
  public:
+  // Does not take ownership of the delegate.
   Node(const NodeName& name, NodeDelegate* delegate);
   ~Node();
 
