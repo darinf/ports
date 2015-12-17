@@ -68,8 +68,9 @@ class Node::Impl {
   void ErasePort(const PortName& port_name);
   std::shared_ptr<Port> GetPort(const PortName& port_name);
 
-  int WillSendPort(const NodeName& to_node_name,
-                   PortDescriptor* port_descriptor);
+  void WillSendPort_Locked(Port* port,
+                           const NodeName& to_node_name,
+                           PortDescriptor* port_descriptor);
   int AcceptPort(const PortDescriptor& port_descriptor);
 
   int SendMessage_Locked(Port* port,

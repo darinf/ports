@@ -161,17 +161,16 @@ static void DoRandomActivity(Node* node, ScopedMessage message) {
   switch (rand() % 3) {
     case 0: {
       // Forward the message to a random thread.
-      node->SendMessage(
-          this_thread_data->ports[RandomDestination()], std::move(message));
+      node->SendMessage(this_thread_data->ports[RandomDestination()],
+                        std::move(message));
       break;
     }
     case 1:
       // Forward the received ports to a random assortment of threads.
       for (size_t i = 0; i < message->num_ports; ++i) {
         ScopedMessage new_message = NewMessageWithPort(message->ports[i].name);
-        node->SendMessage(
-            this_thread_data->ports[RandomDestination()],
-            std::move(new_message));
+        node->SendMessage(this_thread_data->ports[RandomDestination()],
+                          std::move(new_message));
       }
       break;
     case 2:
@@ -194,9 +193,8 @@ static void DoRandomActivity(Node* node, ScopedMessage message) {
       // Close the received ports. Send a new message to a random port.
       for (size_t i = 0; i < message->num_ports; ++i)
         node->ClosePort(message->ports[i].name);
-      node->SendMessage(
-          this_thread_data->ports[RandomDestination()],
-          NewMessageWithNumPorts(0));
+      node->SendMessage(this_thread_data->ports[RandomDestination()],
+                        NewMessageWithNumPorts(0));
       break;
   }
 }

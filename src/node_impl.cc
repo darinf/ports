@@ -510,41 +510,29 @@ std::shared_ptr<Port> Node::Impl::GetPort(const PortName& port_name) {
   return iter->second;
 }
 
-int Node::Impl::WillSendPort(const NodeName& to_node_name,
-                             PortDescriptor* port_descriptor) {
+void Node::Impl::WillSendPort_Locked(Port* port,
+                                     const NodeName& to_node_name,
+                                     PortDescriptor* port_descriptor) {
   PortName local_port_name = port_descriptor->name;
-
-  std::shared_ptr<Port> port = GetPort(local_port_name);
-  if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
 
   PortName new_port_name;
   delegate_->GenerateRandomPortName(&new_port_name);
 
-  {
-    std::lock_guard<std::mutex> guard(port->lock);
+  // Make sure we don't send messages to the new peer until after we know it
+  // exists. In the meantime, just buffer messages locally.
+  assert(port->state == Port::kReceiving);
+  port->state = Port::kBuffering;
 
-    if (port->state != Port::kReceiving) {
-      // Oops, the port can only be moved if it is bound to this node.
-      return Oops(ERROR_PORT_STATE_UNEXPECTED);
-    }
+  port_descriptor->name = new_port_name;
+  port_descriptor->peer_node_name = port->peer_node_name;
+  port_descriptor->peer_port_name = port->peer_port_name;
+  port_descriptor->referring_node_name = name_;
+  port_descriptor->referring_port_name = local_port_name;
+  port_descriptor->next_sequence_num = port->next_sequence_num_to_send;
 
-    // Make sure we don't send messages to the new peer until after we know it
-    // exists. In the meantime, just buffer messages locally.
-    port->state = Port::kBuffering;
-
-    port_descriptor->name = new_port_name;
-    port_descriptor->peer_node_name = port->peer_node_name;
-    port_descriptor->peer_port_name = port->peer_port_name;
-    port_descriptor->referring_node_name = name_;
-    port_descriptor->referring_port_name = local_port_name;
-    port_descriptor->next_sequence_num = port->next_sequence_num_to_send;
-
-    // Configure the local port to point to the new port.
-    port->peer_node_name = to_node_name;
-    port->peer_port_name = new_port_name;
-  }
-  return OK;
+  // Configure the local port to point to the new port.
+  port->peer_node_name = to_node_name;
+  port->peer_port_name = new_port_name;
 }
 
 int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
@@ -579,10 +567,32 @@ int Node::Impl::SendMessage_Locked(Port* port,
   }
 #endif
 
-  for (size_t i = 0; i < message->num_ports; ++i) {
-    int rv = WillSendPort(port->peer_node_name, &message->ports[i]);
-    if (rv != OK)
-      return rv;
+  if (message->num_ports > 0) {
+    // Note: Another thread could be trying to send the same ports, so we need
+    // to ensure that they are ours to send before we mutate their state.
+
+    std::vector<std::shared_ptr<Port>> ports;
+    ports.resize(message->num_ports);
+
+    for (size_t i = 0; i < message->num_ports; ++i) {
+      ports[i] = GetPort(message->ports[i].name);
+      ports[i]->lock.lock();
+
+      if (ports[i]->state != Port::kReceiving) {
+        // Oops, we cannot send this port.
+        for (size_t j = 0; j <= i; ++j)
+          ports[i]->lock.unlock();
+        return ERROR_PORT_STATE_UNEXPECTED;
+      }
+    }
+
+    for (size_t i = 0; i < message->num_ports; ++i) {
+      WillSendPort_Locked(
+          ports[i].get(), port->peer_node_name, &message->ports[i]);
+    }
+
+    for (size_t i = 0; i < message->num_ports; ++i)
+      ports[i]->lock.unlock();
   }
 
 #ifndef NDEBUG
