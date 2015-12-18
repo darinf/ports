@@ -9,29 +9,9 @@
 namespace mojo {
 namespace edk {
 
-namespace internal {
+Core::Core() {}
 
-Core* g_core;
-
-PlatformSupport* g_platform_support;
-
-}  // namespace internal
-
-Core::Core(PlatformSupport* platform_support)
-    : platform_support_(platform_support) {
-}
-
-Core::~Core() {
-}
-
-MojoHandle Core::AddDispatcher(const scoped_refptr<Dispatcher>& dispatcher) {
-  NOTIMPLEMENTED();
-  return 0;
-}
-
-scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
-  return nullptr;
-}
+Core::~Core() {}
 
 MojoResult Core::AsyncWait(MojoHandle handle,
                            MojoHandleSignals signals,

@@ -5,9 +5,22 @@
 #include "mojo/edk/embedder/embedder.h"
 
 #include "base/logging.h"
+#include "ports/mojo_system/core.h"
 
 namespace mojo {
 namespace edk {
+
+class Core;
+class PlatformSupport;
+
+namespace internal {
+
+Core* g_core;
+
+// Only here to satisfy some messy link dependency in old EDK test code
+PlatformSupport* g_platform_support;
+
+}  // namespace internal
 
 void SetMaxMessageSize(size_t bytes) {
   NOTIMPLEMENTED();
@@ -36,7 +49,7 @@ void SetParentPipeHandle(ScopedPlatformHandle pipe) {
 }
 
 void Init() {
-  NOTIMPLEMENTED();
+  internal::g_core = new Core();
 }
 
 MojoResult AsyncWait(MojoHandle handle,

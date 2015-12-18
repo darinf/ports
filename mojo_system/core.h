@@ -12,30 +12,16 @@
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
-#include "ports/mojo_system/dispatcher.h"
 
 namespace mojo {
 namespace edk {
-
-class PlatformSupport;
 
 // |Core| is an object that implements the Mojo system calls. All public methods
 // are thread-safe.
 class MOJO_SYSTEM_IMPL_EXPORT Core {
  public:
-  // ---------------------------------------------------------------------------
-  // These methods are only to be used by via the embedder API (and internally):
-  // |*platform_support| must outlive this object.
-  explicit Core(PlatformSupport* platform_support);
+  explicit Core();
   virtual ~Core();
-
-  // Adds |dispatcher| to the handle table, returning the handle for it. Returns
-  // |MOJO_HANDLE_INVALID| on failure, namely if the handle table is full.
-  MojoHandle AddDispatcher(const scoped_refptr<Dispatcher>& dispatcher);
-
-  // Looks up the dispatcher for the given handle. Returns null if the handle is
-  // invalid.
-  scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
 
   // Watches on the given handle for the given signals, calling |callback| when
   // a signal is satisfied or when all signals become unsatisfiable. |callback|
@@ -44,10 +30,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoResult AsyncWait(MojoHandle handle,
                        MojoHandleSignals signals,
                        const base::Callback<void(MojoResult)>& callback);
-
-  PlatformSupport* platform_support() const {
-    return platform_support_;
-  }
 
   // ---------------------------------------------------------------------------
 
@@ -150,8 +132,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoResult UnmapBuffer(void* buffer);
 
  private:
-  PlatformSupport* const platform_support_;
-
   DISALLOW_COPY_AND_ASSIGN(Core);
 };
 

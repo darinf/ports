@@ -6,8 +6,6 @@ source_set("mojo_system") {
   sources = [
     "core.cc",
     "core.h",
-    "dispatcher.cc",
-    "dispatcher.h",
   ]
 
   defines = [
