@@ -32,17 +32,11 @@
 
 #include <functional>
 #include <memory>
-#include <queue>
 #include <vector>
 
 #include "ports/include/ports.h"
 
 namespace ports {
-
-// Impacts priority_queue sorting.
-inline bool operator<(const ScopedMessage& a, const ScopedMessage& b) {
-  return a->sequence_num > b->sequence_num;
-}
 
 const uint32_t kInitialSequenceNum = 1;
 
@@ -69,7 +63,7 @@ class MessageQueue {
   void AcceptMessage(ScopedMessage message, bool* has_next_message);
 
  private:
-  std::priority_queue<ScopedMessage> impl_;
+  std::vector<ScopedMessage> heap_;
   uint32_t next_sequence_num_;
   bool may_signal_;
 };

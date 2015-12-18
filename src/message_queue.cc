@@ -29,9 +29,14 @@
 
 #include "ports/src/message_queue.h"
 
-#include <assert.h>
+#include <algorithm>
 
 namespace ports {
+
+// Used by std::{push,pop}_heap functions
+inline bool operator<(const ScopedMessage& a, const ScopedMessage& b) {
+  return a->sequence_num > b->sequence_num;
+}
 
 MessageQueue::MessageQueue()
     : next_sequence_num_(kInitialSequenceNum),
@@ -44,15 +49,14 @@ MessageQueue::~MessageQueue() {
 }
 
 void MessageQueue::GetNextMessage(ScopedMessage* message) {
-  if (impl_.empty() || impl_.top()->sequence_num != next_sequence_num_) {
+  if (heap_.empty() || heap_[0]->sequence_num != next_sequence_num_) {
     message->reset();
     may_signal_ = true;
   } else {
-    // TODO: Surely there is a better way?
-    const ScopedMessage* message_ptr = &impl_.top();
-    message->reset(const_cast<ScopedMessage*>(message_ptr)->release());
+    std::pop_heap(heap_.begin(), heap_.end());
+    *message = std::move(heap_.back());
+    heap_.pop_back();
 
-    impl_.pop();
     next_sequence_num_++;
   }
 }
@@ -60,9 +64,12 @@ void MessageQueue::GetNextMessage(ScopedMessage* message) {
 void MessageQueue::AcceptMessage(ScopedMessage message,
                                  bool* has_next_message) {
   // TODO: Handle sequence number roll-over.
-  impl_.emplace(std::move(message));
+
+  heap_.emplace_back(std::move(message));
+  std::push_heap(heap_.begin(), heap_.end());
+
   *has_next_message =
-      may_signal_ && (impl_.top()->sequence_num == next_sequence_num_);
+      may_signal_ && (heap_[0]->sequence_num == next_sequence_num_);
 }
 
 }  // namespace ports
