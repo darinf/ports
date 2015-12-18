@@ -3,11 +3,13 @@
 GTEST_DIR = ../../googletest/googletest
 
 SOURCES = \
+	event.cc \
 	logging.cc \
 	message.cc \
 	message_queue.cc \
 	node_impl.cc \
 	node.cc \
+	port.cc \
 	$(GTEST_DIR)/src/gtest_main.cc \
 	$(NULL)
 
