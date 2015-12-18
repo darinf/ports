@@ -30,25 +30,13 @@
 #ifndef PORTS_SRC_LOGGING_H_
 #define PORTS_SRC_LOGGING_H_
 
+#if !defined(INSIDE_CHROMIUM)
+
 #include <sstream>
 
 #include "ports/include/ports.h"
 
 namespace ports {
-
-inline std::ostream& operator<<(std::ostream& stream, const PortName& name) {
-  stream << std::hex << std::uppercase << name.value_major;
-  if (name.value_minor != 0)
-    stream << '.' << name.value_minor;
-  return stream;
-}
-
-inline std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
-  stream << std::hex << std::uppercase << name.value_major;
-  if (name.value_minor != 0)
-    stream << '.' << name.value_minor;
-  return stream;
-}
 
 class Logger {
  public:
@@ -82,6 +70,10 @@ class Voidify {
 #else
 #define LOG PORTS_LOG_NONE
 #define DLOG PORTS_LOG_NONE
+#endif
+
+#else  // if defined(INSIDE_CHROMIUM)
+#include "base/logging.h"
 #endif
 
 #endif  // PORTS_SRC_LOGGING_H_

@@ -7,7 +7,6 @@ source_set("ports") {
     "include/ports.h",
     "src/event.cc",
     "src/hash_functions.h",
-    "src/logging.cc",
     "src/logging.h",
     "src/message.cc",
     "src/message_queue.cc",
@@ -20,13 +19,20 @@ source_set("ports") {
   ]
 
   include_dirs = [ ".." ]
+
+  defines = [ "INSIDE_CHROMIUM" ]
+
+  deps = [
+    "//base",
+  ]
 }
 
 executable("ports_unittests") {
   sources = [
     "src/test.cc",
-    "src/threaded_stress_test.cc",
   ]
+
+  defines = [ "INSIDE_CHROMIUM" ]
 
   deps = [
     ":ports",

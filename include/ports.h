@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <ostream>
 
 namespace ports {
 
@@ -72,11 +73,25 @@ struct NodeName {
   uint64_t value_minor;
 };
 
+inline std::ostream& operator<<(std::ostream& stream, const PortName& name) {
+  stream << std::hex << std::uppercase << name.value_major;
+  if (name.value_minor != 0)
+    stream << '.' << name.value_minor;
+  return stream;
+}
+
 inline bool operator==(const NodeName& a, const NodeName& b) {
   return a.value_major == b.value_major && a.value_minor == b.value_minor;
 }
 inline bool operator!=(const NodeName& a, const NodeName& b) {
   return !(a == b);
+}
+
+inline std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
+  stream << std::hex << std::uppercase << name.value_major;
+  if (name.value_minor != 0)
+    stream << '.' << name.value_minor;
+  return stream;
 }
 
 struct PortDescriptor {
