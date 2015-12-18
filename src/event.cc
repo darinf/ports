@@ -39,6 +39,7 @@ Event::~Event() {}
 
 Event& Event::operator=(Event&& other) {
   type = other.type;
+  port_name = other.port_name;
   message = std::move(other.message);
   observe_proxy = other.observe_proxy;
   return *this;
