@@ -31,18 +31,18 @@ MojoResult Core::Close(MojoHandle handle) {
 }
 
 MojoResult Core::Wait(MojoHandle handle,
-                MojoHandleSignals signals,
-                MojoDeadline deadline,
-                MojoHandleSignalsState* signals_state) {
+                      MojoHandleSignals signals,
+                      MojoDeadline deadline,
+                      MojoHandleSignalsState* signals_state) {
   return MOJO_RESULT_UNIMPLEMENTED;
 }
 
 MojoResult Core::WaitMany(const MojoHandle* handles,
-                    const MojoHandleSignals* signals,
-                    uint32_t num_handles,
-                    MojoDeadline deadline,
-                    uint32_t* result_index,
-                    MojoHandleSignalsState* signals_states) {
+                          const MojoHandleSignals* signals,
+                          uint32_t num_handles,
+                          MojoDeadline deadline,
+                          uint32_t* result_index,
+                          MojoHandleSignalsState* signals_states) {
   NOTIMPLEMENTED();
   return MOJO_RESULT_UNIMPLEMENTED;
 }
@@ -85,7 +85,7 @@ MojoResult Core::CreateMessagePipe(
 MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
                               const void* bytes,
                               uint32_t num_bytes,
-                             const MojoHandle* handles,
+                              const MojoHandle* handles,
                               uint32_t num_handles,
                               MojoWriteMessageFlags flags) {
   NOTIMPLEMENTED();
