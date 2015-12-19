@@ -51,7 +51,7 @@ class Node::Impl {
   int CreatePortPair(PortName* port_name_0, PortName* port_name_1);
   int ClosePort(const PortName& port_name);
   int GetMessage(const PortName& port_name, ScopedMessage* message);
-  int SendMessage(const PortName& port_name, ScopedMessage message); 
+  int SendMessage(const PortName& port_name, ScopedMessage message);
   int AcceptEvent(Event event);
   int LostConnectionToNode(const NodeName& node_name);
 

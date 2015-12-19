@@ -237,7 +237,7 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
 
       if (remove_port) {
         DLOG(INFO) << "Deleted port " << iter->first << "@" << name_;
-        iter = ports_.erase(iter); 
+        iter = ports_.erase(iter);
       } else {
         ++iter;
       }
@@ -372,14 +372,14 @@ int Node::Impl::ObserveProxy(Event event) {
              << " pointing to "
              << event.observe_proxy.proxy_to_port_name << "@"
              << event.observe_proxy.proxy_to_node_name;
-  
+
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
     if (port->peer_node_name == event.observe_proxy.proxy_node_name &&
         port->peer_port_name == event.observe_proxy.proxy_port_name) {
-      port->peer_node_name = event.observe_proxy.proxy_to_node_name; 
-      port->peer_port_name = event.observe_proxy.proxy_to_port_name; 
+      port->peer_node_name = event.observe_proxy.proxy_to_node_name;
+      port->peer_port_name = event.observe_proxy.proxy_to_port_name;
 
       Event ack(Event::kObserveProxyAck);
       ack.port_name = event.observe_proxy.proxy_port_name;
@@ -656,7 +656,7 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
     DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
                << " now; waiting for more messages";
   }
-}  
+}
 
 void Node::Impl::ClosePort_Locked(Port* port, const PortName& port_name) {
   // We pass along the sequence number of the last message sent from this
