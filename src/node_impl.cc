@@ -237,7 +237,7 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
 
       if (remove_port) {
         DLOG(INFO) << "Deleted port " << iter->first << "@" << name_;
-        iter = ports_.erase(iter);
+        iter = ports_.erase(iter); 
       } else {
         ++iter;
       }
@@ -372,14 +372,14 @@ int Node::Impl::ObserveProxy(Event event) {
              << " pointing to "
              << event.observe_proxy.proxy_to_port_name << "@"
              << event.observe_proxy.proxy_to_node_name;
-
+  
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
     if (port->peer_node_name == event.observe_proxy.proxy_node_name &&
         port->peer_port_name == event.observe_proxy.proxy_port_name) {
-      port->peer_node_name = event.observe_proxy.proxy_to_node_name;
-      port->peer_port_name = event.observe_proxy.proxy_to_port_name;
+      port->peer_node_name = event.observe_proxy.proxy_to_node_name; 
+      port->peer_port_name = event.observe_proxy.proxy_to_port_name; 
 
       Event ack(Event::kObserveProxyAck);
       ack.port_name = event.observe_proxy.proxy_port_name;
@@ -520,7 +520,8 @@ void Node::Impl::WillSendPort_Locked(Port* port,
 
   // Make sure we don't send messages to the new peer until after we know it
   // exists. In the meantime, just buffer messages locally.
-  assert(port->state == Port::kBuffering);
+  assert(port->state == Port::kReceiving);
+  port->state = Port::kBuffering;
 
   port_descriptor->name = new_port_name;
   port_descriptor->peer_node_name = port->peer_node_name;
@@ -573,32 +574,25 @@ int Node::Impl::SendMessage_Locked(Port* port,
     std::vector<std::shared_ptr<Port>> ports;
     ports.resize(message->num_ports);
 
-    size_t num_ready_ports = 0;
     for (size_t i = 0; i < message->num_ports; ++i) {
       ports[i] = GetPort(message->ports[i].name);
-      std::lock_guard<std::mutex> guard(ports[i]->lock);
-      // If the port isn't in the receiving state, someone else has already
-      // started to transfer it.
-      if (ports[i]->state != Port::kReceiving)
-        break;
-      ports[i]->state = Port::kBuffering;
-      num_ready_ports++;
-    }
+      ports[i]->lock.lock();
 
-    if (num_ready_ports < message->num_ports) {
-      // At least one of our ports could not be sent. Unmark all that we marked.
-      for (size_t i = 0; i < num_ready_ports; ++i) {
-        std::lock_guard<std::mutex> guard(ports[i]->lock);
-        ports[i]->state = Port::kReceiving;
+      if (ports[i]->state != Port::kReceiving) {
+        // Oops, we cannot send this port.
+        for (size_t j = 0; j <= i; ++j)
+          ports[i]->lock.unlock();
+        return ERROR_PORT_STATE_UNEXPECTED;
       }
-      return ERROR_PORT_STATE_UNEXPECTED;
     }
 
     for (size_t i = 0; i < message->num_ports; ++i) {
-      std::lock_guard<std::mutex> guard(ports[i]->lock);
       WillSendPort_Locked(
           ports[i].get(), port->peer_node_name, &message->ports[i]);
     }
+
+    for (size_t i = 0; i < message->num_ports; ++i)
+      ports[i]->lock.unlock();
   }
 
 #ifndef NDEBUG
@@ -662,7 +656,7 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
     DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
                << " now; waiting for more messages";
   }
-}
+}  
 
 void Node::Impl::ClosePort_Locked(Port* port, const PortName& port_name) {
   // We pass along the sequence number of the last message sent from this
