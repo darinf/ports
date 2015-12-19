@@ -85,7 +85,7 @@ index e307ed1..9e61890 100644
      "process_delegate.h",
    ]
 diff --git a/mojo/edk/system/BUILD.gn b/mojo/edk/system/BUILD.gn
-index cd58ff4..802b753 100644
+index cd58ff4..65749bc 100644
 --- a/mojo/edk/system/BUILD.gn
 +++ b/mojo/edk/system/BUILD.gn
 @@ -2,6 +2,7 @@
@@ -96,7 +96,7 @@ index cd58ff4..802b753 100644
  import("//testing/test.gni")
  import("../../../mojo/public/tools/bindings/mojom.gni")
  
-@@ -25,64 +26,73 @@ static_library("system") {
+@@ -25,64 +26,74 @@ static_library("system") {
    # TODO(use_chrome_edk): remove "2"
    output_name = "mojo_system_impl2"
  
@@ -163,6 +163,7 @@ index cd58ff4..802b753 100644
  
 +  if (use_ports_for_mojo_edk) {
 +    deps += [ "//local/ports/mojo_system" ]
++    sources = [ "configuration.cc" ]
 +  } else {
 +    sources = [
 +      "async_waiter.cc",
@@ -226,7 +227,7 @@ index cd58ff4..802b753 100644
    defines = [
      "MOJO_SYSTEM_IMPL_IMPLEMENTATION",
      "MOJO_SYSTEM_IMPLEMENTATION",
-@@ -98,11 +108,6 @@ static_library("system") {
+@@ -98,11 +109,6 @@ static_library("system") {
      "../embedder:platform",
    ]
  
