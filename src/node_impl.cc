@@ -574,15 +574,20 @@ int Node::Impl::SendMessage_Locked(Port* port,
     std::vector<std::shared_ptr<Port>> ports;
     ports.resize(message->num_ports);
 
-    for (size_t i = 0; i < message->num_ports; ++i) {
-      ports[i] = GetPort(message->ports[i].name);
-      ports[i]->lock.lock();
+    {
+      // Exclude other threads from locking multiple ports in arbitrary order.
+      std::lock_guard<std::mutex> guard(send_with_ports_lock_);
 
-      if (ports[i]->state != Port::kReceiving) {
-        // Oops, we cannot send this port.
-        for (size_t j = 0; j <= i; ++j)
-          ports[i]->lock.unlock();
-        return ERROR_PORT_STATE_UNEXPECTED;
+      for (size_t i = 0; i < message->num_ports; ++i) {
+        ports[i] = GetPort(message->ports[i].name);
+        ports[i]->lock.lock();
+
+        if (ports[i]->state != Port::kReceiving) {
+          // Oops, we cannot send this port.
+          for (size_t j = 0; j <= i; ++j)
+            ports[i]->lock.unlock();
+          return ERROR_PORT_STATE_UNEXPECTED;
+        }
       }
     }
 

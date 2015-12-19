@@ -86,6 +86,8 @@ class Node::Impl {
 
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
+
+  std::mutex send_with_ports_lock_;
 };
 
 }  // namespace ports
