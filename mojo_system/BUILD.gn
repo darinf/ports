@@ -4,8 +4,19 @@
 
 source_set("mojo_system") {
   sources = [
+    "channel.cc",
+    "channel.h",
+    "channel_posix.cc",
+    "child_node_delegate.cc",
+    "child_node_delegate.h",
     "core.cc",
     "core.h",
+    "dispatcher.cc",
+    "dispatcher.h",
+    "message_pipe_dispatcher.cc",
+    "message_pipe_dispatcher.h",
+    "parent_node_delegate.cc",
+    "parent_node_delegate.h",
   ]
 
   defines = [
@@ -18,10 +29,12 @@ source_set("mojo_system") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
+    "//crypto",
   ]
 
   public_deps = [
     "../mojo_embedder",
+    "..:ports",
     "//mojo/public/c/system",
     "//mojo/public/cpp/system",
     "//mojo/edk/embedder:delegates",

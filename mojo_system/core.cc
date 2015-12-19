@@ -4,7 +4,15 @@
 
 #include "ports/mojo_system/core.h"
 
+#include <utility>
+
 #include "base/logging.h"
+#include "base/macros.h"
+#include "base/time/time.h"
+#include "crypto/random.h"
+#include "ports/include/ports.h"
+#include "ports/mojo_system/child_node_delegate.h"
+#include "ports/mojo_system/parent_node_delegate.h"
 
 namespace mojo {
 namespace edk {
@@ -12,6 +20,30 @@ namespace edk {
 Core::Core() {}
 
 Core::~Core() {}
+
+void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
+  io_task_runner_ = io_task_runner;
+}
+
+void Core::AddChild(ScopedPlatformHandle channel_to_child) {
+  if (!node_delegate_)
+    node_delegate_.reset(new ParentNodeDelegate(io_task_runner_));
+  ParentNodeDelegate* delegate =
+      static_cast<ParentNodeDelegate*>(node_delegate_.get());
+  delegate->AddChild(std::move(channel_to_child));
+}
+
+void Core::InitChild(ScopedPlatformHandle channel_to_parent) {
+  CHECK(!node_delegate_);
+  node_delegate_.reset(
+      new ChildNodeDelegate(std::move(channel_to_parent), io_task_runner_));
+}
+
+MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
+  MojoHandle handle = next_handle_++;
+  dispatchers_.insert(std::make_pair(handle, dispatcher));
+  return handle;
+}
 
 MojoResult Core::AsyncWait(MojoHandle handle,
                            MojoHandleSignals signals,
@@ -21,19 +53,21 @@ MojoResult Core::AsyncWait(MojoHandle handle,
 }
 
 MojoTimeTicks Core::GetTimeTicksNow() {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  return base::TimeTicks::Now().ToInternalValue();
 }
 
 MojoResult Core::Close(MojoHandle handle) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  auto dispatcher = GetDispatcher(handle);
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  return dispatcher->Close();
 }
 
 MojoResult Core::Wait(MojoHandle handle,
                       MojoHandleSignals signals,
                       MojoDeadline deadline,
                       MojoHandleSignalsState* signals_state) {
+  NOTIMPLEMENTED();
   return MOJO_RESULT_UNIMPLEMENTED;
 }
 
@@ -88,8 +122,10 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
                               const MojoHandle* handles,
                               uint32_t num_handles,
                               MojoWriteMessageFlags flags) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  auto dispatcher = GetDispatcher(message_pipe_handle);
+  if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  return dispatcher->WriteMessage(ports::ScopedMessage(), flags);
 }
 
 MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
@@ -98,8 +134,11 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
                              MojoHandle* handles,
                              uint32_t* num_handles,
                              MojoReadMessageFlags flags) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  auto dispatcher = GetDispatcher(message_pipe_handle);
+  if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  ports::ScopedMessage message;
+  return dispatcher->ReadMessage(flags, &message);
 }
 
 MojoResult Core::CreateDataPipe(
@@ -182,6 +221,13 @@ MojoResult Core::MapBuffer(MojoHandle buffer_handle,
 MojoResult Core::UnmapBuffer(void* buffer) {
   NOTIMPLEMENTED();
   return MOJO_RESULT_UNIMPLEMENTED;
+}
+
+scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
+  auto iter = dispatchers_.find(handle);
+  if (iter == dispatchers_.end())
+    return nullptr;
+  return iter->second;
 }
 
 }  // namespace edk

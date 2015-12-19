@@ -45,6 +45,15 @@ struct hash<ports::PortName> {
   }
 };
 
+template <>
+struct hash<ports::NodeName> {
+  std::size_t operator()(const ports::NodeName& node_name) const {
+    size_t h1 = hash<uint64_t>()(node_name.value_major);
+    size_t h2 = hash<uint64_t>()(node_name.value_minor);
+    return h1 ^ (h2 << 1);
+  }
+};
+
 }  // namespace std
 
 #endif  // PORTS_SRC_HASH_FUNCTIONS_H_

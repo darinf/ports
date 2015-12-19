@@ -5,7 +5,10 @@
 #include "mojo/edk/embedder/embedder.h"
 
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
+#include "ports/include/ports.h"
 #include "ports/mojo_system/core.h"
+#include "ports/mojo_system/message_pipe_dispatcher.h"
 
 namespace mojo {
 namespace edk {
@@ -16,6 +19,7 @@ class PlatformSupport;
 namespace internal {
 
 Core* g_core;
+scoped_refptr<base::TaskRunner> g_io_thread_task_runner;
 
 // Only here to satisfy some messy link dependency in old EDK test code
 PlatformSupport* g_platform_support;
@@ -23,15 +27,12 @@ PlatformSupport* g_platform_support;
 }  // namespace internal
 
 void SetMaxMessageSize(size_t bytes) {
-  NOTIMPLEMENTED();
 }
 
 void PreInitializeParentProcess() {
-  NOTIMPLEMENTED();
 }
 
 void PreInitializeChildProcess() {
-  NOTIMPLEMENTED();
 }
 
 ScopedPlatformHandle ChildProcessLaunched(base::ProcessHandle child_process) {
@@ -41,11 +42,13 @@ ScopedPlatformHandle ChildProcessLaunched(base::ProcessHandle child_process) {
 
 void ChildProcessLaunched(base::ProcessHandle child_process,
                           ScopedPlatformHandle server_pipe) {
-  NOTIMPLEMENTED();
+  CHECK(internal::g_core);
+  internal::g_core->AddChild(std::move(server_pipe));
 }
 
 void SetParentPipeHandle(ScopedPlatformHandle pipe) {
-  NOTIMPLEMENTED();
+  CHECK(internal::g_core);
+  internal::g_core->InitChild(std::move(pipe));
 }
 
 void Init() {
@@ -74,11 +77,11 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
 
 void InitIPCSupport(ProcessDelegate* process_delegate,
                     scoped_refptr<base::TaskRunner> io_thread_task_runner) {
-  NOTIMPLEMENTED();
+  CHECK(internal::g_core);
+  internal::g_core->SetIOTaskRunner(io_thread_task_runner);
 }
 
 void ShutdownIPCSupportOnIOThread() {
-  NOTIMPLEMENTED();
 }
 
 void ShutdownIPCSupport() {
@@ -87,8 +90,12 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
-  NOTIMPLEMENTED();
-  return ScopedMessagePipeHandle();
+  scoped_refptr<MessagePipeDispatcher> dispatcher = new MessagePipeDispatcher();
+  ScopedMessagePipeHandle rv(
+      MessagePipeHandle(internal::g_core->AddDispatcher(dispatcher)));
+  CHECK(rv.is_valid());
+  // TODO: Wrap |platform_handle| w/ a Channel?
+  return rv;
 }
 
 }  // namespace edk

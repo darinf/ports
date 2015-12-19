@@ -6,12 +6,19 @@
 #define PORTS_MOJO_SYSTEM_CORE_H_
 
 #include "base/callback.h"
+#include "base/containers/hash_tables.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/task_runner.h"
+#include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
+#include "ports/include/ports.h"
+#include "ports/mojo_system/dispatcher.h"
 
 namespace mojo {
 namespace edk {
@@ -22,6 +29,18 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
  public:
   explicit Core();
   virtual ~Core();
+
+  // Called exactly once, shortly after construction, and before any other
+  // methods are called on this object.
+  void SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner);
+
+  // Called in the parent process any time a new child is launched.
+  void AddChild(ScopedPlatformHandle channel_to_child);
+
+  // Called in a child process exactly once during early initialization.
+  void InitChild(ScopedPlatformHandle channel_to_parent);
+
+  MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 
   // Watches on the given handle for the given signals, calling |callback| when
   // a signal is satisfied or when all signals become unsatisfiable. |callback|
@@ -132,6 +151,17 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoResult UnmapBuffer(void* buffer);
 
  private:
+  using DispatcherMap = base::hash_map<MojoHandle, scoped_refptr<Dispatcher>>;
+
+  scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
+
+  scoped_refptr<base::TaskRunner> io_task_runner_;
+  scoped_ptr<ports::NodeDelegate> node_delegate_;
+
+  MojoHandle next_handle_ = MOJO_HANDLE_INVALID + 1;
+
+  DispatcherMap dispatchers_;
+
   DISALLOW_COPY_AND_ASSIGN(Core);
 };
 
