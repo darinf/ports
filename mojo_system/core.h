@@ -12,16 +12,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
+#include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
-#include "ports/include/ports.h"
 #include "ports/mojo_system/dispatcher.h"
 
 namespace mojo {
 namespace edk {
+
+class Node;
 
 // |Core| is an object that implements the Mojo system calls. All public methods
 // are thread-safe.
@@ -35,10 +37,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   void SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner);
 
   // Called in the parent process any time a new child is launched.
-  void AddChild(ScopedPlatformHandle channel_to_child);
+  void AddChild(ScopedPlatformHandle platform_handle);
 
   // Called in a child process exactly once during early initialization.
-  void InitChild(ScopedPlatformHandle channel_to_parent);
+  void InitChild(ScopedPlatformHandle platform_handle);
 
   MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 
@@ -154,9 +156,15 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   using DispatcherMap = base::hash_map<MojoHandle, scoped_refptr<Dispatcher>>;
 
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
+  MojoResult WaitManyInternal(const MojoHandle* handles,
+                              const MojoHandleSignals* signals,
+                              uint32_t num_handles,
+                              MojoDeadline deadline,
+                              uint32_t *result_index,
+                              HandleSignalsState* signals_states);
 
   scoped_refptr<base::TaskRunner> io_task_runner_;
-  scoped_ptr<ports::NodeDelegate> node_delegate_;
+  scoped_ptr<Node> node_;
 
   MojoHandle next_handle_ = MOJO_HANDLE_INVALID + 1;
 

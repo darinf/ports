@@ -7,9 +7,20 @@
 namespace mojo {
 namespace edk {
 
-Channel::~Channel() {}
-
 Channel::Channel() {}
+
+Channel::IncomingMessage::IncomingMessage(const void* data,
+                                          size_t num_bytes,
+                                          ScopedPlatformHandleVectorPtr handles)
+    : data_(data), num_bytes_(num_bytes), handles_(std::move(handles)) {}
+
+Channel::IncomingMessage::~IncomingMessage() {}
+
+Channel::OutgoingMessage::OutgoingMessage(std::vector<char> data,
+                                          ScopedPlatformHandleVectorPtr handles)
+    : data_(std::move(data)), handles_(std::move(handles)) {}
+
+Channel::OutgoingMessage::~OutgoingMessage() {}
 
 }  // namespace edk
 }  // namespace mojo

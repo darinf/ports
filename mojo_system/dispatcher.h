@@ -158,6 +158,8 @@ MOJO_SYSTEM_IMPL_EXPORT inline std::ostream& operator<<(std::ostream& out,
   return out << static_cast<int>(type);
 }
 
+using DispatcherVector = std::vector<scoped_refptr<Dispatcher>>;
+
 }  // namespace edk
 }  // namespace mojo
 

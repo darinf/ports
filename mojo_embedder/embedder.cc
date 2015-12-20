@@ -8,7 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/core.h"
-#include "ports/mojo_system/message_pipe_dispatcher.h"
+#include "ports/mojo_system/channel_dispatcher.h"
 
 namespace mojo {
 namespace edk {
@@ -78,6 +78,8 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
 void InitIPCSupport(ProcessDelegate* process_delegate,
                     scoped_refptr<base::TaskRunner> io_thread_task_runner) {
   CHECK(internal::g_core);
+  CHECK(!internal::g_io_thread_task_runner);
+  internal::g_io_thread_task_runner = io_thread_task_runner;
   internal::g_core->SetIOTaskRunner(io_thread_task_runner);
 }
 
@@ -90,11 +92,12 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
-  scoped_refptr<MessagePipeDispatcher> dispatcher = new MessagePipeDispatcher();
+  scoped_refptr<ChannelDispatcher> dispatcher =
+      new ChannelDispatcher(std::move(platform_handle),
+                            internal::g_io_thread_task_runner);
   ScopedMessagePipeHandle rv(
       MessagePipeHandle(internal::g_core->AddDispatcher(dispatcher)));
   CHECK(rv.is_valid());
-  // TODO: Wrap |platform_handle| w/ a Channel?
   return rv;
 }
 

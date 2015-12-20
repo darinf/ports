@@ -10,9 +10,13 @@
 #include "base/macros.h"
 #include "base/time/time.h"
 #include "crypto/random.h"
+#include "mojo/edk/system/configuration.h"
+#include "mojo/edk/system/handle_signals_state.h"
+#include "mojo/edk/system/waiter.h"
 #include "ports/include/ports.h"
-#include "ports/mojo_system/child_node_delegate.h"
-#include "ports/mojo_system/parent_node_delegate.h"
+#include "ports/mojo_system/channel.h"
+#include "ports/mojo_system/child_node.h"
+#include "ports/mojo_system/parent_node.h"
 
 namespace mojo {
 namespace edk {
@@ -25,18 +29,20 @@ void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
   io_task_runner_ = io_task_runner;
 }
 
-void Core::AddChild(ScopedPlatformHandle channel_to_child) {
-  if (!node_delegate_)
-    node_delegate_.reset(new ParentNodeDelegate(io_task_runner_));
-  ParentNodeDelegate* delegate =
-      static_cast<ParentNodeDelegate*>(node_delegate_.get());
-  delegate->AddChild(std::move(channel_to_child));
+void Core::AddChild(ScopedPlatformHandle platform_handle) {
+  scoped_ptr<NodeChannel> channel(
+      new NodeChannel(std::move(platform_handle), io_task_runner_));
+  if (!node_)
+    node_.reset(new ParentNode);
+  ParentNode* parent_node = static_cast<ParentNode*>(node_.get());
+  parent_node->AddChild(std::move(channel));
 }
 
-void Core::InitChild(ScopedPlatformHandle channel_to_parent) {
-  CHECK(!node_delegate_);
-  node_delegate_.reset(
-      new ChildNodeDelegate(std::move(channel_to_parent), io_task_runner_));
+void Core::InitChild(ScopedPlatformHandle platform_handle) {
+  CHECK(!node_);
+  scoped_ptr<NodeChannel> parent_channel(
+      new NodeChannel(std::move(platform_handle), io_task_runner_));
+  node_.reset(new ChildNode(std::move(parent_channel)));
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
@@ -67,8 +73,13 @@ MojoResult Core::Wait(MojoHandle handle,
                       MojoHandleSignals signals,
                       MojoDeadline deadline,
                       MojoHandleSignalsState* signals_state) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  uint32_t unused = static_cast<uint32_t>(-1);
+  HandleSignalsState hss;
+  MojoResult rv = WaitManyInternal(&handle, &signals, 1, deadline, &unused,
+                                   signals_state ? &hss : nullptr);
+  if (rv != MOJO_RESULT_INVALID_ARGUMENT && signals_state)
+    *signals_state = hss;
+  return rv;
 }
 
 MojoResult Core::WaitMany(const MojoHandle* handles,
@@ -76,9 +87,26 @@ MojoResult Core::WaitMany(const MojoHandle* handles,
                           uint32_t num_handles,
                           MojoDeadline deadline,
                           uint32_t* result_index,
-                          MojoHandleSignalsState* signals_states) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+                          MojoHandleSignalsState* signals_state) {
+  if (num_handles < 1)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (num_handles > GetConfiguration().max_wait_many_num_handles)
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+
+  uint32_t index = static_cast<uint32_t>(-1);
+  MojoResult rv;
+  if (!signals_state) {
+    rv = WaitManyInternal(handles, signals, num_handles, deadline, &index,
+                          nullptr);
+  } else {
+    // Note: The |reinterpret_cast| is safe, since |HandleSignalsState| is a
+    // subclass of |MojoHandleSignalsState| that doesn't add any data members.
+    rv = WaitManyInternal(handles, signals, num_handles, deadline, &index,
+                          reinterpret_cast<HandleSignalsState*>(signals_state));
+  }
+  if (index != static_cast<uint32_t>(-1) && result_index)
+    *result_index = index;
+  return rv;
 }
 
 MojoResult Core::CreateWaitSet(MojoHandle* wait_set_handle) {
@@ -228,6 +256,72 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
   if (iter == dispatchers_.end())
     return nullptr;
   return iter->second;
+}
+
+MojoResult Core::WaitManyInternal(const MojoHandle* handles,
+                                  const MojoHandleSignals* signals,
+                                  uint32_t num_handles,
+                                  MojoDeadline deadline,
+                                  uint32_t *result_index,
+                                  HandleSignalsState* signals_states) {
+  // TODO: Review this... Ripped from existing EDK.
+  CHECK(handles);
+  CHECK(signals);
+  DCHECK_GT(num_handles, 0u);
+  if (result_index) {
+    DCHECK_EQ(*result_index, static_cast<uint32_t>(-1));
+  }
+
+  DispatcherVector dispatchers;
+  dispatchers.reserve(num_handles);
+  for (uint32_t i = 0; i < num_handles; i++) {
+    scoped_refptr<Dispatcher> dispatcher = GetDispatcher(handles[i]);
+    if (!dispatcher) {
+      if (result_index)
+        *result_index = i;
+      return MOJO_RESULT_INVALID_ARGUMENT;
+    }
+    dispatchers.push_back(dispatcher);
+  }
+
+  // TODO(vtl): Should make the waiter live (permanently) in TLS.
+  Waiter waiter;
+  waiter.Init();
+
+  uint32_t i;
+  MojoResult rv = MOJO_RESULT_OK;
+  for (i = 0; i < num_handles; i++) {
+    rv = dispatchers[i]->AddAwakable(
+        &waiter, signals[i], i, signals_states ? &signals_states[i] : nullptr);
+    if (rv != MOJO_RESULT_OK) {
+      if (result_index)
+        *result_index = i;
+      break;
+    }
+  }
+  uint32_t num_added = i;
+
+  if (rv == MOJO_RESULT_ALREADY_EXISTS) {
+    rv = MOJO_RESULT_OK;  // The i-th one is already "triggered".
+  } else if (rv == MOJO_RESULT_OK) {
+    uintptr_t uintptr_result = *result_index;
+    rv = waiter.Wait(deadline, &uintptr_result);
+    *result_index = static_cast<uint32_t>(uintptr_result);
+  }
+
+  // Make sure no other dispatchers try to wake |waiter| for the current
+  // |Wait()|/|WaitMany()| call. (Only after doing this can |waiter| be
+  // destroyed, but this would still be required if the waiter were in TLS.)
+  for (i = 0; i < num_added; i++) {
+    dispatchers[i]->RemoveAwakable(
+        &waiter, signals_states ? &signals_states[i] : nullptr);
+  }
+  if (signals_states) {
+    for (; i < num_handles; i++)
+      signals_states[i] = dispatchers[i]->GetHandleSignalsState();
+  }
+
+  return rv;
 }
 
 }  // namespace edk

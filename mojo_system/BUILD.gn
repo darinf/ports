@@ -6,17 +6,34 @@ source_set("mojo_system") {
   sources = [
     "channel.cc",
     "channel.h",
+    "channel_dispatcher.cc",
+    "channel_dispatcher.h",
     "channel_posix.cc",
-    "child_node_delegate.cc",
-    "child_node_delegate.h",
+    "child_node.cc",
+    "child_node.h",
     "core.cc",
     "core.h",
     "dispatcher.cc",
     "dispatcher.h",
-    "message_pipe_dispatcher.cc",
-    "message_pipe_dispatcher.h",
-    "parent_node_delegate.cc",
-    "parent_node_delegate.h",
+    "node.cc",
+    "node.h",
+    "node_channel.cc",
+    "node_channel.h",
+    "parent_node.cc",
+    "parent_node.h",
+  ]
+
+  # Sources we can repurpose from the existing EDK impl
+  sources += [
+    "//mojo/edk/system/awakable.h",
+    "//mojo/edk/system/awakable_list.cc",
+    "//mojo/edk/system/awakable_list.h",
+    "//mojo/edk/system/configuration.cc",
+    "//mojo/edk/system/configuration.h",
+    "//mojo/edk/system/handle_signals_state.h",
+    "//mojo/edk/system/system_impl_export.h",
+    "//mojo/edk/system/waiter.cc",
+    "//mojo/edk/system/waiter.h",
   ]
 
   defines = [
