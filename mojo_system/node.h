@@ -21,6 +21,10 @@ class Node : public ports::NodeDelegate {
  public:
   ~Node() override;
 
+  const ports::NodeName& name() const { return name_; }
+
+  void CreatePortPair(ports::PortName* port0, ports::PortName* port1);
+
  protected:
   Node();
 
@@ -28,6 +32,7 @@ class Node : public ports::NodeDelegate {
   void GenerateRandomName(T* out) { crypto::RandBytes(out, sizeof(T)); }
 
   void AddPeer(const ports::NodeName& name, scoped_ptr<NodeChannel> channel);
+  void DropPeer(const ports::NodeName& name);
   NodeChannel* GetPeer(const ports::NodeName& name);
 
  private:
@@ -35,6 +40,9 @@ class Node : public ports::NodeDelegate {
   void GenerateRandomPortName(ports::PortName* port_name) override;
   void SendEvent(const ports::NodeName& node, ports::Event event) override;
   void MessagesAvailable(const ports::PortName& port) override;
+
+  ports::NodeName name_;
+  scoped_ptr<ports::Node> node_;
 
   base::Lock peers_lock_;
   std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>> peers_;

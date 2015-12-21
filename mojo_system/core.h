@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/handle_signals_state.h"
@@ -166,8 +167,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   scoped_refptr<base::TaskRunner> io_task_runner_;
   scoped_ptr<Node> node_;
 
+  base::Lock dispatchers_lock_;
   MojoHandle next_handle_ = MOJO_HANDLE_INVALID + 1;
-
   DispatcherMap dispatchers_;
 
   DISALLOW_COPY_AND_ASSIGN(Core);

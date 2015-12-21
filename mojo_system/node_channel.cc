@@ -47,14 +47,26 @@ NodeChannel::Message::Message(Type type,
 }
 
 // static
-NodeChannel::MessagePtr NodeChannel::Message::NewInitializeChildMessage(
+NodeChannel::MessagePtr NodeChannel::Message::NewHelloChildMessage(
     const ports::NodeName& parent_name,
-    const ports::NodeName& child_name) {
-  MessagePtr message(new Message(Type::INITIALIZE_CHILD,
-                                 sizeof(InitializeChildData), nullptr));
-  InitializeChildData* data =
-      reinterpret_cast<InitializeChildData*>(message->payload());
+    const ports::NodeName& token_name) {
+  MessagePtr message(
+      new Message(Type::HELLO_CHILD, sizeof(HelloChildData), nullptr));
+  HelloChildData* data = reinterpret_cast<HelloChildData*>(message->payload());
   data->parent_name = parent_name;
+  data->token_name = token_name;
+  return message;
+}
+
+// static
+NodeChannel::MessagePtr NodeChannel::Message::NewHelloParentMessage(
+    const ports::NodeName& token_name,
+    const ports::NodeName& child_name) {
+  MessagePtr message(
+      new Message(Type::HELLO_PARENT, sizeof(HelloParentData), nullptr));
+  HelloParentData* data =
+      reinterpret_cast<HelloParentData*>(message->payload());
+  data->token_name = token_name;
   data->child_name = child_name;
   return message;
 }
@@ -100,10 +112,16 @@ NodeChannel::MessagePtr NodeChannel::Message::NewEventMessage(
   return message;
 }
 
-const NodeChannel::Message::InitializeChildData&
-NodeChannel::Message::AsInitializeChild() const {
-  DCHECK(header()->type == Type::INITIALIZE_CHILD);
-  return *reinterpret_cast<const InitializeChildData*>(payload());
+const NodeChannel::Message::HelloChildData&
+NodeChannel::Message::AsHelloChild() const {
+  DCHECK(header()->type == Type::HELLO_CHILD);
+  return *reinterpret_cast<const HelloChildData*>(payload());
+}
+
+const NodeChannel::Message::HelloParentData&
+NodeChannel::Message::AsHelloParent() const {
+  DCHECK(header()->type == Type::HELLO_PARENT);
+  return *reinterpret_cast<const HelloParentData*>(payload());
 }
 
 const NodeChannel::Message::EventData& NodeChannel::Message::AsEvent() const {
@@ -244,6 +262,12 @@ void NodeChannel::OnChannelRead(Channel::IncomingMessage* message) {
 
 void NodeChannel::OnChannelError() {
   delegate_->OnChannelError(remote_node_name_);
+}
+
+std::ostream& operator<<(std::ostream& stream,
+                         NodeChannel::Message::Type message_type) {
+  stream << static_cast<int>(message_type);
+  return stream;
 }
 
 }  // namespace edk

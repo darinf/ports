@@ -5,13 +5,17 @@
 #ifndef PORTS_MOJO_SYSTEM_PARENT_NODE_H_
 #define PORTS_MOJO_SYSTEM_PARENT_NODE_H_
 
+#include <unordered_map>
+
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "ports/mojo_system/node.h"
 #include "ports/mojo_system/node_channel.h"
 #include "ports/include/ports.h"
+#include "ports/src/hash_functions.h"
 
 namespace mojo {
 namespace edk {
@@ -30,7 +34,9 @@ class ParentNode : public Node, public NodeChannel::Delegate {
                          NodeChannel::MessagePtr message) override;
   void OnChannelError(const ports::NodeName& node) override;
 
-  ports::NodeName name_;
+  base::Lock pending_handshakes_lock_;
+  std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>>
+      pending_handshakes_;
 
   DISALLOW_COPY_AND_ASSIGN(ParentNode);
 };

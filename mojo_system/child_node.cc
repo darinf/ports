@@ -20,25 +20,29 @@ void ChildNode::OnMessageReceived(const ports::NodeName& node,
                                   NodeChannel::MessagePtr message) {
   if (bootstrap_channel_) {
     // Anticipate receiving our first message from the parent node. It must be
-    // an INITIALIZE_CHILD message, which provides us with our assigned name.
-    DCHECK(name_ == ports::kInvalidNodeName);
+    // an HELLO_CHILD message, which provides us with our assigned name.
     DCHECK(node == ports::kInvalidNodeName);
-    DCHECK(message->type() == NodeChannel::Message::Type::INITIALIZE_CHILD);
+    DCHECK(message->type() == NodeChannel::Message::Type::HELLO_CHILD);
 
-    const auto& data = message->AsInitializeChild();
+    const auto& data = message->AsHelloChild();
     parent_name_ = data.parent_name;
-    name_ = data.child_name;
+    bootstrap_channel_->SendMessage(NodeChannel::Message::NewHelloParentMessage(
+        data.token_name, name()));
 
     AddPeer(parent_name_, std::move(bootstrap_channel_));
 
-    DLOG(INFO) << "Initializing child with name " << name_ << " and parent "
+    DLOG(INFO) << "Initializing child with name " << name() << " and parent "
         << parent_name_;
     return;
   }
 
   switch (message->type()) {
-    case NodeChannel::Message::Type::INITIALIZE_CHILD:
-      NOTREACHED() << "Unexpected INITIALIZE_CHILD message.";
+    case NodeChannel::Message::Type::HELLO_CHILD:
+      NOTREACHED() << "Unexpected HELLO_CHILD message.";
+      break;
+
+    case NodeChannel::Message::Type::HELLO_PARENT:
+      NOTREACHED() << "Unexpected HELLO_PARENT message.";
       break;
 
     case NodeChannel::Message::Type::EVENT: {

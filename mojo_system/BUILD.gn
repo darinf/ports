@@ -17,6 +17,8 @@ source_set("mojo_system") {
     "dispatcher.h",
     "node.cc",
     "node.h",
+    "message_pipe_dispatcher.cc",
+    "message_pipe_dispatcher.h",
     "node_channel.cc",
     "node_channel.h",
     "parent_node.cc",

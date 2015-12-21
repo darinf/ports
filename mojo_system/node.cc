@@ -11,7 +11,17 @@ namespace edk {
 
 Node::~Node() {}
 
-Node::Node() {}
+Node::Node() {
+  GenerateRandomName(&name_);
+  DLOG(INFO) << "Initializing node " << name_;
+
+  node_.reset(new ports::Node(name_, this));
+}
+
+void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
+  int rv = node_->CreatePortPair(port0, port1);
+  DCHECK_EQ(rv, ports::OK);
+}
 
 void Node::GenerateRandomPortName(ports::PortName* port_name) {
   GenerateRandomName(port_name);
@@ -22,6 +32,14 @@ void Node::AddPeer(const ports::NodeName& name,
   channel->SetRemoteNodeName(name);
   auto result = peers_.insert(std::make_pair(name, std::move(channel)));
   DLOG_IF(ERROR, !result.second) << "Ignoring duplicate peer name " << name;
+}
+
+void Node::DropPeer(const ports::NodeName& name) {
+  auto it = peers_.find(name);
+  if (it == peers_.end())
+    return;
+  peers_.erase(it);
+  DLOG(INFO) << "Dropped peer " << it->first;
 }
 
 NodeChannel* Node::GetPeer(const ports::NodeName& name) {

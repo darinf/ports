@@ -16,6 +16,7 @@
 #include "ports/include/ports.h"
 #include "ports/mojo_system/channel.h"
 #include "ports/mojo_system/child_node.h"
+#include "ports/mojo_system/message_pipe_dispatcher.h"
 #include "ports/mojo_system/parent_node.h"
 
 namespace mojo {
@@ -42,6 +43,7 @@ void Core::InitChild(ScopedPlatformHandle platform_handle) {
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
+  base::AutoLock lock(dispatchers_lock_);
   MojoHandle handle = next_handle_++;
   dispatchers_.insert(std::make_pair(handle, dispatcher));
   return handle;
@@ -136,8 +138,13 @@ MojoResult Core::CreateMessagePipe(
     const MojoCreateMessagePipeOptions* options,
     MojoHandle* message_pipe_handle0,
     MojoHandle* message_pipe_handle1) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  ports::PortName port0, port1;
+  node_->CreatePortPair(&port0, &port1);
+  *message_pipe_handle0 = AddDispatcher(
+      new MessagePipeDispatcher(node_.get(), port0));
+  *message_pipe_handle1 = AddDispatcher(
+      new MessagePipeDispatcher(node_.get(), port1));
+  return MOJO_RESULT_OK;
 }
 
 MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
@@ -248,6 +255,7 @@ MojoResult Core::UnmapBuffer(void* buffer) {
 }
 
 scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
+  base::AutoLock lock(dispatchers_lock_);
   auto iter = dispatchers_.find(handle);
   if (iter == dispatchers_.end())
     return nullptr;

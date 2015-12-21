@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <deque>
+#include <ostream>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -33,14 +34,22 @@ class NodeChannel : public Channel::Delegate {
     enum class Type : uint32_t {
       // Sent from the parent node to any child on child startup. Must be the
       // first message received by a child node.
-      INITIALIZE_CHILD = 0,
+      HELLO_CHILD = 0,
+
+      // Sent from the child to the parent to complete the handshake.
+      HELLO_PARENT = 1,
 
       // Encodes a ports::Event from one node to another.
-      EVENT = 1,
+      EVENT = 2,
     };
 
-    struct InitializeChildData {
+    struct HelloChildData {
       ports::NodeName parent_name;
+      ports::NodeName token_name;
+    };
+
+    struct HelloParentData {
+      ports::NodeName token_name;
       ports::NodeName child_name;
     };
 
@@ -81,12 +90,16 @@ class NodeChannel : public Channel::Delegate {
 
     Type type() const { return header()->type; }
 
-    static MessagePtr NewInitializeChildMessage(
+    static MessagePtr NewHelloChildMessage(
         const ports::NodeName& parent_name,
+        const ports::NodeName& token_name);
+    static MessagePtr NewHelloParentMessage(
+        const ports::NodeName& token_name,
         const ports::NodeName& child_name);
     static MessagePtr NewEventMessage(ports::Event event);
 
-    const InitializeChildData& AsInitializeChild() const;
+    const HelloChildData& AsHelloChild() const;
+    const HelloParentData& AsHelloParent() const;
     const EventData& AsEvent() const;
 
     std::vector<char> TakeData() { return std::move(data_); }
@@ -143,6 +156,9 @@ class NodeChannel : public Channel::Delegate {
 
   DISALLOW_COPY_AND_ASSIGN(NodeChannel);
 };
+
+std::ostream& operator<<(std::ostream& stream,
+                         NodeChannel::Message::Type message_type);
 
 }  // namespace edk
 }  // namespace mojo
