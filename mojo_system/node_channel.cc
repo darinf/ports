@@ -266,7 +266,20 @@ void NodeChannel::OnChannelError() {
 
 std::ostream& operator<<(std::ostream& stream,
                          NodeChannel::Message::Type message_type) {
-  stream << static_cast<int>(message_type);
+  switch (message_type) {
+    case NodeChannel::Message::Type::HELLO_CHILD:
+      stream << "HELLO_CHILD";
+      break;
+    case NodeChannel::Message::Type::HELLO_PARENT:
+      stream << "HELLO_PARENT";
+      break;
+    case NodeChannel::Message::Type::EVENT:
+      stream << "EVENT";
+      break;
+    default:
+      stream << "UNKNOWN(" << static_cast<int>(message_type) << ")";
+      break;
+  }
   return stream;
 }
 

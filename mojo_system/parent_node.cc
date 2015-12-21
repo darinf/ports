@@ -65,12 +65,15 @@ void ParentNode::OnMessageReceived(const ports::NodeName& node,
     }
 
     default:
-      NOTREACHED() << "Unknown message type: " << message->type();
+      DLOG(INFO) << "Unknown message type: " << message->type() << " from peer "
+          << node;
+      DropPeer(node);
   }
 }
 
 void ParentNode::OnChannelError(const ports::NodeName& node) {
-  NOTIMPLEMENTED();
+  DLOG(INFO) << "Channel error. Dropping peer " << node;
+  DropPeer(node);
 }
 
 
