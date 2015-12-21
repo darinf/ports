@@ -65,9 +65,11 @@ inline bool operator!=(const PortName& a, const PortName& b) {
 }
 
 inline std::ostream& operator<<(std::ostream& stream, const PortName& name) {
+  std::ios::fmtflags flags(stream.flags());
   stream << std::hex << std::uppercase << name.value_major;
   if (name.value_minor != 0)
     stream << '.' << name.value_minor;
+  stream.flags(flags);
   return stream;
 }
 
@@ -88,9 +90,11 @@ inline bool operator!=(const NodeName& a, const NodeName& b) {
 }
 
 inline std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
+  std::ios::fmtflags flags(stream.flags());
   stream << std::hex << std::uppercase << name.value_major;
   if (name.value_minor != 0)
     stream << '.' << name.value_minor;
+  stream.flags(flags);
   return stream;
 }
 
