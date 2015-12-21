@@ -5,17 +5,13 @@
 #ifndef PORTS_MOJO_SYSTEM_PARENT_NODE_H_
 #define PORTS_MOJO_SYSTEM_PARENT_NODE_H_
 
-#include <unordered_map>
-
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "ports/mojo_system/node.h"
 #include "ports/mojo_system/node_channel.h"
 #include "ports/include/ports.h"
-#include "ports/src/hash_functions.h"
 
 namespace mojo {
 namespace edk {

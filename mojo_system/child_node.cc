@@ -24,7 +24,8 @@ void ChildNode::OnMessageReceived(const ports::NodeName& node,
     DCHECK(name_ == ports::kInvalidNodeName);
     DCHECK(node == ports::kInvalidNodeName);
     DCHECK(message->type() == NodeChannel::Message::Type::INITIALIZE_CHILD);
-    auto data = message->AsInitializeChild();
+
+    const auto& data = message->AsInitializeChild();
     parent_name_ = data.parent_name;
     name_ = data.child_name;
 
@@ -39,6 +40,16 @@ void ChildNode::OnMessageReceived(const ports::NodeName& node,
     case NodeChannel::Message::Type::INITIALIZE_CHILD:
       NOTREACHED() << "Unexpected INITIALIZE_CHILD message.";
       break;
+
+    case NodeChannel::Message::Type::EVENT: {
+      const auto& data = message->AsEvent();
+      DLOG(INFO) << "Received an event for port " << data.port_name;
+      if (data.type == ports::Event::kAcceptMessage) {
+        DLOG(INFO) << "It's a message with " << data.message->num_bytes <<
+            " bytes and " << data.message->num_ports << " ports.";
+      }
+      break;
+    }
 
     default:
       NOTREACHED() << "Unknown message type.";

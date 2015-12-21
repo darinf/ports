@@ -34,11 +34,34 @@ class NodeChannel : public Channel::Delegate {
       // Sent from the parent node to any child on child startup. Must be the
       // first message received by a child node.
       INITIALIZE_CHILD = 0,
+
+      // Encodes a ports::Event from one node to another.
+      EVENT = 1,
     };
 
     struct InitializeChildData {
       ports::NodeName parent_name;
       ports::NodeName child_name;
+    };
+
+    struct EventData {
+      uint32_t type;
+      ports::PortName port_name;
+      union {
+        struct {
+          ports::NodeName proxy_node_name;
+          ports::PortName proxy_peer_name;
+          ports::NodeName proxy_to_node_name;
+          ports::PortName proxy_to_peer_name;
+        } observe_proxy;
+        struct {
+          uint32_t last_sequence_num;
+        } observe_proxy_ack;
+        struct {
+          uint32_t last_sequence_num;
+        } observe_closure;
+      };
+      ports::Message* message;
     };
 
     struct Header {
@@ -61,8 +84,10 @@ class NodeChannel : public Channel::Delegate {
     static MessagePtr NewInitializeChildMessage(
         const ports::NodeName& parent_name,
         const ports::NodeName& child_name);
+    static MessagePtr NewEventMessage(ports::Event event);
 
     const InitializeChildData& AsInitializeChild() const;
+    const EventData& AsEvent() const;
 
     std::vector<char> TakeData() { return std::move(data_); }
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }

@@ -5,6 +5,8 @@
 #include "ports/mojo_system/node_channel.h"
 
 #include <cstring>
+#include <limits>
+#include <sstream>
 
 #include "base/logging.h"
 #include "ports/mojo_system/channel.h"
@@ -16,7 +18,20 @@ const size_t kMaxMessageSize = 256 * 1024 * 1024;
 
 NodeChannel::Message::Message(std::vector<char> data,
                               ScopedPlatformHandleVectorPtr handles)
-    : data_(std::move(data)), handles_(std::move(handles)) {}
+    : data_(std::move(data)), handles_(std::move(handles)) {
+  // TODO: Remove gross hacks to fix up pointers in event message data.
+  if (header()->type == Type::EVENT) {
+    EventData* data = reinterpret_cast<EventData*>(payload());
+    if (data->type == ports::Event::kAcceptMessage) {
+      char* message_data = static_cast<char*>(payload()) + sizeof(EventData);
+      data->message = reinterpret_cast<ports::Message*>(message_data);
+      data->message->ports = reinterpret_cast<ports::PortDescriptor*>(
+          message_data + sizeof(ports::Message));
+      data->message->bytes = reinterpret_cast<char*>(data->message->ports) +
+          data->message->num_ports * sizeof(ports::PortDescriptor);
+    }
+  }
+}
 
 NodeChannel::Message::~Message() {}
 
@@ -35,9 +50,8 @@ NodeChannel::Message::Message(Type type,
 NodeChannel::MessagePtr NodeChannel::Message::NewInitializeChildMessage(
     const ports::NodeName& parent_name,
     const ports::NodeName& child_name) {
-  MessagePtr message(
-      new Message(Type::INITIALIZE_CHILD, sizeof(InitializeChildData),
-                  ScopedPlatformHandleVectorPtr()));
+  MessagePtr message(new Message(Type::INITIALIZE_CHILD,
+                                 sizeof(InitializeChildData), nullptr));
   InitializeChildData* data =
       reinterpret_cast<InitializeChildData*>(message->payload());
   data->parent_name = parent_name;
@@ -45,10 +59,56 @@ NodeChannel::MessagePtr NodeChannel::Message::NewInitializeChildMessage(
   return message;
 }
 
+// static
+NodeChannel::MessagePtr NodeChannel::Message::NewEventMessage(
+    ports::Event event) {
+  size_t event_size = sizeof(EventData);
+  size_t message_size = 0;
+  if (event.message) {
+    DCHECK(event.type == ports::Event::kAcceptMessage);
+   message_size = sizeof(ports::Message) + event.message->num_bytes +
+        event.message->num_ports * sizeof(ports::PortDescriptor);
+    event_size += message_size;
+  }
+
+  MessagePtr message(new Message(Type::EVENT, event_size, nullptr));
+  EventData* data = reinterpret_cast<EventData*>(message->payload());
+  data->type = event.type;
+  data->port_name = event.port_name;
+  switch (event.type) {
+    case ports::Event::kAcceptMessage:
+      memcpy(&data[1], event.message.get(), message_size);
+      break;
+    case ports::Event::kPortAccepted:
+      break;
+    case ports::Event::kObserveProxy:
+      memcpy(&data->observe_proxy, &event.observe_proxy,
+          sizeof(event.observe_proxy));
+      break;
+    case ports::Event::kObserveProxyAck:
+      memcpy(&data->observe_proxy_ack, &event.observe_proxy_ack,
+          sizeof(event.observe_proxy_ack));
+      break;
+    case ports::Event::kObserveClosure:
+      memcpy(&data->observe_closure, &event.observe_closure,
+          sizeof(event.observe_closure));
+      break;
+    default:
+      NOTREACHED() << "Unknown event type: " << event.type;
+  }
+
+  return message;
+}
+
 const NodeChannel::Message::InitializeChildData&
 NodeChannel::Message::AsInitializeChild() const {
   DCHECK(header()->type == Type::INITIALIZE_CHILD);
   return *reinterpret_cast<const InitializeChildData*>(payload());
+}
+
+const NodeChannel::Message::EventData& NodeChannel::Message::AsEvent() const {
+  DCHECK(header()->type == Type::EVENT);
+  return *reinterpret_cast<const EventData*>(payload());
 }
 
 NodeChannel::NodeChannel(Delegate* delegate,
@@ -170,6 +230,9 @@ void NodeChannel::OnChannelRead(Channel::IncomingMessage* message) {
       (*handles)[i] = incoming_handles_.front().release();
       incoming_handles_.pop_front();
     }
+
+    DLOG(INFO) << "Dispatching message with " << front_data.size()
+        << " bytes and " << handles->size() << " handles.";
 
     MessagePtr message(
         new Message(std::move(front_data), std::move(handles)));

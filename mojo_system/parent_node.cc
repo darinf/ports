@@ -5,6 +5,7 @@
 #include "ports/mojo_system/parent_node.h"
 
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 
 namespace mojo {
 namespace edk {
