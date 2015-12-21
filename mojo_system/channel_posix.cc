@@ -28,6 +28,44 @@ namespace edk {
 
 namespace {
 
+// A view over an OutgoingMessage object. The write queue uses these since
+// large messages may need to be sent in chunks.
+class OutgoingMessageView {
+ public:
+  OutgoingMessageView(Channel::OutgoingMessagePtr message,
+                      size_t offset)
+      : message_(std::move(message)),
+        offset_(offset),
+        handles_(message_->TakeHandles()) {
+    DCHECK_GT(message_->data_num_bytes(), offset_);
+  }
+
+  ~OutgoingMessageView() {}
+
+  const void* data() const {
+    return static_cast<const char*>(message_->data()) + offset_;
+  }
+
+  size_t data_num_bytes() const { return message_->data_num_bytes() - offset_; }
+
+  size_t num_handles() const { return handles_ ? handles_->size() : 0; }
+
+  PlatformHandle* handles() {
+    return static_cast<PlatformHandle*>(handles_->data());
+  }
+
+  Channel::OutgoingMessagePtr TakeMessage() { return std::move(message_); }
+
+ private:
+  Channel::OutgoingMessagePtr message_;
+  const size_t offset_;
+  ScopedPlatformHandleVectorPtr handles_;
+
+  DISALLOW_COPY_AND_ASSIGN(OutgoingMessageView);
+};
+
+using OutgoingMessageViewPtr = scoped_ptr<OutgoingMessageView>;
+
 class ChannelPosix : public Channel,
                      public base::MessageLoop::DestructionObserver,
                      public base::MessagePumpLibevent::Watcher {
@@ -46,7 +84,8 @@ class ChannelPosix : public Channel,
   void Write(OutgoingMessagePtr message) override {
     base::AutoLock lock(write_lock_);
     bool wait_for_write = outgoing_messages_.empty();
-    outgoing_messages_.emplace_back(std::move(message));
+    outgoing_messages_.emplace_back(
+        new OutgoingMessageView(std::move(message), 0));
     if (wait_for_write) {
       io_task_runner_->PostTask(
           FROM_HERE, base::Bind(&ChannelPosix::WaitForWriteOnIOThread, this));
@@ -124,7 +163,7 @@ class ChannelPosix : public Channel,
   }
 
   void OnFileCanWriteWithoutBlocking(int fd) override {
-    std::deque<OutgoingMessagePtr> messages;
+    std::deque<OutgoingMessageViewPtr> messages;
     {
       base::AutoLock lock(write_lock_);
       std::swap(outgoing_messages_, messages);
@@ -132,27 +171,38 @@ class ChannelPosix : public Channel,
 
     // TODO: Send a batch of iovecs when possible.
     while (!messages.empty()) {
-      OutgoingMessagePtr message = std::move(messages.front());
+      OutgoingMessageViewPtr message_view = std::move(messages.front());
       iovec iov = {
-        const_cast<void*>(message->data()),
-        message->data_num_bytes()
+        const_cast<void*>(message_view->data()),
+        message_view->data_num_bytes()
       };
       ssize_t result;
-      if (message->num_handles()) {
+      if (message_view->num_handles()) {
+        // TODO: Handle lots of handles.
         result = PlatformChannelSendmsgWithHandles(
-            handle_.get(), &iov, 1, message->handles(), message->num_handles());
+            handle_.get(), &iov, 1, message_view->handles(),
+            message_view->num_handles());
       } else {
         result = PlatformChannelWritev(handle_.get(), &iov, 1);
       }
 
       if (result >= 0) {
-        messages.pop_front();
+        size_t bytes_written = static_cast<size_t>(result);
+        if (bytes_written < message_view->data_num_bytes()) {
+          message_view.reset(new OutgoingMessageView(
+              message_view->TakeMessage(), bytes_written));
+          messages.front() = std::move(message_view);
+        } else {
+          messages.pop_front();
+        }
       } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
         ShutDownOnIOThread();
         OnError();
         return;
       } else {
-        messages.front() = std::move(message);
+        // Need to try again!
+        messages.front() = std::move(message_view);
+        WaitForWriteOnIOThread();
         break;
       }
     }
@@ -179,7 +229,7 @@ class ChannelPosix : public Channel,
 
   // Protects |outgoing_messages_|.
   base::Lock write_lock_;
-  std::deque<OutgoingMessagePtr> outgoing_messages_;
+  std::deque<OutgoingMessageViewPtr> outgoing_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(ChannelPosix);
 };
