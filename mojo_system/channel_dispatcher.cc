@@ -127,6 +127,7 @@ MojoResult ChannelDispatcher::AddAwakableImplNoLock(
 void ChannelDispatcher::RemoveAwakableImplNoLock(
     Awakable* awakable,
     HandleSignalsState* signals_state) {
+  awakables_.Remove(awakable);
 }
 
 void ChannelDispatcher::OnChannelRead(Channel::IncomingMessage* message) {

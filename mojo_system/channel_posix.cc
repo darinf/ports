@@ -90,9 +90,11 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
 
     if (read_result > 0) {
       size_t num_bytes = static_cast<size_t>(read_result);
-      ScopedPlatformHandleVectorPtr scoped_handles(
-          new PlatformHandleVector(handles.size()));
-      std::copy(handles.begin(), handles.end(), scoped_handles->begin());
+      ScopedPlatformHandleVectorPtr scoped_handles;
+      if (handles.size()) {
+        scoped_handles.reset(new PlatformHandleVector(handles.size()));
+        std::copy(handles.begin(), handles.end(), scoped_handles->begin());
+      }
       IncomingMessage message(
           read_buffer_.data(), num_bytes, std::move(scoped_handles));
       delegate_->OnChannelRead(&message);
