@@ -157,6 +157,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   using DispatcherMap = base::hash_map<MojoHandle, scoped_refptr<Dispatcher>>;
 
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
+  scoped_refptr<Dispatcher> GetAndRemoveDispatcher(MojoHandle handle);
   MojoResult WaitManyInternal(const MojoHandle* handles,
                               const MojoHandleSignals* signals,
                               uint32_t num_handles,

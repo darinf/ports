@@ -134,7 +134,9 @@ NodeChannel::NodeChannel(Delegate* delegate,
       channel_(
           Channel::Create(this, std::move(platform_handle), io_task_runner)) {}
 
-NodeChannel::~NodeChannel() {}
+NodeChannel::~NodeChannel() {
+  channel_->ShutDown();
+}
 
 void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
   base::AutoLock lock(name_lock_);

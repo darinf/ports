@@ -61,7 +61,7 @@ MojoTimeTicks Core::GetTimeTicksNow() {
 }
 
 MojoResult Core::Close(MojoHandle handle) {
-  auto dispatcher = GetDispatcher(handle);
+  auto dispatcher = GetAndRemoveDispatcher(handle);
   if (!dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;
   return dispatcher->Close();
@@ -260,6 +260,16 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
   if (iter == dispatchers_.end())
     return nullptr;
   return iter->second;
+}
+
+scoped_refptr<Dispatcher> Core::GetAndRemoveDispatcher(MojoHandle handle) {
+  base::AutoLock lock(dispatchers_lock_);
+  auto iter = dispatchers_.find(handle);
+  if (iter == dispatchers_.end())
+    return nullptr;
+  scoped_refptr<Dispatcher> dispatcher = iter->second;
+  dispatchers_.erase(iter);
+  return dispatcher;
 }
 
 MojoResult Core::WaitManyInternal(const MojoHandle* handles,

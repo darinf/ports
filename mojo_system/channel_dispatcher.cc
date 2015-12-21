@@ -31,6 +31,12 @@ Dispatcher::Type ChannelDispatcher::GetType() const {
   return Type::MESSAGE_PIPE;
 }
 
+void ChannelDispatcher::CloseImplNoLock() {
+  lock().AssertAcquired();
+  DCHECK(is_closed());
+  channel_->ShutDown();
+}
+
 MojoResult ChannelDispatcher::WriteMessageImplNoLock(
     const void* bytes,
     uint32_t num_bytes,

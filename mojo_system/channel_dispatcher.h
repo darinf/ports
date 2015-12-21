@@ -52,6 +52,7 @@ class ChannelDispatcher : public Dispatcher, public Channel::Delegate {
   using MessagePtr = scoped_ptr<Message>;
 
   // Dispatcher:
+  void CloseImplNoLock() override;
   MojoResult WriteMessageImplNoLock(const void* bytes,
                                     uint32_t num_bytes,
                                     const MojoHandle* handles,

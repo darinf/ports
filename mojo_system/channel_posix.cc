@@ -81,6 +81,11 @@ class ChannelPosix : public Channel,
         FROM_HERE, base::Bind(&ChannelPosix::StartOnIOThread, this));
   }
 
+  void ShutDown() override {
+    io_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
+  }
+
   void Write(OutgoingMessagePtr message) override {
     base::AutoLock lock(write_lock_);
     bool wait_for_write = outgoing_messages_.empty();

@@ -51,9 +51,9 @@ Channel::OutgoingMessage::OutgoingMessage(const void* payload,
 
 Channel::OutgoingMessage::~OutgoingMessage() {}
 
-Channel::Channel(Delegate* delegate) : delegate_(delegate) {}
+Channel::Channel(Delegate* delegate) : delegate_(delegate) {DLOG(INFO)<<"CHANNEL INIT:"<<this;}
 
-Channel::~Channel() {}
+Channel::~Channel() {DLOG(INFO)<<"CHANNEL SHUTDOWN:"<<this;}
 
 void Channel::OnReadCompleteNoLock(size_t bytes_read) {
   read_lock().AssertAcquired();
@@ -97,6 +97,7 @@ void Channel::OnReadCompleteNoLock(size_t bytes_read) {
 }
 
 void Channel::OnError() {
+  ShutDown();
   delegate_->OnChannelError();
 }
 
