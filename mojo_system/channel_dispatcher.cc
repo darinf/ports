@@ -89,11 +89,13 @@ ChannelDispatcher::GetHandleSignalsStateImplNoLock() const {
   lock().AssertAcquired();
 
   HandleSignalsState rv;
-  if (!incoming_messages_.empty())
+  if (!incoming_messages_.empty()) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
-  if (!is_closed()) {
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
+  }
+  if (!broken_) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
+    rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
   } else {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_PEER_CLOSED;
@@ -138,16 +140,9 @@ void ChannelDispatcher::OnChannelRead(Channel::IncomingMessage* message) {
 }
 
 void ChannelDispatcher::OnChannelError() {
-  {
-    base::AutoLock dispatcher_lock(lock());
-    if (is_closed())
-      return;
-  }
-  Close();
-  {
-    base::AutoLock dispatcher_lock(lock());
-    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
-  }
+  base::AutoLock dispatcher_lock(lock());
+  broken_ = true;
+  awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 
 ChannelDispatcher::~ChannelDispatcher() {}

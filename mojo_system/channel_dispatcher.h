@@ -76,6 +76,7 @@ class ChannelDispatcher : public Dispatcher, public Channel::Delegate {
 
   ~ChannelDispatcher() override;
 
+  bool broken_ = false;
   scoped_refptr<Channel> channel_;
   AwakableList awakables_;
   std::queue<MessagePtr> incoming_messages_;

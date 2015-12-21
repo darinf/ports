@@ -38,8 +38,8 @@ void Node::DropPeer(const ports::NodeName& name) {
   auto it = peers_.find(name);
   if (it == peers_.end())
     return;
-  peers_.erase(it);
   DLOG(INFO) << "Dropped peer " << it->first;
+  peers_.erase(it);
 }
 
 NodeChannel* Node::GetPeer(const ports::NodeName& name) {

@@ -28,19 +28,21 @@ namespace edk {
 
 namespace {
 
-class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
+class ChannelPosix : public Channel,
+                     public base::MessageLoop::DestructionObserver,
+                     public base::MessagePumpLibevent::Watcher {
  public:
   ChannelPosix(Delegate* delegate,
                ScopedPlatformHandle handle,
                scoped_refptr<base::TaskRunner> io_task_runner)
       : Channel(delegate),
+        self_(this),
         handle_(std::move(handle)),
         io_task_runner_(io_task_runner) {
     io_task_runner_->PostTask(
         FROM_HERE, base::Bind(&ChannelPosix::StartOnIOThread, this));
   }
 
-  // Channel:
   void Write(OutgoingMessagePtr message) override {
     base::AutoLock lock(write_lock_);
     bool wait_for_write = outgoing_messages_.empty();
@@ -79,6 +81,7 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
     base::MessageLoopForIO::current()->WatchFileDescriptor(
         handle_.get().handle, true /* persistent */,
         base::MessageLoopForIO::WATCH_READ, read_watcher_.get(), this);
+    base::MessageLoop::current()->AddDestructionObserver(this);
   }
 
   void WaitForWriteOnIOThread() {
@@ -92,7 +95,15 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
     read_watcher_.reset();
     write_watcher_.reset();
     handle_.reset();
-    OnError();
+  }
+
+  // base::MessageLoop::DestructionObserver:
+  void WillDestroyCurrentMessageLoop() override {
+    DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+    if (self_) {
+      ShutDownOnIOThread();
+      self_ = nullptr;
+    }
   }
 
   // base::MessagePumpLibevent::Watcher:
@@ -108,6 +119,7 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
       OnReadCompleteNoLock(static_cast<size_t>(read_result));
     } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
       ShutDownOnIOThread();
+      OnError();
     }
   }
 
@@ -137,6 +149,7 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
         messages.pop_front();
       } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
         ShutDownOnIOThread();
+        OnError();
         return;
       } else {
         messages.front() = std::move(message);
@@ -151,6 +164,9 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
           std::front_inserter(outgoing_messages_));
     }
   }
+
+  // Keeps the Channel alive at least until explicit shutdown on the IO thread.
+  scoped_refptr<Channel> self_;
 
   ScopedPlatformHandle handle_;
   scoped_refptr<base::TaskRunner> io_task_runner_;
