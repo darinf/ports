@@ -57,6 +57,8 @@ struct PortName {
   uint64_t value_minor;
 };
 
+const PortName kInvalidPortName = {0, 0};
+
 inline bool operator==(const PortName& a, const PortName& b) {
   return a.value_major == b.value_major && a.value_minor == b.value_minor;
 }
@@ -81,6 +83,8 @@ struct NodeName {
   uint64_t value_major;
   uint64_t value_minor;
 };
+
+const NodeName kInvalidNodeName = {0, 0};
 
 inline bool operator==(const NodeName& a, const NodeName& b) {
   return a.value_major == b.value_major && a.value_minor == b.value_minor;
