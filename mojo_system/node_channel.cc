@@ -14,8 +14,6 @@
 namespace mojo {
 namespace edk {
 
-const size_t kMaxMessageSize = 256 * 1024 * 1024;
-
 NodeChannel::Message::Message(std::vector<char> data,
                               ScopedPlatformHandleVectorPtr handles)
     : data_(std::move(data)), handles_(std::move(handles)) {
@@ -139,125 +137,35 @@ NodeChannel::NodeChannel(Delegate* delegate,
 NodeChannel::~NodeChannel() {}
 
 void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
+  base::AutoLock lock(name_lock_);
   remote_node_name_ = name;
 }
 
 void NodeChannel::SendMessage(MessagePtr node_message) {
   Channel::OutgoingMessagePtr message(new Channel::OutgoingMessage(
-      node_message->TakeData(), node_message->TakeHandles()));
+      node_message->data(), node_message->num_bytes(),
+      node_message->TakeHandles()));
   channel_->Write(std::move(message));
 }
 
 void NodeChannel::OnChannelRead(Channel::IncomingMessage* message) {
-  std::vector<char> bytes(message->num_bytes());
-  memcpy(bytes.data(), message->data(), message->num_bytes());
+  std::vector<char> bytes(message->payload_size());
+  memcpy(bytes.data(), message->payload(), message->payload_size());
   ScopedPlatformHandleVectorPtr handles = message->TakeHandles();
 
-  DLOG(INFO) << "Channel to " << remote_node_name_ << " received message with "
+  ports::NodeName remote_name;
+  {
+    base::AutoLock lock(name_lock_);
+    remote_name = remote_node_name_;
+  }
+
+  DLOG(INFO) << "Channel to " << remote_name << " received message with "
       << bytes.size() << " bytes and " << (handles ? handles->size() : 0)
       << " handles.";
 
-  base::AutoLock lock(read_lock_);
-  incoming_data_.emplace_back(std::move(bytes));
-  if (handles) {
-    for (auto handle : *handles)
-      incoming_handles_.push_back(ScopedPlatformHandle(handle));
-  }
-
-  // Flush out any complete messages.
-  do {
-    std::vector<char> front_data = std::move(incoming_data_.front());
-    incoming_data_.pop_front();
-
-    // Collapse as many messages as necessary to ensure we at least have a
-    // complete contiguous header in the first slot. This shouldn't happen often
-    // in practice, if at all.
-    while (front_data.size() < sizeof(Message::Header) &&
-           !incoming_data_.empty()) {
-      size_t front_size = front_data.size();
-      std::vector<char> next_data = std::move(incoming_data_.front());
-      incoming_data_.pop_front();
-      front_data.resize(front_data.size() + next_data.size());
-      std::copy(next_data.begin(), next_data.end(),
-          front_data.begin() + front_size);
-    }
-
-    // If we still don't have a header, push back the front data and exit.
-    if (front_data.size() < sizeof(Message::Header)) {
-      incoming_data_.emplace_front(std::move(front_data));
-      return;
-    }
-
-    Message::Header* header =
-        reinterpret_cast<Message::Header*>(front_data.data());
-    if (header->num_bytes > kMaxMessageSize) {
-      // Kill the channel if they try to exceed the max message length.
-      channel_ = nullptr;
-      return;
-    }
-
-    if (header->num_handles > incoming_handles_.size()) {
-      // If we don't have enough handles to fulfill the message requirements,
-      // push the data back and exit.
-      incoming_data_.emplace_front(std::move(front_data));
-      return;
-    }
-
-    size_t required_bytes = header->num_bytes + sizeof(Message::Header);
-    if (front_data.size() > required_bytes) {
-      // If we took too much, put some back!
-      std::vector<char> remainder(front_data.size() - required_bytes);
-      std::copy(front_data.begin() + required_bytes, front_data.end(),
-            remainder.begin());
-      front_data.resize(required_bytes);
-      incoming_data_.emplace_front(std::move(remainder));
-    }
-
-    // Collapse data into this buffer until we've accumulated enough bytes for
-    // the full message.
-    while (front_data.size() < required_bytes && !incoming_data_.empty()) {
-      std::vector<char> next_data = std::move(incoming_data_.front());
-      incoming_data_.pop_front();
-
-      size_t bytes_to_consume = std::min(required_bytes - front_data.size(),
-                                         next_data.size());
-      size_t front_size = front_data.size();
-      std::copy(next_data.begin(), next_data.begin() + bytes_to_consume,
-          front_data.begin() + front_size);
-      if (bytes_to_consume < next_data.size()) {
-        // We didn't consume all the data, so put some of it back.
-        std::vector<char> remainder(next_data.size() - bytes_to_consume);
-        std::copy(next_data.begin() + bytes_to_consume, next_data.end(),
-            remainder.begin());
-        incoming_data_.emplace_front(std::move(remainder));
-      }
-    }
-
-    if (front_data.size() < required_bytes) {
-      // Still not enough data. Put it back and exit.
-      incoming_data_.emplace_front(std::move(front_data));
-      return;
-    }
-
-    // We should have exactly the right amount of data if we're here.
-    DCHECK_EQ(front_data.size(), required_bytes);
-
-    ScopedPlatformHandleVectorPtr handles(
-        new PlatformHandleVector(header->num_handles));
-    for (size_t i = 0; i < handles->size(); ++i) {
-      (*handles)[i] = incoming_handles_.front().release();
-      incoming_handles_.pop_front();
-    }
-
-    DLOG(INFO) << "Dispatching message with " << front_data.size()
-        << " bytes and " << handles->size() << " handles.";
-
-    MessagePtr message(
-        new Message(std::move(front_data), std::move(handles)));
-    delegate_->OnMessageReceived(remote_node_name_, std::move(message));
-
-    // There may be data left after this dispatch. Try to dispatch another.
-  } while (!incoming_data_.empty());
+  delegate_->OnMessageReceived(
+      remote_name,
+      make_scoped_ptr(new Message(std::move(bytes), std::move(handles))));
 }
 
 void NodeChannel::OnChannelError() {

@@ -28,22 +28,19 @@ namespace edk {
 
 namespace {
 
-const size_t kReadBufferSize = 4096;
-
 class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
  public:
   ChannelPosix(Delegate* delegate,
                ScopedPlatformHandle handle,
                scoped_refptr<base::TaskRunner> io_task_runner)
-      : delegate_(delegate),
+      : Channel(delegate),
         handle_(std::move(handle)),
-        io_task_runner_(io_task_runner),
-        read_buffer_(kReadBufferSize) {
+        io_task_runner_(io_task_runner) {
     io_task_runner_->PostTask(
         FROM_HERE, base::Bind(&ChannelPosix::StartOnIOThread, this));
   }
 
-  // Safe to call from any thread.
+  // Channel:
   void Write(OutgoingMessagePtr message) override {
     base::AutoLock lock(write_lock_);
     bool wait_for_write = outgoing_messages_.empty();
@@ -54,8 +51,25 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
     }
   }
 
+  ScopedPlatformHandleVectorPtr GetReadPlatformHandlesNoLock(
+      size_t num_handles) override {
+    read_lock().AssertAcquired();
+    if (incoming_platform_handles_.size() < num_handles)
+      return nullptr;
+    ScopedPlatformHandleVectorPtr handles(
+        new PlatformHandleVector(num_handles));
+    for (size_t i = 0; i < num_handles; ++i) {
+      (*handles)[i] = incoming_platform_handles_.front();
+      incoming_platform_handles_.pop_front();
+    }
+    return handles;
+  }
+
  private:
-  ~ChannelPosix() override {}
+  ~ChannelPosix() override {
+    for (auto handle : incoming_platform_handles_)
+      handle.CloseIfNecessary();
+  }
 
   void StartOnIOThread() {
     DCHECK(!read_watcher_);
@@ -78,26 +92,20 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
     read_watcher_.reset();
     write_watcher_.reset();
     handle_.reset();
-    delegate_->OnChannelError();
+    OnError();
   }
 
   // base::MessagePumpLibevent::Watcher:
   void OnFileCanReadWithoutBlocking(int fd) override {
     CHECK_EQ(fd, handle_.get().handle);
-    std::deque<PlatformHandle> handles;
+    base::AutoLock lock(read_lock());
+    char* data;
+    size_t bytes_to_read;
+    read_buffer()->GetBuffer(&data, &bytes_to_read);
     ssize_t read_result = PlatformChannelRecvmsg(
-        handle_.get(), read_buffer_.data(), read_buffer_.size(), &handles);
-
+        handle_.get(), data, bytes_to_read, &incoming_platform_handles_);
     if (read_result > 0) {
-      size_t num_bytes = static_cast<size_t>(read_result);
-      ScopedPlatformHandleVectorPtr scoped_handles;
-      if (handles.size()) {
-        scoped_handles.reset(new PlatformHandleVector(handles.size()));
-        std::copy(handles.begin(), handles.end(), scoped_handles->begin());
-      }
-      IncomingMessage message(
-          read_buffer_.data(), num_bytes, std::move(scoped_handles));
-      delegate_->OnChannelRead(&message);
+      OnReadCompleteNoLock(static_cast<size_t>(read_result));
     } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
       ShutDownOnIOThread();
     }
@@ -113,7 +121,10 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
     // TODO: Send a batch of iovecs when possible.
     while (!messages.empty()) {
       OutgoingMessagePtr message = std::move(messages.front());
-      iovec iov = { const_cast<void*>(message->data()), message->num_bytes() };
+      iovec iov = {
+        const_cast<void*>(message->data()),
+        message->data_num_bytes()
+      };
       ssize_t result;
       if (message->num_handles()) {
         result = PlatformChannelSendmsgWithHandles(
@@ -141,7 +152,6 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
     }
   }
 
-  Delegate* delegate_;
   ScopedPlatformHandle handle_;
   scoped_refptr<base::TaskRunner> io_task_runner_;
 
@@ -149,8 +159,7 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
   scoped_ptr<base::MessagePumpLibevent::FileDescriptorWatcher> read_watcher_;
   scoped_ptr<base::MessagePumpLibevent::FileDescriptorWatcher> write_watcher_;
 
-  // Must only be accessed on the IO thread.
-  std::vector<char> read_buffer_;
+  std::deque<PlatformHandle> incoming_platform_handles_;
 
   // Protects |outgoing_messages_|.
   base::Lock write_lock_;

@@ -41,7 +41,7 @@ MojoResult ChannelDispatcher::WriteMessageImplNoLock(
   memcpy(data.data(), bytes, num_bytes);
   // TODO: handles
   Channel::OutgoingMessagePtr message(
-      new Channel::OutgoingMessage(std::move(data), nullptr));
+      new Channel::OutgoingMessage(bytes, num_bytes, nullptr));
   channel_->Write(std::move(message));
   return MOJO_RESULT_OK;
 }
@@ -133,7 +133,7 @@ void ChannelDispatcher::RemoveAwakableImplNoLock(
 void ChannelDispatcher::OnChannelRead(Channel::IncomingMessage* message) {
   base::AutoLock dispatcher_lock(lock());
   incoming_messages_.emplace(new Message(
-      message->data(), message->num_bytes(), message->TakeHandles()));
+      message->payload(), message->payload_size(), message->TakeHandles()));
   awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 

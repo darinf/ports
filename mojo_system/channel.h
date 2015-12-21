@@ -7,8 +7,10 @@
 
 #include <vector>
 
+#include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
@@ -16,48 +18,81 @@
 namespace mojo {
 namespace edk {
 
-// Channel provides a thread-safe interface to read and write byte streams and
-// platform handles on some underlying IO channel.
+const size_t kChannelMessageAlignment = 8;
+
+// Channel provides a thread-safe interface to read and write arbitrary
+// delimited messages over an underlying IO channel, optionally transferring
+// one or more platform handles in the process.
 class Channel : public base::RefCountedThreadSafe<Channel> {
  public:
-  // A message read from the platform handle.
+  // All messages sent over a Channel start with this header.
+  struct MessageHeader {
+    // Message size in bytes, including the header.
+    uint32_t num_bytes;
+
+    // Number of attached handles.
+    uint16_t num_handles;
+
+    // Zero
+    uint16_t padding;
+  };
+
+  static_assert(sizeof(MessageHeader) % kChannelMessageAlignment == 0,
+      "MessageHeader size must be aligned to kChannelMessageAlignment bytes.");
+
+  // A view over some message data which was read from the channel.
   struct IncomingMessage {
     // Doesn't own |data|. Does own |handles| and can transfer ownership.
     IncomingMessage(const void* data,
-                    size_t num_bytes,
                     ScopedPlatformHandleVectorPtr handles);
     ~IncomingMessage();
 
-    const void* data() const { return data_; }
-    size_t num_bytes() const { return num_bytes_; }
+    bool IsValid() const;
+
+    const void* payload() const { return &header_[1]; }
+
+    size_t payload_size() const {
+      return header_->num_bytes - sizeof(MessageHeader);
+    }
+
+    size_t num_handles() const { return header_->num_handles; }
 
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 
    private:
-    const void* data_;
-    const size_t num_bytes_;
+    const MessageHeader* header_;
     ScopedPlatformHandleVectorPtr handles_;
 
     DISALLOW_COPY_AND_ASSIGN(IncomingMessage);
   };
 
-  // A message to be written to the platform handle.
+  // A message to be written to the channel.
   struct OutgoingMessage {
-    // Takes ownership of |handles|.
-    OutgoingMessage(std::vector<char> data,
+    // Copies |payload| and takes ownership of |handles|.
+    OutgoingMessage(const void* payload,
+                    size_t payload_size,
                     ScopedPlatformHandleVectorPtr handles);
     ~OutgoingMessage();
 
-    const void* data() const { return data_.data(); }
-    size_t num_bytes() const { return data_.size(); }
+    const void* data() const { return header_; }
+    size_t data_num_bytes() const { return data_.size(); }
+
+    const void* payload() const { return &header_[1]; }
+
+    size_t payload_size() const {
+      return data_.size() - sizeof(MessageHeader);
+    }
+
+    size_t num_handles() const { return header_->num_handles; }
+
     PlatformHandle* handles() {
       DCHECK(handles_);
       return static_cast<PlatformHandle*>(handles_->data());
     }
-    size_t num_handles() const { return handles_ ? handles_->size() : 0; }
 
    private:
     std::vector<char> data_;
+    MessageHeader* const header_;
     ScopedPlatformHandleVectorPtr handles_;
 
     DISALLOW_COPY_AND_ASSIGN(OutgoingMessage);
@@ -78,6 +113,22 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     virtual void OnChannelError() = 0;
   };
 
+  class ReadBuffer {
+   public:
+    ReadBuffer();
+    ~ReadBuffer();
+
+    void GetBuffer(char** addr, size_t* bytes_to_read);
+
+   private:
+    friend class Channel;
+
+    std::vector<char> data_;
+    size_t num_valid_bytes_ = 0;
+
+    DISALLOW_COPY_AND_ASSIGN(ReadBuffer);
+  };
+
   // Creates a new Channel around a |platform_handle|, taking ownership of the
   // handle. All IO on the handle will be performed on |io_task_runner|.
   static scoped_refptr<Channel> Create(
@@ -90,11 +141,30 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   virtual void Write(OutgoingMessagePtr message) = 0;
 
  protected:
-  Channel();
-  virtual ~Channel() {}
+  Channel(Delegate* delegate);
+  virtual ~Channel();
+
+  base::Lock& read_lock() { return read_lock_; }
+  ReadBuffer* read_buffer() { return &read_buffer_; }
+
+  // Called by the implementation when new data is available in the read buffer.
+  void OnReadCompleteNoLock(size_t bytes_read);
+
+  // Called by the implementation when something goes horribly wrong.
+  void OnError();
+
+  virtual ScopedPlatformHandleVectorPtr GetReadPlatformHandlesNoLock(
+      size_t num_handles) = 0;
 
  private:
   friend class base::RefCountedThreadSafe<Channel>;
+
+  Delegate* delegate_;
+
+  // Guards |read_buffer_| and the implementation's read platform handles if
+  // applicable.
+  base::Lock read_lock_;
+  ReadBuffer read_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(Channel);
 };

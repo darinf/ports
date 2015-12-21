@@ -31,8 +31,8 @@ class ChildNode : public Node, public NodeChannel::Delegate {
 
   ports::NodeName parent_name_;
 
-  // The channel we create during initialization. This is reset once the parent
-  // has assigns us a name.
+  // The channel we create during initialization. This is reset once handshake
+  // with the parent is complete.
   scoped_ptr<NodeChannel> bootstrap_channel_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildNode);

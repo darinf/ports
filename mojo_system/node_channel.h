@@ -102,7 +102,8 @@ class NodeChannel : public Channel::Delegate {
     const HelloParentData& AsHelloParent() const;
     const EventData& AsEvent() const;
 
-    std::vector<char> TakeData() { return std::move(data_); }
+    const void* data() const { return data_.data(); }
+    size_t num_bytes() const { return data_.size(); }
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 
    private:
@@ -146,13 +147,11 @@ class NodeChannel : public Channel::Delegate {
   void OnChannelError() override;
 
   Delegate* delegate_;
-  ports::NodeName remote_node_name_;
-  scoped_refptr<Channel> channel_;
 
-  // Guards the incoming data and handle queues.
-  base::Lock read_lock_;
-  std::deque<std::vector<char>> incoming_data_;
-  std::deque<ScopedPlatformHandle> incoming_handles_;
+  base::Lock name_lock_;
+  ports::NodeName remote_node_name_;
+
+  scoped_refptr<Channel> channel_;
 
   DISALLOW_COPY_AND_ASSIGN(NodeChannel);
 };

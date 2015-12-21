@@ -20,7 +20,7 @@ void ChildNode::OnMessageReceived(const ports::NodeName& node,
                                   NodeChannel::MessagePtr message) {
   if (bootstrap_channel_) {
     // Anticipate receiving our first message from the parent node. It must be
-    // an HELLO_CHILD message, which provides us with our assigned name.
+    // a HELLO_CHILD message.
     DCHECK(node == ports::kInvalidNodeName);
     DCHECK(message->type() == NodeChannel::Message::Type::HELLO_CHILD);
 
