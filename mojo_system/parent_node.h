@@ -36,8 +36,6 @@ class ParentNode : public Node, public NodeChannel::Delegate {
 
   ports::NodeName name_;
 
-  std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>> children_;
-
   DISALLOW_COPY_AND_ASSIGN(ParentNode);
 };
 

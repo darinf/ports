@@ -11,21 +11,24 @@ namespace edk {
 
 ChildNode::ChildNode(ScopedPlatformHandle platform_handle,
                      scoped_refptr<base::TaskRunner> io_task_runner)
-    : parent_channel_(
+    : bootstrap_channel_(
           new NodeChannel(this, std::move(platform_handle), io_task_runner)) {}
 
 ChildNode::~ChildNode() {}
 
 void ChildNode::OnMessageReceived(const ports::NodeName& node,
                                   NodeChannel::MessagePtr message) {
-  if (node == ports::kInvalidNodeName) {
+  if (bootstrap_channel_) {
     // Anticipate receiving our first message from the parent node. It must be
     // an INITIALIZE_CHILD message, which provides us with our assigned name.
+    DCHECK(name_ == ports::kInvalidNodeName);
+    DCHECK(node == ports::kInvalidNodeName);
     DCHECK(message->type() == NodeChannel::Message::Type::INITIALIZE_CHILD);
     auto data = message->AsInitializeChild();
     parent_name_ = data.parent_name;
     name_ = data.child_name;
-    parent_channel_->SetRemoteNodeName(parent_name_);
+
+    AddPeer(parent_name_, std::move(bootstrap_channel_));
 
     DLOG(INFO) << "Initializing child with name " << name_ << " and parent "
         << parent_name_;

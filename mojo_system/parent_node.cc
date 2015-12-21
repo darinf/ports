@@ -26,10 +26,10 @@ void ParentNode::AddChild(ScopedPlatformHandle platform_handle,
 
   scoped_ptr<NodeChannel> channel(new NodeChannel(
       this, std::move(platform_handle), io_task_runner));
-  channel->SetRemoteNodeName(child_name);
   channel->SendMessage(NodeChannel::Message::NewInitializeChildMessage(
       name_, child_name));
-  children_.insert(std::make_pair(child_name, std::move(channel)));
+
+  AddPeer(child_name, std::move(channel));
 }
 
 void ParentNode::OnMessageReceived(const ports::NodeName& node,

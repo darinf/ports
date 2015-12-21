@@ -29,7 +29,10 @@ class ChildNode : public Node, public NodeChannel::Delegate {
                          NodeChannel::MessagePtr message) override;
   void OnChannelError(const ports::NodeName& node) override;
 
-  scoped_ptr<NodeChannel> parent_channel_;
+  // The channel we create during initialization. This is reset once the parent
+  // has assigns us a name.
+  scoped_ptr<NodeChannel> bootstrap_channel_;
+
   ports::NodeName parent_name_;
   ports::NodeName name_;
 
