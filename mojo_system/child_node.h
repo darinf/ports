@@ -6,20 +6,32 @@
 #define PORTS_MOJO_SYSTEM_CHILD_NODE_DELEGATE_H_
 
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/task_runner.h"
+#include "mojo/edk/embedder/scoped_platform_handle.h"
+#include "ports/include/ports.h"
 #include "ports/mojo_system/node.h"
 #include "ports/mojo_system/node_channel.h"
 
 namespace mojo {
 namespace edk {
 
-class ChildNode : public Node {
+class ChildNode : public Node, public NodeChannel::Delegate {
  public:
-  explicit ChildNode(scoped_ptr<NodeChannel> parent_channel);
+  ChildNode(ScopedPlatformHandle platform_handle,
+            scoped_refptr<base::TaskRunner> io_task_runner);
   ~ChildNode() override;
 
  private:
+  // NodeChannel::Delegate:
+  void OnMessageReceived(const ports::NodeName& node,
+                         NodeChannel::MessagePtr message) override;
+  void OnChannelError(const ports::NodeName& node) override;
+
   scoped_ptr<NodeChannel> parent_channel_;
+  ports::NodeName parent_name_;
+  ports::NodeName name_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildNode);
 };

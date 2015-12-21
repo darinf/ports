@@ -30,19 +30,15 @@ void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
 }
 
 void Core::AddChild(ScopedPlatformHandle platform_handle) {
-  scoped_ptr<NodeChannel> channel(
-      new NodeChannel(std::move(platform_handle), io_task_runner_));
   if (!node_)
     node_.reset(new ParentNode);
   ParentNode* parent_node = static_cast<ParentNode*>(node_.get());
-  parent_node->AddChild(std::move(channel));
+  parent_node->AddChild(std::move(platform_handle), io_task_runner_);
 }
 
 void Core::InitChild(ScopedPlatformHandle platform_handle) {
   CHECK(!node_);
-  scoped_ptr<NodeChannel> parent_channel(
-      new NodeChannel(std::move(platform_handle), io_task_runner_));
-  node_.reset(new ChildNode(std::move(parent_channel)));
+  node_.reset(new ChildNode(std::move(platform_handle), io_task_runner_));
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {

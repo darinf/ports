@@ -4,13 +4,47 @@
 
 #include "ports/mojo_system/child_node.h"
 
+#include "base/logging.h"
+
 namespace mojo {
 namespace edk {
 
-ChildNode::ChildNode(scoped_ptr<NodeChannel> parent_channel)
-    : parent_channel_(std::move(parent_channel)) {}
+ChildNode::ChildNode(ScopedPlatformHandle platform_handle,
+                     scoped_refptr<base::TaskRunner> io_task_runner)
+    : parent_channel_(
+          new NodeChannel(this, std::move(platform_handle), io_task_runner)) {}
 
 ChildNode::~ChildNode() {}
+
+void ChildNode::OnMessageReceived(const ports::NodeName& node,
+                                  NodeChannel::MessagePtr message) {
+  if (node == ports::kInvalidNodeName) {
+    // Anticipate receiving our first message from the parent node. It must be
+    // an INITIALIZE_CHILD message, which provides us with our assigned name.
+    DCHECK(message->type() == NodeChannel::Message::Type::INITIALIZE_CHILD);
+    auto data = message->AsInitializeChild();
+    parent_name_ = data.parent_name;
+    name_ = data.child_name;
+    parent_channel_->SetRemoteNodeName(parent_name_);
+
+    DLOG(INFO) << "Initializing child with name " << name_ << " and parent "
+        << parent_name_;
+    return;
+  }
+
+  switch (message->type()) {
+    case NodeChannel::Message::Type::INITIALIZE_CHILD:
+      NOTREACHED() << "Unexpected INITIALIZE_CHILD message.";
+      break;
+
+    default:
+      NOTREACHED() << "Unknown message type.";
+  }
+}
+
+void ChildNode::OnChannelError(const ports::NodeName& node) {
+  NOTREACHED() << "Broken pipe!";
+}
 
 }  // namespace edk
 }  // namespace mojo

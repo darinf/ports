@@ -6,6 +6,7 @@
 #define PORTS_MOJO_SYSTEM_NODE_H_
 
 #include "base/macros.h"
+#include "crypto/random.h"
 #include "ports/include/ports.h"
 
 namespace mojo {
@@ -17,6 +18,9 @@ class Node : public ports::NodeDelegate {
 
  protected:
   Node();
+
+  template <typename T>
+  void GenerateRandomName(T* out) { crypto::RandBytes(out, sizeof(T)); }
 
  private:
   // ports::NodeDelegate:

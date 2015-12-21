@@ -5,24 +5,16 @@
 #include "ports/mojo_system/node.h"
 
 #include "base/logging.h"
-#include "crypto/random.h"
 
 namespace mojo {
 namespace edk {
-
-namespace {
-
-template <typename T>
-void Randomize(T* out) { crypto::RandBytes(out, sizeof(T)); }
-
-}  // namespace
 
 Node::~Node() {}
 
 Node::Node() {}
 
 void Node::GenerateRandomPortName(ports::PortName* port_name) {
-  Randomize(port_name);
+  GenerateRandomName(port_name);
 }
 
 void Node::SendEvent(const ports::NodeName& node, ports::Event event) {

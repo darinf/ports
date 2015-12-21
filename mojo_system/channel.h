@@ -16,8 +16,8 @@
 namespace mojo {
 namespace edk {
 
-// Channel provides a thread-safe interface to read and write byte streams on
-// a platform handle.
+// Channel provides a thread-safe interface to read and write byte streams and
+// platform handles on some underlying IO channel.
 class Channel : public base::RefCountedThreadSafe<Channel> {
  public:
   // A message read from the platform handle.
@@ -51,9 +51,10 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     const void* data() const { return data_.data(); }
     size_t num_bytes() const { return data_.size(); }
     PlatformHandle* handles() {
+      DCHECK(handles_);
       return static_cast<PlatformHandle*>(handles_->data());
     }
-    size_t num_handles() const { return handles_->size(); }
+    size_t num_handles() const { return handles_ ? handles_->size() : 0; }
 
    private:
     std::vector<char> data_;
