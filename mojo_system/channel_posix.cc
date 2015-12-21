@@ -89,9 +89,6 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
         handle_.get(), read_buffer_.data(), read_buffer_.size(), &handles);
 
     if (read_result > 0) {
-      DLOG(INFO) << "Channel read " << read_result << " bytes and "
-          << handles.size() << " handles.";
-
       size_t num_bytes = static_cast<size_t>(read_result);
       ScopedPlatformHandleVectorPtr scoped_handles(
           new PlatformHandleVector(handles.size()));
@@ -100,9 +97,6 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
           read_buffer_.data(), num_bytes, std::move(scoped_handles));
       delegate_->OnChannelRead(&message);
     } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-      DLOG(ERROR) << "Fatal error reading from channel handle. "
-          << "read_result=" << read_result << "; errno=" << errno;
-
       ShutDownOnIOThread();
     }
   }
@@ -127,8 +121,6 @@ class ChannelPosix : public Channel, public base::MessagePumpLibevent::Watcher {
       }
 
       if (result >= 0) {
-        DLOG(INFO) << "Channel wrote " << result << " bytes and "
-            << message->num_handles() << " handles.";
         messages.pop_front();
       } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
         ShutDownOnIOThread();

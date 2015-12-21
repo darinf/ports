@@ -19,20 +19,26 @@ MojoResult Dispatcher::Close() {
   return MOJO_RESULT_OK;
 }
 
-MojoResult Dispatcher::WriteMessage(ports::ScopedMessage message,
+MojoResult Dispatcher::WriteMessage(const void* bytes,
+                                    uint32_t num_bytes,
+                                    const MojoHandle* handles,
+                                    uint32_t num_handles,
                                     MojoWriteMessageFlags flags) {
   base::AutoLock locker(lock_);
   if (is_closed_)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  return WriteMessageImplNoLock(std::move(message), flags);
+  return WriteMessageImplNoLock(bytes, num_bytes, handles, num_handles, flags);
 }
 
-MojoResult Dispatcher::ReadMessage(MojoReadMessageFlags flags,
-                                   ports::ScopedMessage* message) {
+MojoResult Dispatcher::ReadMessage(void* bytes,
+                                   uint32_t* num_bytes,
+                                   MojoHandle* handles,
+                                   uint32_t* num_handles,
+                                   MojoReadMessageFlags flags) {
   base::AutoLock locker(lock_);
   if (is_closed_)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  return ReadMessageImplNoLock(flags, message);
+  return ReadMessageImplNoLock(bytes, num_bytes, handles, num_handles, flags);
 }
 
 HandleSignalsState Dispatcher::GetHandleSignalsState() const {
@@ -88,16 +94,22 @@ void Dispatcher::CloseImplNoLock() {
   // any actual close-time cleanup necessary.
 }
 
-MojoResult Dispatcher::WriteMessageImplNoLock(ports::ScopedMessage message,
-                                              MojoWriteMessageFlags /*flags*/) {
+MojoResult Dispatcher::WriteMessageImplNoLock(const void* bytes,
+                                              uint32_t num_bytes,
+                                              const MojoHandle* handles,
+                                              uint32_t num_handles,
+                                              MojoWriteMessageFlags flags) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, not supported. Only needed for message pipe dispatchers.
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
-MojoResult Dispatcher::ReadMessageImplNoLock(MojoReadMessageFlags /*flags*/,
-                                             ports::ScopedMessage* message) {
+MojoResult Dispatcher::ReadMessageImplNoLock(void* bytes,
+                                             uint32_t* num_bytes,
+                                             MojoHandle* handles,
+                                             uint32_t* num_handles,
+                                             MojoReadMessageFlags flags) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, not supported. Only needed for message pipe dispatchers.

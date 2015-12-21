@@ -4,6 +4,7 @@
 
 #include "ports/mojo_system/channel_dispatcher.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "ports/mojo_system/channel.h"
@@ -31,15 +32,55 @@ Dispatcher::Type ChannelDispatcher::GetType() const {
 }
 
 MojoResult ChannelDispatcher::WriteMessageImplNoLock(
-    ports::ScopedMessage message,
+    const void* bytes,
+    uint32_t num_bytes,
+    const MojoHandle* handles,
+    uint32_t num_handles,
     MojoWriteMessageFlags flags) {
-
+  std::vector<char> data(num_bytes);
+  memcpy(data.data(), bytes, num_bytes);
+  // TODO: handles
+  Channel::OutgoingMessagePtr message(
+      new Channel::OutgoingMessage(std::move(data), nullptr));
+  channel_->Write(std::move(message));
   return MOJO_RESULT_OK;
 }
 
 MojoResult ChannelDispatcher::ReadMessageImplNoLock(
-    MojoReadMessageFlags flags,
-    ports::ScopedMessage* message) {
+    void* bytes,
+    uint32_t* num_bytes,
+    MojoHandle* handles,
+    uint32_t* num_handles,
+    MojoReadMessageFlags flags) {
+  lock().AssertAcquired();
+  if (incoming_messages_.empty())
+    return MOJO_RESULT_SHOULD_WAIT;
+  MessagePtr& message = incoming_messages_.front();
+
+  size_t bytes_to_read = 0;
+  if (num_bytes) {
+    bytes_to_read = std::min(static_cast<size_t>(*num_bytes),
+                             message->num_bytes());
+    *num_bytes = message->num_bytes();
+  }
+
+  size_t handles_to_read = 0;
+  if (num_handles) {
+    handles_to_read = std::min(static_cast<size_t>(*num_handles),
+                               message->num_handles());
+    *num_handles = message->num_handles();
+  }
+
+  if (bytes_to_read < message->num_bytes() ||
+      handles_to_read < message->num_handles()) {
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+
+  memcpy(bytes, message->data(), bytes_to_read);
+  // TODO: handles
+
+  incoming_messages_.pop();
+
   return MOJO_RESULT_OK;
 }
 
@@ -92,6 +133,7 @@ void ChannelDispatcher::OnChannelRead(Channel::IncomingMessage* message) {
   base::AutoLock dispatcher_lock(lock());
   incoming_messages_.emplace(new Message(
       message->data(), message->num_bytes(), message->TakeHandles()));
+  awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 
 void ChannelDispatcher::OnChannelError() {

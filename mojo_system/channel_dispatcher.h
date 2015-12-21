@@ -38,6 +38,7 @@ class ChannelDispatcher : public Dispatcher, public Channel::Delegate {
 
     void* data() { return data_.data(); }
     size_t num_bytes() const { return data_.size(); }
+    size_t num_handles() const { return handles_ ? handles_->size() : 0; }
 
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 
@@ -51,10 +52,16 @@ class ChannelDispatcher : public Dispatcher, public Channel::Delegate {
   using MessagePtr = scoped_ptr<Message>;
 
   // Dispatcher:
-  MojoResult WriteMessageImplNoLock(ports::ScopedMessage message,
+  MojoResult WriteMessageImplNoLock(const void* bytes,
+                                    uint32_t num_bytes,
+                                    const MojoHandle* handles,
+                                    uint32_t num_handles,
                                     MojoWriteMessageFlags flags) override;
-  MojoResult ReadMessageImplNoLock(MojoReadMessageFlags flags,
-                                   ports::ScopedMessage* message) override;
+  MojoResult ReadMessageImplNoLock(void* bytes,
+                                   uint32_t* num_bytes,
+                                   MojoHandle* handles,
+                                   uint32_t* num_handles,
+                                   MojoReadMessageFlags flags) override;
   HandleSignalsState GetHandleSignalsStateImplNoLock() const override;
   MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                    MojoHandleSignals signals,

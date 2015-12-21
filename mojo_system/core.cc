@@ -156,7 +156,8 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
   auto dispatcher = GetDispatcher(message_pipe_handle);
   if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  return dispatcher->WriteMessage(ports::ScopedMessage(), flags);
+  return dispatcher->WriteMessage(
+      bytes, num_bytes, handles, num_handles, flags);
 }
 
 MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
@@ -168,8 +169,7 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
   auto dispatcher = GetDispatcher(message_pipe_handle);
   if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  ports::ScopedMessage message;
-  return dispatcher->ReadMessage(flags, &message);
+  return dispatcher->ReadMessage(bytes, num_bytes, handles, num_handles, flags);
 }
 
 MojoResult Core::CreateDataPipe(

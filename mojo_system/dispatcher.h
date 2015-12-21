@@ -59,14 +59,20 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // written; not that |this| must not be in |transports|. On success, all the
   // dispatchers in |transports| must have been moved to a closed state; on
   // failure, they should remain in their original state.
-  MojoResult WriteMessage(ports::ScopedMessage message,
+  MojoResult WriteMessage(const void* bytes,
+                          uint32_t num_bytes,
+                          const MojoHandle* handles,
+                          uint32_t num_handles,
                           MojoWriteMessageFlags flags);
 
   // |dispatchers| must be non-null but empty, if |num_dispatchers| is non-null
   // and nonzero. On success, it will be set to the dispatchers to be received
   // (and assigned handles) as part of the message.
-  MojoResult ReadMessage(MojoReadMessageFlags flags,
-                         ports::ScopedMessage* message);
+  MojoResult ReadMessage(void* bytes,
+                         uint32_t* num_bytes,
+                         MojoHandle* handles,
+                         uint32_t* num_handles,
+                         MojoReadMessageFlags flags);
 
   // Gets the current handle signals state. (The default implementation simply
   // returns a default-constructed |HandleSignalsState|, i.e., no signals
@@ -115,10 +121,16 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // called after the dispatcher has been closed. They are called under |lock_|.
   // See the descriptions of the methods without the "ImplNoLock" for more
   // information.
-  virtual MojoResult WriteMessageImplNoLock(ports::ScopedMessage message,
+  virtual MojoResult WriteMessageImplNoLock(const void* bytes,
+                                            uint32_t num_bytes,
+                                            const MojoHandle* handles,
+                                            uint32_t num_handles,
                                             MojoWriteMessageFlags flags);
-  virtual MojoResult ReadMessageImplNoLock(MojoReadMessageFlags flags,
-                                           ports::ScopedMessage* message);
+  virtual MojoResult ReadMessageImplNoLock(void* bytes,
+                                           uint32_t* num_bytes,
+                                           MojoHandle* handles,
+                                           uint32_t* num_handles,
+                                           MojoReadMessageFlags flags);
   virtual HandleSignalsState GetHandleSignalsStateImplNoLock() const;
   virtual MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                            MojoHandleSignals signals,
