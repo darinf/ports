@@ -124,7 +124,11 @@ class ChannelPosix : public Channel,
   }
 
   void WaitForWriteOnIOThread() {
+    base::AutoLock lock(write_lock_);
+    if (pending_write_)
+      return;
     DCHECK(write_watcher_);
+    pending_write_ = true;
     base::MessageLoopForIO::current()->WatchFileDescriptor(
         handle_.get().handle, false /* persistent */,
         base::MessageLoopForIO::WATCH_WRITE, write_watcher_.get(), this);
@@ -167,6 +171,7 @@ class ChannelPosix : public Channel,
     {
       base::AutoLock lock(write_lock_);
       std::swap(outgoing_messages_, messages);
+      pending_write_ = false;
     }
 
     // TODO: Send a batch of iovecs when possible.
@@ -227,8 +232,9 @@ class ChannelPosix : public Channel,
 
   std::deque<PlatformHandle> incoming_platform_handles_;
 
-  // Protects |outgoing_messages_|.
+  // Protects |pending_write_| and |outgoing_messages_|.
   base::Lock write_lock_;
+  bool pending_write_ = false;
   std::deque<OutgoingMessageViewPtr> outgoing_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(ChannelPosix);
