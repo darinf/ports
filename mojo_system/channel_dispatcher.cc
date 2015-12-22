@@ -33,6 +33,8 @@ Dispatcher::Type ChannelDispatcher::GetType() const {
   return Type::MESSAGE_PIPE;
 }
 
+ChannelDispatcher::~ChannelDispatcher() {}
+
 void ChannelDispatcher::CloseImplNoLock() {
   lock().AssertAcquired();
   DCHECK(is_closed());
@@ -155,8 +157,6 @@ void ChannelDispatcher::OnChannelError() {
   broken_ = true;
   awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
-
-ChannelDispatcher::~ChannelDispatcher() {}
 
 }  // namespace edk
 }  // namespace mojo

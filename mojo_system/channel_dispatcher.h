@@ -51,6 +51,8 @@ class ChannelDispatcher : public Dispatcher, public Channel::Delegate {
 
   using MessagePtr = scoped_ptr<Message>;
 
+  ~ChannelDispatcher() override;
+
   // Dispatcher:
   void CloseImplNoLock() override;
   MojoResult WriteMessageImplNoLock(const void* bytes,
@@ -74,8 +76,6 @@ class ChannelDispatcher : public Dispatcher, public Channel::Delegate {
   // Channel::Delegate:
   void OnChannelRead(Channel::IncomingMessage* message) override;
   void OnChannelError() override;
-
-  ~ChannelDispatcher() override;
 
   bool broken_ = false;
   scoped_refptr<Channel> channel_;
