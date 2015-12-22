@@ -137,14 +137,17 @@ MojoResult ChannelDispatcher::AddAwakableImplNoLock(
 void ChannelDispatcher::RemoveAwakableImplNoLock(
     Awakable* awakable,
     HandleSignalsState* signals_state) {
+  lock().AssertAcquired();
   awakables_.Remove(awakable);
 }
 
 void ChannelDispatcher::OnChannelRead(Channel::IncomingMessage* message) {
   base::AutoLock dispatcher_lock(lock());
+  bool should_wake = incoming_messages_.empty();
   incoming_messages_.emplace(new Message(
       message->payload(), message->payload_size(), message->TakeHandles()));
-  awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+  if (should_wake)
+    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 
 void ChannelDispatcher::OnChannelError() {
