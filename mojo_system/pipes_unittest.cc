@@ -49,8 +49,8 @@ std::string ReadString(MojoHandle mp) {
 
 void WaitToRead(MojoHandle mp) {
   CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
-                    nullptr),
-           MOJO_RESULT_OK);
+                   nullptr),
+          MOJO_RESULT_OK);
 }
 
 class PipesTest : public test::MultiprocessMessagePipeTestBase {
@@ -96,6 +96,7 @@ TEST_F(PipesTest, MultiprocessChannelDispatch) {
   MojoHandle h = mp.get().value();
   ExpectEcho(h, "in an interstellar burst");
   ExpectEcho(h, "i am back to save the universe");
+  ExpectEcho(h, std::string(1024 * 1024, 'o'));
   SendExit(h);
 
   EXPECT_EQ(0, helper()->WaitForChildShutdown());

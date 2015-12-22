@@ -46,6 +46,8 @@ class OutgoingMessageView {
     return static_cast<const char*>(message_->data()) + offset_;
   }
 
+  size_t data_offset() const { return offset_; }
+
   size_t data_num_bytes() const { return message_->data_num_bytes() - offset_; }
 
   size_t num_handles() const { return handles_ ? handles_->size() : 0; }
@@ -205,7 +207,8 @@ class ChannelPosix : public Channel,
         size_t bytes_written = static_cast<size_t>(result);
         if (bytes_written < message_view->data_num_bytes()) {
           message_view.reset(new OutgoingMessageView(
-              message_view->TakeMessage(), bytes_written));
+              message_view->TakeMessage(),
+              message_view->data_offset() + bytes_written));
           messages.front() = std::move(message_view);
         } else {
           messages.pop_front();
