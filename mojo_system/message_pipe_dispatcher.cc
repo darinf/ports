@@ -46,8 +46,11 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     message->ports[i].name = mpd->GetPortName();
   }
 
-  // TODO: Check SendMessage return value?
-  node_->SendMessage(port_name_, std::move(message));
+  int rv = node_->SendMessage(port_name_, std::move(message));
+
+  // TODO: More detailed result code on failure
+  if (rv != ports::OK)
+    return MOJO_RESULT_INVALID_ARGUMENT;
 
   return MOJO_RESULT_OK;
 }

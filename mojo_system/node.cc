@@ -79,9 +79,9 @@ void Node::SetPortObserver(const ports::PortName& port_name,
     port_observers_[port_name] = observer;
 }
 
-void Node::SendMessage(const ports::PortName& port_name,
+int Node::SendMessage(const ports::PortName& port_name,
                        ports::ScopedMessage message) {
-  node_->SendMessage(port_name, std::move(message));
+  return node_->SendMessage(port_name, std::move(message));
 }
 
 void Node::ClosePort(const ports::PortName& port_name) {
