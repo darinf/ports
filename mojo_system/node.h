@@ -22,6 +22,19 @@ namespace edk {
 
 class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
  public:
+  class PortObserver {
+   public:
+    virtual ~PortObserver() {}
+
+    // Notifies the observer that a message is available on a port.
+    virtual void OnMessageAvailable(const ports::PortName& name,
+                                    ports::ScopedMessage message) = 0;
+
+    // Notifies the observer that a port has been closed. Note that the
+    // the observer is automatically removed from the port in this case.
+    virtual void OnClosed(const ports::PortName& name) = 0;
+  };
+
   Node();
   ~Node() override;
 
@@ -49,6 +62,13 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Creates a new pair of local ports on this node, returning their names.
   void CreatePortPair(ports::PortName* port0, ports::PortName* port1);
 
+  // Sets a port's observer.
+  void SetPortObserver(const ports::PortName& port_name,
+                       PortObserver* observer);
+
+  // Closes a port.
+  void ClosePort(const ports::PortName& port_name);
+
  private:
   // ports::NodeDelegate:
   void GenerateRandomPortName(ports::PortName* port_name) override;
@@ -67,6 +87,9 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   base::Lock peers_lock_;
   std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>> peers_;
+
+  base::Lock port_observers_lock_;
+  std::unordered_map<ports::PortName, PortObserver*> port_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };

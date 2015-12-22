@@ -27,11 +27,6 @@ Node::Node() {
   node_.reset(new ports::Node(name_, this));
 }
 
-void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
-  int rv = node_->CreatePortPair(port0, port1);
-  DCHECK_EQ(rv, ports::OK);
-}
-
 void Node::ConnectToPeer(
     const ports::NodeName& peer_name,
     ScopedPlatformHandle platform_handle,
@@ -70,6 +65,25 @@ void Node::DropPeer(const ports::NodeName& name) {
   controller_->OnPeerLost(peer);
 }
 
+void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
+  int rv = node_->CreatePortPair(port0, port1);
+  DCHECK_EQ(rv, ports::OK);
+}
+
+void Node::SetPortObserver(const ports::PortName& port_name,
+                           PortObserver* observer) {
+  base::AutoLock lock(port_observers_lock_);
+  if (observer == nullptr)
+    port_observers_.erase(port_name);
+  else
+    port_observers_[port_name] = observer;
+}
+
+void Node::ClosePort(const ports::PortName& port_name) {
+  int rv = node_->ClosePort(port_name);
+  DCHECK_EQ(rv, ports::OK) << "ClosePort failed: " << rv;
+}
+
 void Node::GenerateRandomPortName(ports::PortName* port_name) {
   GenerateRandomName(port_name);
 }
@@ -79,7 +93,35 @@ void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
 }
 
 void Node::MessagesAvailable(const ports::PortName& port) {
-  NOTIMPLEMENTED();
+  int rv;
+  do {
+    ports::ScopedMessage message;
+    rv = node_->GetMessage(port, &message);
+    if (rv == ports::OK && !message)
+      return;
+
+    PortObserver* observer = nullptr;
+    {
+      base::AutoLock lock(port_observers_lock_);
+      auto it = port_observers_.find(port);
+      DCHECK(it != port_observers_.end())
+          << "Received a message on a port with no observer.";
+      observer = it->second;
+    }
+
+    DCHECK(observer);
+
+    if (rv == ports::OK) {
+      observer->OnMessageAvailable(port, std::move(message));
+    } else {
+      {
+        base::AutoLock lock(port_observers_lock_);
+        port_observers_.erase(port);
+      }
+
+      observer->OnClosed(port);
+    }
+  } while (rv == ports::OK);
 }
 
 void Node::OnMessageReceived(const ports::NodeName& from_node,
