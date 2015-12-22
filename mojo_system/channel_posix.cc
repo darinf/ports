@@ -28,6 +28,8 @@ namespace edk {
 
 namespace {
 
+const size_t kMaxBatchReadCapacity = 256 * 1024;
+
 // A view over an OutgoingMessage object. The write queue uses these since
 // large messages may need to be sent in chunks.
 class OutgoingMessageView {
@@ -165,17 +167,28 @@ class ChannelPosix : public Channel,
     CHECK_EQ(fd, handle_.get().handle);
     base::AutoLock lock(read_lock());
 
-    size_t buffer_capacity;
-    char* buffer = GetReadBuffer(&buffer_capacity);
-    ssize_t read_result = PlatformChannelRecvmsg(
-        handle_.get(), buffer, buffer_capacity, &incoming_platform_handles_);
+    size_t buffer_capacity = 0;
+    size_t total_bytes_read = 0;
+    size_t bytes_read = 0;
+    do {
+      char* buffer = GetReadBuffer(&buffer_capacity);
+      DCHECK_GT(buffer_capacity, 0u);
 
-    if (read_result > 0) {
-      OnReadCompleteNoLock(static_cast<size_t>(read_result));
-    } else if (read_result == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
-      ShutDownOnIOThread();
-      OnError();
-    }
+      ssize_t read_result = PlatformChannelRecvmsg(
+          handle_.get(), buffer, buffer_capacity, &incoming_platform_handles_);
+
+      if (read_result > 0) {
+        bytes_read = static_cast<size_t>(read_result);
+        total_bytes_read += bytes_read;
+        OnReadCompleteNoLock(bytes_read);
+      } else if (read_result == 0 ||
+                 (errno != EAGAIN && errno != EWOULDBLOCK)) {
+        ShutDownOnIOThread();
+        OnError();
+        return;
+      }
+    } while (bytes_read == buffer_capacity &&
+             total_bytes_read < kMaxBatchReadCapacity);
   }
 
   void OnFileCanWriteWithoutBlocking(int fd) override {

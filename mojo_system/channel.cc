@@ -45,7 +45,8 @@ Channel::OutgoingMessage::OutgoingMessage(const void* payload,
 
 Channel::OutgoingMessage::~OutgoingMessage() {}
 
-Channel::Channel(Delegate* delegate) : delegate_(delegate) {}
+Channel::Channel(Delegate* delegate)
+    : delegate_(delegate), read_buffer_(kReadBufferSize) {}
 
 Channel::~Channel() {}
 
@@ -55,12 +56,10 @@ char* Channel::GetReadBuffer(size_t *buffer_capacity) {
   DCHECK_GE(read_buffer_.size(), num_read_bytes_);
   DCHECK_GE(num_read_bytes_, read_offset_);
 
-  // Compute the total unused buffer capacity. This should be kept in check.
-  size_t unused_capacity =
-      read_offset_ + (read_buffer_.size() - num_read_bytes_);
-  if (unused_capacity > kMaxUnusedReadBufferCapacity) {
+  if (read_offset_ > kMaxUnusedReadBufferCapacity) {
     // Shift outstanding data to the front of the buffer and shrink to a
-    // reasonable size, leaving enough space for another read.
+    // reasonable size, leaving enough space for another read. This will slow
+    // down very large reads, but we shouldn't do very large reads.
     std::move(read_buffer_.begin() + read_offset_,
               read_buffer_.begin() + num_read_bytes_,
               read_buffer_.begin());

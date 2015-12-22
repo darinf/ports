@@ -96,9 +96,8 @@ TEST_F(PipesTest, MultiprocessChannelDispatch) {
   MojoHandle h = mp.get().value();
   ExpectEcho(h, "in an interstellar burst");
   ExpectEcho(h, "i am back to save the universe");
-  ExpectEcho(h, std::string(1024 * 1024, 'o'));
+  ExpectEcho(h, std::string(10 * 1024 * 1024, 'o'));
   SendExit(h);
-
   EXPECT_EQ(0, helper()->WaitForChildShutdown());
 }
 
