@@ -4,6 +4,7 @@
 
 #include "ports/mojo_system/node.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "crypto/random.h"
 #include "ports/mojo_system/node_controller.h"
@@ -20,11 +21,12 @@ void GenerateRandomName(T* out) { crypto::RandBytes(out, sizeof(T)); }
 
 Node::~Node() {}
 
-Node::Node() {
+Node::Node() : event_thread_("EDK ports node event thread") {
   GenerateRandomName(&name_);
   DLOG(INFO) << "Initializing node " << name_;
 
   node_.reset(new ports::Node(name_, this));
+  event_thread_.Start();
 }
 
 void Node::ConnectToPeer(
@@ -80,7 +82,7 @@ void Node::SetPortObserver(const ports::PortName& port_name,
 }
 
 int Node::SendMessage(const ports::PortName& port_name,
-                       ports::ScopedMessage message) {
+                      ports::ScopedMessage message) {
   return node_->SendMessage(port_name, std::move(message));
 }
 
@@ -95,8 +97,10 @@ void Node::GenerateRandomPortName(ports::PortName* port_name) {
 
 void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
   if (node == name_) {
-    // TODO: Make this asynchronous to avoid re-entrancy.
-    node_->AcceptEvent(std::move(event));
+    event_thread_.task_runner()->PostTask(
+        FROM_HERE,
+        base::Bind(&Node::AcceptEventOnEventThread,
+                   base::Unretained(this), base::Passed(&event)));
   } else {
     base::AutoLock lock(peers_lock_);
     auto it = peers_.find(node);
@@ -197,6 +201,10 @@ void Node::OnMessageReceived(const ports::NodeName& from_node,
 
 void Node::OnChannelError(const ports::NodeName& from_node) {
   DropPeer(from_node);
+}
+
+void Node::AcceptEventOnEventThread(ports::Event event) {
+  node_->AcceptEvent(std::move(event));
 }
 
 }  // namespace edk

@@ -144,6 +144,21 @@ void MessagePipeDispatcher::RemoveAwakableImplNoLock(
   awakables_.Remove(awakable);
 }
 
+bool MessagePipeDispatcher::BeginTransitImplNoLock() {
+  DCHECK(!self_while_in_transit_);
+  self_while_in_transit_ = this;
+  return true;
+}
+
+void MessagePipeDispatcher::EndTransitImplNoLock(bool canceled) {
+  DCHECK(self_while_in_transit_);
+
+  // We only release here if the transit was canceled. Otherwise we wait until
+  // the local port is actually closed. See OnClosed() below.
+  if (canceled)
+    self_while_in_transit_ = nullptr;
+}
+
 void MessagePipeDispatcher::OnMessageAvailable(const ports::PortName& port,
                                                ports::ScopedMessage message) {
   base::AutoLock dispatcher_lock(lock());
@@ -155,10 +170,19 @@ void MessagePipeDispatcher::OnMessageAvailable(const ports::PortName& port,
 }
 
 void MessagePipeDispatcher::OnClosed(const ports::PortName& port) {
-  base::AutoLock dispatcher_lock(lock());
-  DCHECK(port == port_name_);
-  port_closed_ = true;
-  awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+  scoped_refptr<MessagePipeDispatcher> self;
+  {
+    base::AutoLock dispatcher_lock(lock());
+    DCHECK(port == port_name_);
+    port_closed_ = true;
+    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+
+    // Retain a reference to |this| in case we're an orphaned dispatcher waiting
+    // for closure as a proxy. Once |self| goes out of scope, if not null,
+    // we will be deleted.
+    self = self_while_in_transit_;
+    self_while_in_transit_ = nullptr;
+  }
 }
 
 }  // namespace edk

@@ -143,6 +143,7 @@ TEST_F(PipesTest, PassMessagePipeLocal) {
   // Pass p2 over p0 to p1.
   const std::string message = "ceci n'est pas une pipe";
   WriteStringWithHandles(p0, message, &p2, 1);
+  WaitToRead(p1);
   EXPECT_EQ(message, ReadStringWithHandles(p1, &p2, 1));
 
   // Verify that the received handle (now in p2) still works.

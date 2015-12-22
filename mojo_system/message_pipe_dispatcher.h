@@ -47,6 +47,9 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   void RemoveAwakableImplNoLock(Awakable* awakable,
                                 HandleSignalsState* signals_state) override;
 
+  bool BeginTransitImplNoLock() override;
+  void EndTransitImplNoLock(bool canceled) override;
+
   // Node::PortObserver:
   void OnMessageAvailable(const ports::PortName& port,
                           ports::ScopedMessage message) override;
@@ -57,6 +60,10 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   bool port_closed_ = false;
   AwakableList awakables_;
   std::queue<ports::ScopedMessage> incoming_messages_;
+
+  // This is held while in transit to ensure the dispatcher stays alive until
+  // its port is closed.
+  scoped_refptr<MessagePipeDispatcher> self_while_in_transit_;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePipeDispatcher);
 };

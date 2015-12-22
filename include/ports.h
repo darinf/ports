@@ -162,6 +162,10 @@ struct Event {
   ~Event();
 
   Event& operator=(Event&& other);
+
+  // Just to make this type compatible with chromium's Bind.
+  Event&& Pass() { return std::move(*this); }
+  typedef void MoveOnlyTypeForCPP03;
 };
 
 // Implemented by the embedder.

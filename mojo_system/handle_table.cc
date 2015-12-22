@@ -64,6 +64,7 @@ MojoResult HandleTable::BeginTransit(
     Dispatcher::DispatcherInTransit& d = dispatchers->at(i);
     d.local_handle = handles[i];
     d.dispatcher = it->second.dispatcher;
+    d.dispatcher->BeginTransit();
   }
   return MOJO_RESULT_OK;
 }
@@ -74,6 +75,7 @@ void HandleTable::CompleteTransit(
     auto it = handles_.find(dispatcher.local_handle);
     DCHECK(it != handles_.end() && it->second.busy);
     handles_.erase(it);
+    dispatcher.dispatcher->EndTransit(false /* canceled */);
   }
 }
 
@@ -83,6 +85,7 @@ void HandleTable::CancelTransit(
     auto it = handles_.find(dispatcher.local_handle);
     DCHECK(it != handles_.end() && it->second.busy);
     it->second.busy = false;
+    dispatcher.dispatcher->EndTransit(true /* canceled */);
   }
 }
 
