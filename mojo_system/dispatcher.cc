@@ -10,6 +10,10 @@
 namespace mojo {
 namespace edk {
 
+Dispatcher::DispatcherInTransit::DispatcherInTransit() {}
+
+Dispatcher::DispatcherInTransit::~DispatcherInTransit() {}
+
 MojoResult Dispatcher::Close() {
   base::AutoLock locker(lock_);
   if (is_closed_)
@@ -21,13 +25,14 @@ MojoResult Dispatcher::Close() {
 
 MojoResult Dispatcher::WriteMessage(const void* bytes,
                                     uint32_t num_bytes,
-                                    const MojoHandle* handles,
-                                    uint32_t num_handles,
+                                    const DispatcherInTransit* dispatchers,
+                                    uint32_t num_dispatchers,
                                     MojoWriteMessageFlags flags) {
   base::AutoLock locker(lock_);
   if (is_closed_)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  return WriteMessageImplNoLock(bytes, num_bytes, handles, num_handles, flags);
+  return WriteMessageImplNoLock(bytes, num_bytes, dispatchers, num_dispatchers,
+                                flags);
 }
 
 MojoResult Dispatcher::ReadMessage(void* bytes,
@@ -94,11 +99,12 @@ void Dispatcher::CloseImplNoLock() {
   // any actual close-time cleanup necessary.
 }
 
-MojoResult Dispatcher::WriteMessageImplNoLock(const void* bytes,
-                                              uint32_t num_bytes,
-                                              const MojoHandle* handles,
-                                              uint32_t num_handles,
-                                              MojoWriteMessageFlags flags) {
+MojoResult Dispatcher::WriteMessageImplNoLock(
+    const void* bytes,
+    uint32_t num_bytes,
+    const DispatcherInTransit* dispatchers,
+    uint32_t num_dispatchers,
+    MojoWriteMessageFlags flags) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, not supported. Only needed for message pipe dispatchers.

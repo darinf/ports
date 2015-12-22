@@ -30,7 +30,7 @@ ChannelDispatcher::ChannelDispatcher(
 }
 
 Dispatcher::Type ChannelDispatcher::GetType() const {
-  return Type::MESSAGE_PIPE;
+  return Type::CHANNEL;
 }
 
 ChannelDispatcher::~ChannelDispatcher() {}
@@ -44,12 +44,20 @@ void ChannelDispatcher::CloseImplNoLock() {
 MojoResult ChannelDispatcher::WriteMessageImplNoLock(
     const void* bytes,
     uint32_t num_bytes,
-    const MojoHandle* handles,
-    uint32_t num_handles,
+    const DispatcherInTransit* dispatchers,
+    uint32_t num_dispatchers,
     MojoWriteMessageFlags flags) {
   std::vector<char> data(num_bytes);
   memcpy(data.data(), bytes, num_bytes);
-  // TODO: handles
+
+  // Pipes can only be transferred by MessagePipeDispatcher.
+  for (size_t i = 0; i < num_dispatchers; ++i) {
+    CHECK_NE(dispatchers[i].dispatcher->GetType(), Type::MESSAGE_PIPE);
+  }
+
+  // TODO: support transferring non-message-pipe handles
+  CHECK_EQ(num_dispatchers, 0u);
+
   Channel::OutgoingMessagePtr message(
       new Channel::OutgoingMessage(bytes, num_bytes, nullptr));
   channel_->Write(std::move(message));

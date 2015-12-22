@@ -33,6 +33,14 @@ class Awakable;
 class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
     : public base::RefCountedThreadSafe<Dispatcher> {
  public:
+  struct DispatcherInTransit {
+    DispatcherInTransit();
+    ~DispatcherInTransit();
+
+    scoped_refptr<Dispatcher> dispatcher;
+    MojoHandle local_handle;
+  };
+
   enum class Type {
     UNKNOWN = 0,
     MESSAGE_PIPE,
@@ -42,7 +50,11 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
     WAIT_SET,
 
     // "Private" types (not exposed via the public interface):
-    PLATFORM_HANDLE = -1
+    PLATFORM_HANDLE = -1,
+
+    // A special kind of message pipe which operates directly on a concrete
+    // platform channel. It can transfer anything but message pipe handles.
+    CHANNEL = -2,
   };
   virtual Type GetType() const = 0;
 
@@ -55,19 +67,15 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // possible. If this becomes an issue, we can rethink this.
   MojoResult Close();
 
-  // |transports| may be non-null if and only if there are handles to be
-  // written; not that |this| must not be in |transports|. On success, all the
-  // dispatchers in |transports| must have been moved to a closed state; on
-  // failure, they should remain in their original state.
+  // |handles| contains all non-message-pipe handles to be transferred.
+  // Message pipe handles must be translated to port names and specified via
+  // |ports| and |num_ports|.
   MojoResult WriteMessage(const void* bytes,
                           uint32_t num_bytes,
-                          const MojoHandle* handles,
-                          uint32_t num_handles,
+                          const DispatcherInTransit* dispatchers,
+                          uint32_t num_dispatchers,
                           MojoWriteMessageFlags flags);
 
-  // |dispatchers| must be non-null but empty, if |num_dispatchers| is non-null
-  // and nonzero. On success, it will be set to the dispatchers to be received
-  // (and assigned handles) as part of the message.
   MojoResult ReadMessage(void* bytes,
                          uint32_t* num_bytes,
                          MojoHandle* handles,
@@ -121,11 +129,12 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // called after the dispatcher has been closed. They are called under |lock_|.
   // See the descriptions of the methods without the "ImplNoLock" for more
   // information.
-  virtual MojoResult WriteMessageImplNoLock(const void* bytes,
-                                            uint32_t num_bytes,
-                                            const MojoHandle* handles,
-                                            uint32_t num_handles,
-                                            MojoWriteMessageFlags flags);
+  virtual MojoResult WriteMessageImplNoLock(
+      const void* bytes,
+      uint32_t num_bytes,
+      const DispatcherInTransit* dispatchers,
+      uint32_t num_dispatchers,
+      MojoWriteMessageFlags flags);
   virtual MojoResult ReadMessageImplNoLock(void* bytes,
                                            uint32_t* num_bytes,
                                            MojoHandle* handles,

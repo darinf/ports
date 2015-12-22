@@ -22,6 +22,8 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
 
   Type GetType() const override;
 
+  const ports::PortName& GetPortName() const { return port_name_; }
+
  private:
   ~MessagePipeDispatcher() override;
 
@@ -29,8 +31,8 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   void CloseImplNoLock() override;
   MojoResult WriteMessageImplNoLock(const void* bytes,
                                     uint32_t num_bytes,
-                                    const MojoHandle* handles,
-                                    uint32_t num_handles,
+                                    const DispatcherInTransit* dispatchers,
+                                    uint32_t num_dispatchers,
                                     MojoWriteMessageFlags flags) override;
   MojoResult ReadMessageImplNoLock(void* bytes,
                                    uint32_t* num_bytes,
@@ -51,7 +53,7 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   void OnClosed(const ports::PortName& port) override;
 
   Node* node_;
-  ports::PortName port_name_;
+  const ports::PortName port_name_;
   bool port_closed_ = false;
   AwakableList awakables_;
   std::queue<ports::ScopedMessage> incoming_messages_;

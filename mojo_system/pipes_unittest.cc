@@ -27,24 +27,41 @@ void CreatePipePair(MojoHandle *p0, MojoHandle* p1) {
   CHECK_NE(*p1, MOJO_HANDLE_INVALID);
 }
 
-void WriteString(MojoHandle mp, const std::string& message) {
+void WriteStringWithHandles(MojoHandle mp,
+                            const std::string& message,
+                            MojoHandle *handles,
+                            uint32_t num_handles) {
   CHECK_EQ(MojoWriteMessage(mp, message.data(),
-                            static_cast<uint32_t>(message.size()), nullptr,
-                            0, MOJO_WRITE_MESSAGE_FLAG_NONE),
+                            static_cast<uint32_t>(message.size()),
+                            handles, num_handles, MOJO_WRITE_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
 }
 
-std::string ReadString(MojoHandle mp) {
+void WriteString(MojoHandle mp, const std::string& message) {
+  WriteStringWithHandles(mp, message, nullptr, 0);
+}
+
+std::string ReadStringWithHandles(MojoHandle mp,
+                                  MojoHandle* handles,
+                                  uint32_t expected_num_handles) {
   uint32_t message_size = 0;
-  CHECK_EQ(MojoReadMessage(mp, nullptr, &message_size, nullptr, nullptr,
+  uint32_t num_handles = 0;
+  CHECK_EQ(MojoReadMessage(mp, nullptr, &message_size, nullptr, &num_handles,
                            MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_RESOURCE_EXHAUSTED);
+  CHECK_EQ(expected_num_handles, num_handles);
 
   std::string message(message_size, 'x');
-  CHECK_EQ(MojoReadMessage(mp, &message[0], &message_size, nullptr,
-                           nullptr, MOJO_READ_MESSAGE_FLAG_NONE),
+  CHECK_EQ(MojoReadMessage(mp, &message[0], &message_size, handles,
+                           &num_handles, MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
+  CHECK_EQ(expected_num_handles, num_handles);
+
   return message;
+}
+
+std::string ReadString(MojoHandle mp) {
+  return ReadStringWithHandles(mp, nullptr, 0);
 }
 
 void WaitToRead(MojoHandle mp) {
@@ -53,20 +70,25 @@ void WaitToRead(MojoHandle mp) {
           MOJO_RESULT_OK);
 }
 
+void VerifyTransmission(MojoHandle source,
+                        MojoHandle dest,
+                        const std::string& message) {
+  WriteString(source, message);
+  WaitToRead(dest);
+  EXPECT_EQ(message, ReadString(dest));
+}
+
+void VerifyChannelEcho(MojoHandle mp, const std::string& message) {
+  VerifyTransmission(mp, mp, message);
+}
+
+void SendChannelExit(MojoHandle mp) {
+  WriteString(mp, "exit");
+}
+
 class PipesTest : public test::MultiprocessMessagePipeTestBase {
  public:
   PipesTest() {}
-
- protected:
-  void ExpectEcho(MojoHandle mp, const std::string& message) {
-    WriteString(mp, message);
-    WaitToRead(mp);
-    EXPECT_EQ(message, ReadString(mp));
-  }
-
-  void SendExit(MojoHandle mp) {
-    WriteString(mp, "exit");
-  }
 };
 
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(ChannelEchoClient) {
@@ -94,10 +116,10 @@ TEST_F(PipesTest, MultiprocessChannelDispatch) {
       CreateMessagePipe(std::move(helper()->server_platform_handle));
 
   MojoHandle h = mp.get().value();
-  ExpectEcho(h, "in an interstellar burst");
-  ExpectEcho(h, "i am back to save the universe");
-  ExpectEcho(h, std::string(10 * 1024 * 1024, 'o'));
-  SendExit(h);
+  VerifyChannelEcho(h, "in an interstellar burst");
+  VerifyChannelEcho(h, "i am back to save the universe");
+  VerifyChannelEcho(h, std::string(10 * 1024 * 1024, 'o'));
+  SendChannelExit(h);
   EXPECT_EQ(0, helper()->WaitForChildShutdown());
 }
 
@@ -105,9 +127,27 @@ TEST_F(PipesTest, CreateMessagePipe) {
   MojoHandle p0, p1;
   CreatePipePair(&p0, &p1);
 
-  WriteString(p0, "hey man");
-  WaitToRead(p1);
-  EXPECT_EQ(ReadString(p1), "hey man");
+  VerifyTransmission(p0, p1, "hey man");
+  VerifyTransmission(p1, p0, "slow down");
+  VerifyTransmission(p0, p1, std::string(10 * 1024 * 1024, 'a'));
+  VerifyTransmission(p1, p0, std::string(10 * 1024 * 1024, 'e'));
+}
+
+TEST_F(PipesTest, PassMessagePipeLocal) {
+  MojoHandle p0, p1;
+  CreatePipePair(&p0, &p1);
+
+  MojoHandle p2, p3;
+  CreatePipePair(&p2, &p3);
+
+  // Pass p2 over p0 to p1.
+  const std::string message = "ceci n'est pas une pipe";
+  WriteStringWithHandles(p0, message, &p2, 1);
+  EXPECT_EQ(message, ReadStringWithHandles(p1, &p2, 1));
+
+  // Verify that the received handle (now in p2) still works.
+  VerifyTransmission(p2, p3, "Easy come, easy go; will you let me go?");
+  VerifyTransmission(p3, p2, "Bismillah! NO! We will not let you go!");
 }
 
 }  // namespace

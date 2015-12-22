@@ -20,6 +20,7 @@
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
 #include "ports/mojo_system/dispatcher.h"
+#include "ports/mojo_system/handle_table.h"
 #include "ports/mojo_system/node.h"
 
 namespace mojo {
@@ -158,7 +159,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   using DispatcherMap = base::hash_map<MojoHandle, scoped_refptr<Dispatcher>>;
 
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
-  scoped_refptr<Dispatcher> GetAndRemoveDispatcher(MojoHandle handle);
   MojoResult WaitManyInternal(const MojoHandle* handles,
                               const MojoHandleSignals* signals,
                               uint32_t num_handles,
@@ -170,9 +170,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
 
   scoped_refptr<base::TaskRunner> io_task_runner_;
 
-  base::Lock dispatchers_lock_;
-  MojoHandle next_handle_ = MOJO_HANDLE_INVALID + 1;
-  DispatcherMap dispatchers_;
+  base::Lock handles_lock_;
+  HandleTable handles_;
 
   DISALLOW_COPY_AND_ASSIGN(Core);
 };

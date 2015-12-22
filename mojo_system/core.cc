@@ -45,10 +45,8 @@ void Core::InitChild(ScopedPlatformHandle platform_handle) {
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
-  base::AutoLock lock(dispatchers_lock_);
-  MojoHandle handle = next_handle_++;
-  dispatchers_.insert(std::make_pair(handle, dispatcher));
-  return handle;
+  base::AutoLock lock(handles_lock_);
+  return handles_.AddDispatcher(dispatcher);
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,
@@ -63,10 +61,12 @@ MojoTimeTicks Core::GetTimeTicksNow() {
 }
 
 MojoResult Core::Close(MojoHandle handle) {
-  auto dispatcher = GetAndRemoveDispatcher(handle);
-  if (!dispatcher)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-  return dispatcher->Close();
+  base::AutoLock lock(handles_lock_);
+  scoped_refptr<Dispatcher> dispatcher;
+  MojoResult rv = handles_.GetAndRemoveDispatcher(handle, &dispatcher);
+  if (rv == MOJO_RESULT_OK)
+    dispatcher->Close();
+  return rv;
 }
 
 MojoResult Core::Wait(MojoHandle handle,
@@ -156,10 +156,33 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
                               uint32_t num_handles,
                               MojoWriteMessageFlags flags) {
   auto dispatcher = GetDispatcher(message_pipe_handle);
-  if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
+  if (!dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  return dispatcher->WriteMessage(
-      bytes, num_bytes, handles, num_handles, flags);
+  Dispatcher::Type type = dispatcher->GetType();
+  if (num_handles == 0) {
+    // Fast path: no handles.
+    if (type != Dispatcher::Type::MESSAGE_PIPE &&
+        type != Dispatcher::Type::CHANNEL) {
+      return MOJO_RESULT_INVALID_ARGUMENT;
+    }
+    return dispatcher->WriteMessage(bytes, num_bytes, nullptr, 0, flags);
+  }
+
+  std::vector<Dispatcher::DispatcherInTransit> dispatchers;
+  MojoResult rv = handles_.BeginTransit(handles, num_handles, &dispatchers);
+  if (rv != MOJO_RESULT_OK)
+    return rv;
+
+  DCHECK_EQ(num_handles, dispatchers.size());
+
+  rv = dispatcher->WriteMessage(
+      bytes, num_bytes, dispatchers.data(), num_handles, flags);
+  if (rv == MOJO_RESULT_OK)
+    handles_.CompleteTransit(dispatchers);
+  else
+    handles_.CancelTransit(dispatchers);
+
+  return rv;
 }
 
 MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
@@ -169,8 +192,11 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
                              uint32_t* num_handles,
                              MojoReadMessageFlags flags) {
   auto dispatcher = GetDispatcher(message_pipe_handle);
-  if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
+  if (!dispatcher ||
+      (dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE &&
+       dispatcher->GetType() != Dispatcher::Type::CHANNEL)) {
     return MOJO_RESULT_INVALID_ARGUMENT;
+  }
   return dispatcher->ReadMessage(bytes, num_bytes, handles, num_handles, flags);
 }
 
@@ -257,21 +283,8 @@ MojoResult Core::UnmapBuffer(void* buffer) {
 }
 
 scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
-  base::AutoLock lock(dispatchers_lock_);
-  auto iter = dispatchers_.find(handle);
-  if (iter == dispatchers_.end())
-    return nullptr;
-  return iter->second;
-}
-
-scoped_refptr<Dispatcher> Core::GetAndRemoveDispatcher(MojoHandle handle) {
-  base::AutoLock lock(dispatchers_lock_);
-  auto iter = dispatchers_.find(handle);
-  if (iter == dispatchers_.end())
-    return nullptr;
-  scoped_refptr<Dispatcher> dispatcher = iter->second;
-  dispatchers_.erase(iter);
-  return dispatcher;
+  base::AutoLock lock(handles_lock_);
+  return handles_.GetDispatcher(handle);
 }
 
 MojoResult Core::WaitManyInternal(const MojoHandle* handles,

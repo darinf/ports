@@ -29,16 +29,22 @@ void MessagePipeDispatcher::CloseImplNoLock() {
 MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     const void* bytes,
     uint32_t num_bytes,
-    const MojoHandle* handles,
-    uint32_t num_handles,
+    const DispatcherInTransit* dispatchers,
+    uint32_t num_dispatchers,
     MojoWriteMessageFlags flags) {
   lock().AssertAcquired();
 
-  // TODO: port transfer
-  CHECK_EQ(num_handles, 0u);
-
-  ports::ScopedMessage message(ports::AllocMessage(num_bytes, num_handles));
+  ports::ScopedMessage message(ports::AllocMessage(num_bytes, num_dispatchers));
   memcpy(message->bytes, bytes, num_bytes);
+  for (size_t i = 0; i < num_dispatchers; ++i) {
+    Dispatcher* d = dispatchers[i].dispatcher.get();
+
+    // TODO: support transferring other types of handles
+    CHECK_EQ(d->GetType(), Type::MESSAGE_PIPE);
+
+    MessagePipeDispatcher* mpd = static_cast<MessagePipeDispatcher*>(d);
+    message->ports[i].name = mpd->GetPortName();
+  }
 
   // TODO: Check SendMessage return value?
   node_->SendMessage(port_name_, std::move(message));

@@ -57,8 +57,8 @@ class ChannelDispatcher : public Dispatcher, public Channel::Delegate {
   void CloseImplNoLock() override;
   MojoResult WriteMessageImplNoLock(const void* bytes,
                                     uint32_t num_bytes,
-                                    const MojoHandle* handles,
-                                    uint32_t num_handles,
+                                    const DispatcherInTransit* dispatchers,
+                                    uint32_t num_dispatchers,
                                     MojoWriteMessageFlags flags) override;
   MojoResult ReadMessageImplNoLock(void* bytes,
                                    uint32_t* num_bytes,

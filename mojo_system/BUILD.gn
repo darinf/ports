@@ -15,6 +15,8 @@ source_set("mojo_system") {
     "core.h",
     "dispatcher.cc",
     "dispatcher.h",
+    "handle_table.cc",
+    "handle_table.h",
     "message_pipe_dispatcher.cc",
     "message_pipe_dispatcher.h",
     "node.cc",
