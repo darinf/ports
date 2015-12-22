@@ -168,7 +168,7 @@ class ChannelPosix : public Channel,
         handle_.get(), data, bytes_to_read, &incoming_platform_handles_);
     if (read_result > 0) {
       OnReadCompleteNoLock(static_cast<size_t>(read_result));
-    } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+    } else if (read_result == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
       ShutDownOnIOThread();
       OnError();
     }
