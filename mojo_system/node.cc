@@ -79,6 +79,11 @@ void Node::SetPortObserver(const ports::PortName& port_name,
     port_observers_[port_name] = observer;
 }
 
+void Node::SendMessage(const ports::PortName& port_name,
+                       ports::ScopedMessage message) {
+  node_->SendMessage(port_name, std::move(message));
+}
+
 void Node::ClosePort(const ports::PortName& port_name) {
   int rv = node_->ClosePort(port_name);
   DCHECK_EQ(rv, ports::OK) << "ClosePort failed: " << rv;
@@ -89,7 +94,18 @@ void Node::GenerateRandomPortName(ports::PortName* port_name) {
 }
 
 void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
-  NOTIMPLEMENTED();
+  if (node == name_) {
+    node_->AcceptEvent(std::move(event));
+  } else {
+    base::AutoLock lock(peers_lock_);
+    auto it = peers_.find(node);
+    if (it == peers_.end()) {
+      DLOG(ERROR) << "Cannot dispatch event to unknown peer " << node;
+      return;
+    }
+    // TODO: remote dispatch
+    NOTIMPLEMENTED();
+  }
 }
 
 void Node::MessagesAvailable(const ports::PortName& port) {

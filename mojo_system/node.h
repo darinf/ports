@@ -66,6 +66,10 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   void SetPortObserver(const ports::PortName& port_name,
                        PortObserver* observer);
 
+  // Sends a message on a port to its peer.
+  void SendMessage(const ports::PortName& port_name,
+                   ports::ScopedMessage message);
+
   // Closes a port.
   void ClosePort(const ports::PortName& port_name);
 

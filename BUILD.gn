@@ -44,3 +44,30 @@ executable("ports_unittests") {
 
   include_dirs = [ ".." ]
 }
+
+executable("ports_edk_unittests") {
+  testonly = true
+
+  sources = [
+    "mojo_system/pipes_unittest.cc",
+
+    "//mojo/edk/system/message_pipe_test_utils.cc",
+    "//mojo/edk/system/message_pipe_test_utils.h",
+    "//mojo/edk/test/run_all_unittests.cc",
+  ]
+
+  deps = [
+    ":ports",
+    "//base",
+    "//base/test:test_support",
+    "//mojo/edk/test:test_support",
+    "//mojo/edk/test:test_support_impl",
+    "//mojo/public/cpp/environment:standalone",
+    "//testing/gtest",
+    "//third_party/mojo/src/mojo/edk/system",
+  ]
+
+  defines = [ "INSIDE_CHROMIUM" ]
+
+  include_dirs = [ ".." ]
+}

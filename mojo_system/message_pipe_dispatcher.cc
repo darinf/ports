@@ -10,7 +10,9 @@ namespace edk {
 
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
                                              const ports::PortName& port_name)
-    : node_(node), port_name_(port_name) {}
+    : node_(node), port_name_(port_name) {
+  node_->SetPortObserver(port_name_, this);
+}
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
   return Type::MESSAGE_PIPE;
@@ -32,7 +34,14 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     MojoWriteMessageFlags flags) {
   lock().AssertAcquired();
 
-  // TODO
+  // TODO: port transfer
+  CHECK_EQ(num_handles, 0u);
+
+  ports::ScopedMessage message(ports::AllocMessage(num_bytes, num_handles));
+  memcpy(message->bytes, bytes, num_bytes);
+
+  node_->SendMessage(port_name_, std::move(message));
+
   return MOJO_RESULT_OK;
 }
 
@@ -43,8 +52,36 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     uint32_t* num_handles,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
+  if (incoming_messages_.empty())
+    return MOJO_RESULT_SHOULD_WAIT;
+  ports::ScopedMessage message = std::move(incoming_messages_.front());
+  size_t bytes_to_read = 0;
+  if (num_bytes) {
+    bytes_to_read = std::min(static_cast<size_t>(*num_bytes),
+                             message->num_bytes);
+    *num_bytes = message->num_bytes;
+  }
 
-  // TODO
+  size_t handles_to_read = 0;
+  if (num_handles) {
+    handles_to_read = std::min(static_cast<size_t>(*num_handles),
+                               message->num_ports);
+    *num_handles = message->num_ports;
+  }
+
+  if (bytes_to_read < message->num_bytes ||
+      handles_to_read < message->num_ports) {
+    incoming_messages_.front() = std::move(message);
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+
+  incoming_messages_.pop();
+
+  memcpy(bytes, message->bytes, message->num_bytes);
+
+  // TODO: port transfer
+  CHECK_EQ(message->num_ports, 0u);
+
   return MOJO_RESULT_OK;
 }
 
