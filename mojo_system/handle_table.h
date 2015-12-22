@@ -22,6 +22,12 @@ class HandleTable {
 
   MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 
+  // Inserts multiple dispatchers received from message transit, populating
+  // |handles| with their newly allocated handles. Returns |true| on success.
+  bool AddDispatchersFromTransit(
+      const std::vector<Dispatcher::DispatcherInTransit>& dispatchers,
+      MojoHandle* handles);
+
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle) const;
   MojoResult GetAndRemoveDispatcher(MojoHandle,
                                     scoped_refptr<Dispatcher>* dispatcher);

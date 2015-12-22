@@ -4,6 +4,8 @@
 
 #include "ports/mojo_system/handle_table.h"
 
+#include <limits>
+
 namespace mojo {
 namespace edk {
 
@@ -21,6 +23,29 @@ MojoHandle HandleTable::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
   DCHECK(result.second);
 
   return handle;
+}
+
+bool HandleTable::AddDispatchersFromTransit(
+    const std::vector<Dispatcher::DispatcherInTransit>& dispatchers,
+    MojoHandle* handles) {
+  // Oops, we're out of handles.
+  if (next_available_handle_ == MOJO_HANDLE_INVALID)
+    return false;
+
+  DCHECK_LE(dispatchers.size(), std::numeric_limits<uint32_t>::max());
+  // If this insertion would cause handle overflow, we're out of handles.
+  if (next_available_handle_ + dispatchers.size() < next_available_handle_)
+    return false;
+
+  for (size_t i = 0; i < dispatchers.size(); ++i) {
+    MojoHandle handle = next_available_handle_++;
+    auto result = handles_.insert(
+        std::make_pair(handle, Entry(dispatchers[i].dispatcher)));
+    DCHECK(result.second);
+    handles[i] = handle;
+  }
+
+  return true;
 }
 
 scoped_refptr<Dispatcher> HandleTable::GetDispatcher(MojoHandle handle) const {

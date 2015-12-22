@@ -62,8 +62,8 @@ class ChannelDispatcher : public Dispatcher, public Channel::Delegate {
                                     MojoWriteMessageFlags flags) override;
   MojoResult ReadMessageImplNoLock(void* bytes,
                                    uint32_t* num_bytes,
-                                   MojoHandle* handles,
-                                   uint32_t* num_handles,
+                                   DispatcherInTransit* dispatchers,
+                                   uint32_t* num_dispatchers,
                                    MojoReadMessageFlags flags) override;
   HandleSignalsState GetHandleSignalsStateImplNoLock() const override;
   MojoResult AddAwakableImplNoLock(Awakable* awakable,

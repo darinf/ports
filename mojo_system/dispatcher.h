@@ -78,8 +78,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
 
   MojoResult ReadMessage(void* bytes,
                          uint32_t* num_bytes,
-                         MojoHandle* handles,
-                         uint32_t* num_handles,
+                         DispatcherInTransit* dispatchers,
+                         uint32_t* num_dispatchers,
                          MojoReadMessageFlags flags);
 
   // Gets the current handle signals state. (The default implementation simply
@@ -146,8 +146,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
       MojoWriteMessageFlags flags);
   virtual MojoResult ReadMessageImplNoLock(void* bytes,
                                            uint32_t* num_bytes,
-                                           MojoHandle* handles,
-                                           uint32_t* num_handles,
+                                           DispatcherInTransit* dispatchers,
+                                           uint32_t* num_dispatchers,
                                            MojoReadMessageFlags flags);
   virtual HandleSignalsState GetHandleSignalsStateImplNoLock() const;
   virtual MojoResult AddAwakableImplNoLock(Awakable* awakable,

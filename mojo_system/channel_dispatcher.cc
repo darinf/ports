@@ -67,8 +67,8 @@ MojoResult ChannelDispatcher::WriteMessageImplNoLock(
 MojoResult ChannelDispatcher::ReadMessageImplNoLock(
     void* bytes,
     uint32_t* num_bytes,
-    MojoHandle* handles,
-    uint32_t* num_handles,
+    DispatcherInTransit* dispatchers,
+    uint32_t* num_dispatchers,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
   if (incoming_messages_.empty())
@@ -83,10 +83,10 @@ MojoResult ChannelDispatcher::ReadMessageImplNoLock(
   }
 
   size_t handles_to_read = 0;
-  if (num_handles) {
-    handles_to_read = std::min(static_cast<size_t>(*num_handles),
+  if (num_dispatchers) {
+    handles_to_read = std::min(static_cast<size_t>(*num_dispatchers),
                                message->num_handles());
-    *num_handles = message->num_handles();
+    *num_dispatchers = message->num_handles();
   }
 
   if (bytes_to_read < message->num_bytes() ||
@@ -95,7 +95,9 @@ MojoResult ChannelDispatcher::ReadMessageImplNoLock(
   }
 
   memcpy(bytes, message->data(), bytes_to_read);
+
   // TODO: handles
+  CHECK_EQ(handles_to_read, 0u);
 
   incoming_messages_.pop();
 

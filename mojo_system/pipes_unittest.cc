@@ -137,8 +137,14 @@ TEST_F(PipesTest, PassMessagePipeLocal) {
   MojoHandle p0, p1;
   CreatePipePair(&p0, &p1);
 
+  VerifyTransmission(p0, p1, "testing testing");
+  VerifyTransmission(p1, p0, "one two three");
+
   MojoHandle p2, p3;
   CreatePipePair(&p2, &p3);
+
+  VerifyTransmission(p2, p3, "testing testing");
+  VerifyTransmission(p3, p2, "one two three");
 
   // Pass p2 over p0 to p1.
   const std::string message = "ceci n'est pas une pipe";

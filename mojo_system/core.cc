@@ -156,18 +156,18 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
                               uint32_t num_handles,
                               MojoWriteMessageFlags flags) {
   auto dispatcher = GetDispatcher(message_pipe_handle);
-  if (!dispatcher)
+  if (!dispatcher ||
+      (dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE &&
+       dispatcher->GetType() != Dispatcher::Type::CHANNEL)) {
     return MOJO_RESULT_INVALID_ARGUMENT;
-  Dispatcher::Type type = dispatcher->GetType();
+  }
+
   if (num_handles == 0) {
     // Fast path: no handles.
-    if (type != Dispatcher::Type::MESSAGE_PIPE &&
-        type != Dispatcher::Type::CHANNEL) {
-      return MOJO_RESULT_INVALID_ARGUMENT;
-    }
     return dispatcher->WriteMessage(bytes, num_bytes, nullptr, 0, flags);
   }
 
+  base::AutoLock lock(handles_lock_);
   std::vector<Dispatcher::DispatcherInTransit> dispatchers;
   MojoResult rv = handles_.BeginTransit(handles, num_handles, &dispatchers);
   if (rv != MOJO_RESULT_OK)
@@ -197,7 +197,33 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
        dispatcher->GetType() != Dispatcher::Type::CHANNEL)) {
     return MOJO_RESULT_INVALID_ARGUMENT;
   }
-  return dispatcher->ReadMessage(bytes, num_bytes, handles, num_handles, flags);
+
+  if (!num_handles || *num_handles == 0) {
+    // Fast path: not actually reading any handles.
+    return dispatcher->ReadMessage(
+        bytes, num_bytes, nullptr, num_handles, flags);
+  }
+
+  std::vector<Dispatcher::DispatcherInTransit> dispatchers(*num_handles);
+  MojoResult rv = dispatcher->ReadMessage(
+      bytes, num_bytes, dispatchers.data(), num_handles, flags);
+
+  // Shrink to the number of handles actually read.
+  DCHECK_GE(dispatchers.size(), *num_handles);
+  dispatchers.resize(*num_handles);
+
+  if (rv == MOJO_RESULT_OK) {
+    base::AutoLock lock(handles_lock_);
+    if (!handles_.AddDispatchersFromTransit(dispatchers, handles))
+      rv = MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+
+  if (rv != MOJO_RESULT_OK) {
+    for (const auto& d : dispatchers)
+      d.dispatcher->Close();
+  }
+
+  return rv;
 }
 
 MojoResult Core::CreateDataPipe(

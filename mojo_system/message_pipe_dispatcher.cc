@@ -23,7 +23,8 @@ MessagePipeDispatcher::~MessagePipeDispatcher() {}
 void MessagePipeDispatcher::CloseImplNoLock() {
   lock().AssertAcquired();
   DCHECK(is_closed());
-  node_->ClosePort(port_name_);
+  if (!port_closed_)
+    node_->ClosePort(port_name_);
 }
 
 MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
@@ -33,7 +34,6 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     uint32_t num_dispatchers,
     MojoWriteMessageFlags flags) {
   lock().AssertAcquired();
-
   ports::ScopedMessage message(ports::AllocMessage(num_bytes, num_dispatchers));
   memcpy(message->bytes, bytes, num_bytes);
   for (size_t i = 0; i < num_dispatchers; ++i) {
@@ -58,8 +58,8 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
 MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     void* bytes,
     uint32_t* num_bytes,
-    MojoHandle* handles,
-    uint32_t* num_handles,
+    DispatcherInTransit* dispatchers,
+    uint32_t* num_dispatchers,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
   if (incoming_messages_.empty())
@@ -73,10 +73,10 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
   }
 
   size_t handles_to_read = 0;
-  if (num_handles) {
-    handles_to_read = std::min(static_cast<size_t>(*num_handles),
+  if (num_dispatchers) {
+    handles_to_read = std::min(static_cast<size_t>(*num_dispatchers),
                                message->num_ports);
-    *num_handles = message->num_ports;
+    *num_dispatchers = message->num_ports;
   }
 
   if (bytes_to_read < message->num_bytes ||
@@ -89,8 +89,12 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
 
   memcpy(bytes, message->bytes, message->num_bytes);
 
-  // TODO: port transfer
-  CHECK_EQ(message->num_ports, 0u);
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    DispatcherInTransit& d = dispatchers[i];
+    d.dispatcher = new MessagePipeDispatcher(node_, message->ports[i].name);
+  }
+
+  // TODO: support reading other types of handles
 
   return MOJO_RESULT_OK;
 }
@@ -183,6 +187,8 @@ void MessagePipeDispatcher::OnClosed(const ports::PortName& port) {
     self = self_while_in_transit_;
     self_while_in_transit_ = nullptr;
   }
+
+  self->Close();
 }
 
 }  // namespace edk
