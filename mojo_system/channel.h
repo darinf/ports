@@ -117,22 +117,6 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     virtual void OnChannelError() = 0;
   };
 
-  class ReadBuffer {
-   public:
-    ReadBuffer();
-    ~ReadBuffer();
-
-    void GetBuffer(char** addr, size_t* bytes_to_read);
-
-   private:
-    friend class Channel;
-
-    std::vector<char> data_;
-    size_t num_valid_bytes_ = 0;
-
-    DISALLOW_COPY_AND_ASSIGN(ReadBuffer);
-  };
-
   // Creates a new Channel around a |platform_handle|, taking ownership of the
   // handle. All IO on the handle will be performed on |io_task_runner|.
   static scoped_refptr<Channel> Create(
@@ -155,7 +139,11 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   virtual ~Channel();
 
   base::Lock& read_lock() { return read_lock_; }
-  ReadBuffer* read_buffer() { return &read_buffer_; }
+
+  // Called by the implementation when it wants somewhere to stick data.
+  // Returns the address of a buffer which can be written to, and indicates its
+  // capacity in |*buffer_capacity|.
+  char* GetReadBuffer(size_t* buffer_capacity);
 
   // Called by the implementation when new data is available in the read buffer.
   void OnReadCompleteNoLock(size_t bytes_read);
@@ -171,10 +159,16 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
 
   Delegate* delegate_;
 
-  // Guards |read_buffer_| and the implementation's read platform handles if
-  // applicable.
+  // Guards |read_buffer_| et al, as well as the implementation's read platform
+  // handles if applicable.
   base::Lock read_lock_;
-  ReadBuffer read_buffer_;
+  std::vector<char> read_buffer_;
+
+  // The index into |read_buffer_| where the next Message must start.
+  size_t read_offset_ = 0;
+
+  // The number of bytes in |read_buffer_| which are occupied with read data.
+  size_t num_read_bytes_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(Channel);
 };

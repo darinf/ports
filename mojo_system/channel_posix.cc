@@ -135,7 +135,8 @@ class ChannelPosix : public Channel,
     base::AutoLock lock(write_lock_);
     if (pending_write_)
       return;
-    DCHECK(write_watcher_);
+    if (!write_watcher_)
+      return;
     pending_write_ = true;
     base::MessageLoopForIO::current()->WatchFileDescriptor(
         handle_.get().handle, false /* persistent */,
@@ -161,11 +162,12 @@ class ChannelPosix : public Channel,
   void OnFileCanReadWithoutBlocking(int fd) override {
     CHECK_EQ(fd, handle_.get().handle);
     base::AutoLock lock(read_lock());
-    char* data;
-    size_t bytes_to_read;
-    read_buffer()->GetBuffer(&data, &bytes_to_read);
+
+    size_t buffer_capacity;
+    char* buffer = GetReadBuffer(&buffer_capacity);
     ssize_t read_result = PlatformChannelRecvmsg(
-        handle_.get(), data, bytes_to_read, &incoming_platform_handles_);
+        handle_.get(), buffer, buffer_capacity, &incoming_platform_handles_);
+
     if (read_result > 0) {
       OnReadCompleteNoLock(static_cast<size_t>(read_result));
     } else if (read_result == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {

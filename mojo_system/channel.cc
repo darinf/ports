@@ -10,18 +10,8 @@ namespace mojo {
 namespace edk {
 
 const size_t kReadBufferSize = 4096;
-const size_t kMaxUnusedReadBufferCapacity = 65536;
+const size_t kMaxUnusedReadBufferCapacity = 256 * 1024;
 const size_t kMaxChannelMessageSize = 256 * 1024 * 1024;
-
-Channel::ReadBuffer::ReadBuffer() : data_(kReadBufferSize) {}
-
-Channel::ReadBuffer::~ReadBuffer() {}
-
-void Channel::ReadBuffer::GetBuffer(char** addr, size_t* bytes_to_read) {
-  DCHECK_GE(data_.size(), num_valid_bytes_ + kReadBufferSize);
-  *addr = &data_[num_valid_bytes_];
-  *bytes_to_read = kReadBufferSize;
-}
 
 Channel::IncomingMessage::IncomingMessage(const void* data,
                                           ScopedPlatformHandleVectorPtr handles)
@@ -59,44 +49,72 @@ Channel::Channel(Delegate* delegate) : delegate_(delegate) {}
 
 Channel::~Channel() {}
 
+char* Channel::GetReadBuffer(size_t *buffer_capacity) {
+  const size_t required_capacity = kReadBufferSize;
+
+  DCHECK_GE(read_buffer_.size(), num_read_bytes_);
+  DCHECK_GE(num_read_bytes_, read_offset_);
+
+  // Compute the total unused buffer capacity. This should be kept in check.
+  size_t unused_capacity =
+      read_offset_ + (read_buffer_.size() - num_read_bytes_);
+  if (unused_capacity > kMaxUnusedReadBufferCapacity) {
+    // Shift outstanding data to the front of the buffer and shrink to a
+    // reasonable size, leaving enough space for another read.
+    std::move(read_buffer_.begin() + read_offset_,
+              read_buffer_.begin() + num_read_bytes_,
+              read_buffer_.begin());
+    read_buffer_.resize(num_read_bytes_ - read_offset_ + required_capacity);
+    num_read_bytes_ -= read_offset_;
+    read_offset_ = 0;
+  } else {
+    if (read_buffer_.size() - num_read_bytes_ < required_capacity) {
+      // Grow the buffer as needed. This resizes it to either twice its previous
+      // size, or just enough to hold the new capacity; whichever is larger.
+      read_buffer_.resize(std::max(read_buffer_.size() * 2,
+                                   num_read_bytes_ + required_capacity));
+    }
+  }
+
+  DCHECK_GE(read_buffer_.size(), num_read_bytes_ + required_capacity);
+
+  *buffer_capacity = required_capacity;
+  return read_buffer_.data() + num_read_bytes_;
+}
+
 void Channel::OnReadCompleteNoLock(size_t bytes_read) {
   read_lock().AssertAcquired();
-  read_buffer_.num_valid_bytes_ += bytes_read;
-  size_t data_offset = 0;
-  while (read_buffer_.num_valid_bytes_ - data_offset >=
-            sizeof(MessageHeader)) {
-    MessageHeader* header = reinterpret_cast<MessageHeader*>(
-        read_buffer_.data_.data() + data_offset);
-    if (read_buffer_.num_valid_bytes_ < header->num_bytes)
+
+  num_read_bytes_ += bytes_read;
+  while (num_read_bytes_ - read_offset_ >= sizeof(MessageHeader)) {
+    // We have at least enough data available for a MessageHeader.
+    MessageHeader* header =
+        reinterpret_cast<MessageHeader*>(read_buffer_.data() + read_offset_);
+    if (header->num_bytes < sizeof(MessageHeader)) {
+      LOG(ERROR) << "Invalid message size: " << header->num_bytes;
+      OnError();
+      return;
+    }
+
+    if (num_read_bytes_ - read_offset_ < header->num_bytes) {
+      // Not enough data available to read the full message.
       break;
+    }
+
     ScopedPlatformHandleVectorPtr handles;
     if (header->num_handles > 0) {
       handles = GetReadPlatformHandlesNoLock(header->num_handles);
-      if (!handles)
+      if (!handles) {
+        // Not enough handles available for this message.
         break;
+      }
     }
+
+    // We've got a complete message! Dispatch it and try another.
     IncomingMessage message(header, std::move(handles));
     delegate_->OnChannelRead(&message);
-    data_offset += header->num_bytes;
-  }
 
-  size_t valid_bytes_remaining = read_buffer_.num_valid_bytes_ - data_offset;
-  std::copy(read_buffer_.data_.begin() + data_offset,
-            read_buffer_.data_.begin() + read_buffer_.num_valid_bytes_,
-            read_buffer_.data_.begin());
-  read_buffer_.num_valid_bytes_ = valid_bytes_remaining;
-
-  size_t bytes_available =
-      read_buffer_.data_.size() - read_buffer_.num_valid_bytes_;
-
-  if (bytes_available < kReadBufferSize) {
-    // Ensure that next read has enough space.
-    read_buffer_.data_.resize(std::max(read_buffer_.data_.size() * 2,
-                                        bytes_available + kReadBufferSize));
-  } else if (bytes_available > kMaxUnusedReadBufferCapacity) {
-    // Also make sure we occasionally shrink the buffer back down.
-    read_buffer_.data_.resize(
-        read_buffer_.num_valid_bytes_ + kReadBufferSize);
+    read_offset_ += header->num_bytes;
   }
 }
 
