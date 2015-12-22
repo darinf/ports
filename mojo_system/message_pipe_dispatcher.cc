@@ -40,6 +40,7 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
   ports::ScopedMessage message(ports::AllocMessage(num_bytes, num_handles));
   memcpy(message->bytes, bytes, num_bytes);
 
+  // TODO: Check SendMessage return value?
   node_->SendMessage(port_name_, std::move(message));
 
   return MOJO_RESULT_OK;

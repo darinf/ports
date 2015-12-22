@@ -95,6 +95,7 @@ void Node::GenerateRandomPortName(ports::PortName* port_name) {
 
 void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
   if (node == name_) {
+    // TODO: Make this asynchronous to avoid re-entrancy.
     node_->AcceptEvent(std::move(event));
   } else {
     base::AutoLock lock(peers_lock_);
@@ -116,6 +117,7 @@ void Node::MessagesAvailable(const ports::PortName& port) {
     if (rv == ports::OK && !message)
       return;
 
+    // TODO: Avoid this lookup by storing a pointer on the ports::Port object?
     PortObserver* observer = nullptr;
     {
       base::AutoLock lock(port_observers_lock_);
