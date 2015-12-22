@@ -14,75 +14,66 @@
 namespace mojo {
 namespace edk {
 
-NodeChannel::Message::Message(std::vector<char> data,
-                              ScopedPlatformHandleVectorPtr handles)
-    : data_(std::move(data)), handles_(std::move(handles)) {
-  // TODO: Remove gross hacks to fix up pointers in event message data.
-  if (header()->type == Type::EVENT) {
-    EventData* data = reinterpret_cast<EventData*>(payload());
-    if (data->type == ports::Event::kAcceptMessage) {
-      char* message_data = static_cast<char*>(payload()) + sizeof(EventData);
-      data->message = reinterpret_cast<ports::Message*>(message_data);
-      data->message->ports = reinterpret_cast<ports::PortDescriptor*>(
-          message_data + sizeof(ports::Message));
-      data->message->bytes = reinterpret_cast<char*>(data->message->ports) +
-          data->message->num_ports * sizeof(ports::PortDescriptor);
-    }
-  }
+NodeChannel::IncomingMessage::IncomingMessage(
+    Channel::IncomingMessage* message)
+    : data_(message->payload_size()),
+      handles_(message->TakeHandles()) {
+  memcpy(data_.data(), message->payload(), message->payload_size());
 }
 
-NodeChannel::Message::~Message() {}
+NodeChannel::IncomingMessage::~IncomingMessage() {}
 
-NodeChannel::Message::Message(Type type,
-                              size_t num_bytes,
-                              ScopedPlatformHandleVectorPtr handles)
-    : data_(sizeof(Header) + num_bytes), handles_(std::move(handles)) {
-  Header* header = reinterpret_cast<Header*>(data_.data());
-  header->num_bytes = num_bytes;
-  header->num_handles = handles_ ? handles_->size() : 0;
-  header->type = type;
-  header->padding = 0;
+NodeChannel::OutgoingMessage::OutgoingMessage(
+    MessageType type,
+    size_t payload_size,
+    ScopedPlatformHandleVectorPtr handles)
+    : message_(new Channel::OutgoingMessage(
+        nullptr, sizeof(MessageHeader) + payload_size, std::move(handles))) {
+  header()->type = type;
+  header()->padding = 0;
 }
+
+NodeChannel::OutgoingMessage::~OutgoingMessage() {}
 
 // static
-NodeChannel::MessagePtr NodeChannel::Message::NewHelloChildMessage(
+NodeChannel::OutgoingMessagePtr NodeChannel::NewHelloChildMessage(
     const ports::NodeName& parent_name,
     const ports::NodeName& token_name) {
-  MessagePtr message(
-      new Message(Type::HELLO_CHILD, sizeof(HelloChildData), nullptr));
-  HelloChildData* data = reinterpret_cast<HelloChildData*>(message->payload());
+  OutgoingMessagePtr message(new OutgoingMessage(
+      MessageType::HELLO_CHILD, sizeof(HelloChildMessageData), nullptr));
+  HelloChildMessageData* data = message->payload<HelloChildMessageData>();
   data->parent_name = parent_name;
   data->token_name = token_name;
   return message;
 }
 
 // static
-NodeChannel::MessagePtr NodeChannel::Message::NewHelloParentMessage(
+NodeChannel::OutgoingMessagePtr NodeChannel::NewHelloParentMessage(
     const ports::NodeName& token_name,
     const ports::NodeName& child_name) {
-  MessagePtr message(
-      new Message(Type::HELLO_PARENT, sizeof(HelloParentData), nullptr));
-  HelloParentData* data =
-      reinterpret_cast<HelloParentData*>(message->payload());
+  OutgoingMessagePtr message(new OutgoingMessage(
+      MessageType::HELLO_PARENT, sizeof(HelloParentMessageData), nullptr));
+  HelloParentMessageData* data = message->payload<HelloParentMessageData>();
   data->token_name = token_name;
   data->child_name = child_name;
   return message;
 }
 
 // static
-NodeChannel::MessagePtr NodeChannel::Message::NewEventMessage(
+NodeChannel::OutgoingMessagePtr NodeChannel::NewEventMessage(
     ports::Event event) {
-  size_t event_size = sizeof(EventData);
+  size_t event_size = sizeof(EventMessageData);
   size_t message_size = 0;
   if (event.message) {
     DCHECK(event.type == ports::Event::kAcceptMessage);
-   message_size = sizeof(ports::Message) + event.message->num_bytes +
+    message_size = sizeof(ports::Message) + event.message->num_bytes +
         event.message->num_ports * sizeof(ports::PortDescriptor);
     event_size += message_size;
   }
 
-  MessagePtr message(new Message(Type::EVENT, event_size, nullptr));
-  EventData* data = reinterpret_cast<EventData*>(message->payload());
+  OutgoingMessagePtr message(
+      new OutgoingMessage(MessageType::EVENT, event_size, nullptr));
+  EventMessageData* data = message->payload<EventMessageData>();
   data->type = event.type;
   data->port_name = event.port_name;
   switch (event.type) {
@@ -110,23 +101,6 @@ NodeChannel::MessagePtr NodeChannel::Message::NewEventMessage(
   return message;
 }
 
-const NodeChannel::Message::HelloChildData&
-NodeChannel::Message::AsHelloChild() const {
-  DCHECK(header()->type == Type::HELLO_CHILD);
-  return *reinterpret_cast<const HelloChildData*>(payload());
-}
-
-const NodeChannel::Message::HelloParentData&
-NodeChannel::Message::AsHelloParent() const {
-  DCHECK(header()->type == Type::HELLO_PARENT);
-  return *reinterpret_cast<const HelloParentData*>(payload());
-}
-
-const NodeChannel::Message::EventData& NodeChannel::Message::AsEvent() const {
-  DCHECK(header()->type == Type::EVENT);
-  return *reinterpret_cast<const EventData*>(payload());
-}
-
 NodeChannel::NodeChannel(Delegate* delegate,
                          ScopedPlatformHandle platform_handle,
                          scoped_refptr<base::TaskRunner> io_task_runner)
@@ -138,36 +112,27 @@ NodeChannel::~NodeChannel() {
   channel_->ShutDown();
 }
 
+void NodeChannel::Start() {
+  channel_->Start();
+}
+
 void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
   base::AutoLock lock(name_lock_);
   remote_node_name_ = name;
 }
 
-void NodeChannel::SendMessage(MessagePtr node_message) {
-  Channel::OutgoingMessagePtr message(new Channel::OutgoingMessage(
-      node_message->data(), node_message->num_bytes(),
-      node_message->TakeHandles()));
-  channel_->Write(std::move(message));
+void NodeChannel::SendMessage(OutgoingMessagePtr node_message) {
+  channel_->Write(node_message->TakeMessage());
 }
 
 void NodeChannel::OnChannelRead(Channel::IncomingMessage* message) {
-  std::vector<char> bytes(message->payload_size());
-  memcpy(bytes.data(), message->payload(), message->payload_size());
-  ScopedPlatformHandleVectorPtr handles = message->TakeHandles();
-
   ports::NodeName remote_name;
   {
     base::AutoLock lock(name_lock_);
     remote_name = remote_node_name_;
   }
-
-  DLOG(INFO) << "Channel to " << remote_name << " received message with "
-      << bytes.size() << " bytes and " << (handles ? handles->size() : 0)
-      << " handles.";
-
-  delegate_->OnMessageReceived(
-      remote_name,
-      make_scoped_ptr(new Message(std::move(bytes), std::move(handles))));
+  delegate_->OnMessageReceived(remote_name,
+                               make_scoped_ptr(new IncomingMessage(message)));
 }
 
 void NodeChannel::OnChannelError() {
@@ -175,15 +140,15 @@ void NodeChannel::OnChannelError() {
 }
 
 std::ostream& operator<<(std::ostream& stream,
-                         NodeChannel::Message::Type message_type) {
+                         NodeChannel::MessageType message_type) {
   switch (message_type) {
-    case NodeChannel::Message::Type::HELLO_CHILD:
+    case NodeChannel::MessageType::HELLO_CHILD:
       stream << "HELLO_CHILD";
       break;
-    case NodeChannel::Message::Type::HELLO_PARENT:
+    case NodeChannel::MessageType::HELLO_PARENT:
       stream << "HELLO_PARENT";
       break;
-    case NodeChannel::Message::Type::EVENT:
+    case NodeChannel::MessageType::EVENT:
       stream << "EVENT";
       break;
     default:

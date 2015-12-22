@@ -15,9 +15,9 @@
 #include "mojo/edk/system/waiter.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/channel.h"
-#include "ports/mojo_system/child_node.h"
+#include "ports/mojo_system/child_node_controller.h"
 #include "ports/mojo_system/message_pipe_dispatcher.h"
-#include "ports/mojo_system/parent_node.h"
+#include "ports/mojo_system/parent_node_controller.h"
 
 namespace mojo {
 namespace edk {
@@ -31,15 +31,17 @@ void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
 }
 
 void Core::AddChild(ScopedPlatformHandle platform_handle) {
-  if (!node_)
-    node_.reset(new ParentNode);
-  ParentNode* parent_node = static_cast<ParentNode*>(node_.get());
-  parent_node->AddChild(std::move(platform_handle), io_task_runner_);
+  if (!node_.controller())
+    node_.set_controller(make_scoped_ptr(new ParentNodeController(&node_)));
+  node_.ConnectToPeer(
+      ports::kInvalidNodeName, std::move(platform_handle), io_task_runner_);
 }
 
 void Core::InitChild(ScopedPlatformHandle platform_handle) {
-  CHECK(!node_);
-  node_.reset(new ChildNode(std::move(platform_handle), io_task_runner_));
+  CHECK(!node_.controller());
+  node_.set_controller(make_scoped_ptr(new ChildNodeController(&node_)));
+  node_.ConnectToPeer(
+      ports::kInvalidNodeName, std::move(platform_handle), io_task_runner_);
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
@@ -139,11 +141,11 @@ MojoResult Core::CreateMessagePipe(
     MojoHandle* message_pipe_handle0,
     MojoHandle* message_pipe_handle1) {
   ports::PortName port0, port1;
-  node_->CreatePortPair(&port0, &port1);
+  node_.CreatePortPair(&port0, &port1);
   *message_pipe_handle0 = AddDispatcher(
-      new MessagePipeDispatcher(node_.get(), port0));
+      new MessagePipeDispatcher(&node_, port0));
   *message_pipe_handle1 = AddDispatcher(
-      new MessagePipeDispatcher(node_.get(), port1));
+      new MessagePipeDispatcher(&node_, port1));
   return MOJO_RESULT_OK;
 }
 

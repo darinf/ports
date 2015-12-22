@@ -68,7 +68,8 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
 
   // A message to be written to the channel.
   struct OutgoingMessage {
-    // Copies |payload| and takes ownership of |handles|.
+    // Copies |payload| and takes ownership of |handles|. If |payload| is
+    // null this simply allocates and zeroes a payload of |payload_size| bytes.
     OutgoingMessage(const void* payload,
                     size_t payload_size,
                     ScopedPlatformHandleVectorPtr handles);
@@ -77,6 +78,7 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     const void* data() const { return header_; }
     size_t data_num_bytes() const { return data_.size(); }
 
+    void* mutable_payload() { return &header_[1]; }
     const void* payload() const { return &header_[1]; }
 
     size_t payload_size() const {
@@ -137,6 +139,9 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
       Delegate* delegate,
       ScopedPlatformHandle platform_handle,
       scoped_refptr<base::TaskRunner> io_task_runner);
+
+  // Request that the Channel start processing IO events.
+  virtual void Start() = 0;
 
   // Request that the Channel shut itself down.
   virtual void ShutDown() = 0;

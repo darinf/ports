@@ -5,9 +5,18 @@
 #include "ports/mojo_system/node.h"
 
 #include "base/logging.h"
+#include "crypto/random.h"
+#include "ports/mojo_system/node_controller.h"
 
 namespace mojo {
 namespace edk {
+
+namespace {
+
+template <typename T>
+void GenerateRandomName(T* out) { crypto::RandBytes(out, sizeof(T)); }
+
+}  // namespace
 
 Node::~Node() {}
 
@@ -23,30 +32,46 @@ void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
   DCHECK_EQ(rv, ports::OK);
 }
 
-void Node::GenerateRandomPortName(ports::PortName* port_name) {
-  GenerateRandomName(port_name);
+void Node::ConnectToPeer(
+    const ports::NodeName& peer_name,
+    ScopedPlatformHandle platform_handle,
+    const scoped_refptr<base::TaskRunner>& io_task_runner) {
+  scoped_ptr<NodeChannel> channel(
+      new NodeChannel(this, std::move(platform_handle), io_task_runner));
+  channel->SetRemoteNodeName(peer_name);
+
+  DCHECK(controller_);
+  controller_->AcceptPeer(peer_name, std::move(channel));
 }
 
 void Node::AddPeer(const ports::NodeName& name,
                    scoped_ptr<NodeChannel> channel) {
+  DCHECK(name != ports::kInvalidNodeName);
+  base::AutoLock lock(peers_lock_);
   channel->SetRemoteNodeName(name);
   auto result = peers_.insert(std::make_pair(name, std::move(channel)));
   DLOG_IF(ERROR, !result.second) << "Ignoring duplicate peer name " << name;
 }
 
 void Node::DropPeer(const ports::NodeName& name) {
-  auto it = peers_.find(name);
-  if (it == peers_.end())
-    return;
-  DLOG(INFO) << "Dropped peer " << it->first;
-  peers_.erase(it);
+  ports::NodeName peer;
+
+  {
+    base::AutoLock lock(peers_lock_);
+    auto it = peers_.find(name);
+    if (it == peers_.end())
+      return;
+    peer = it->first;
+    peers_.erase(it);
+    DLOG(INFO) << "Dropped peer " << peer;
+  }
+
+  DCHECK(controller_);
+  controller_->OnPeerLost(peer);
 }
 
-NodeChannel* Node::GetPeer(const ports::NodeName& name) {
-  auto it = peers_.find(name);
-  if (it == peers_.end())
-    return nullptr;
-  return it->second.get();
+void Node::GenerateRandomPortName(ports::PortName* port_name) {
+  GenerateRandomName(port_name);
 }
 
 void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
@@ -55,6 +80,63 @@ void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
 
 void Node::MessagesAvailable(const ports::PortName& port) {
   NOTIMPLEMENTED();
+}
+
+void Node::OnMessageReceived(const ports::NodeName& from_node,
+                             NodeChannel::IncomingMessagePtr message) {
+  DCHECK(controller_);
+
+  DLOG(INFO) << "Node " << name_ << " received " << message->type()
+      << " message from node " << from_node;
+
+  switch (message->type()) {
+    case NodeChannel::MessageType::HELLO_CHILD: {
+      const auto& data = message->payload<NodeChannel::HelloChildMessageData>();
+      controller_->OnHelloChildMessage(
+          from_node, data.parent_name, data.token_name);
+      break;
+    }
+
+    case NodeChannel::MessageType::HELLO_PARENT: {
+      const auto& data =
+          message->payload<NodeChannel::HelloParentMessageData>();
+      controller_->OnHelloParentMessage(
+          from_node, data.token_name, data.child_name);
+      break;
+    }
+
+    case NodeChannel::MessageType::EVENT: {
+      // TODO: Make this less bad
+      const auto& data = message->payload<NodeChannel::EventMessageData>();
+      ports::Event event(static_cast<ports::Event::Type>(data.type));
+      event.port_name = data.port_name;
+      if (event.type == ports::Event::kAcceptMessage) {
+        size_t message_size = message->payload_size() -
+            sizeof(NodeChannel::EventMessageData);
+        const ports::Message* m =
+            reinterpret_cast<const ports::Message*>(&(&data)[1]);
+        ports::Message* own_m = ports::AllocMessage(m->num_bytes, m->num_ports);
+        memcpy(own_m, m, message_size);
+        own_m->ports = reinterpret_cast<ports::PortDescriptor*>(
+            reinterpret_cast<char*>(own_m) + sizeof(ports::Message));
+        own_m->bytes = reinterpret_cast<char*>(own_m->ports) +
+            own_m->num_ports * sizeof(ports::PortDescriptor);
+        event.message.reset(own_m);
+      }
+      memcpy(&event.observe_proxy, &data.observe_proxy,
+          sizeof(event.observe_proxy));
+      controller_->OnEventMessage(from_node, std::move(event));
+      break;
+    }
+
+    default:
+      OnChannelError(from_node);
+      break;
+  }
+}
+
+void Node::OnChannelError(const ports::NodeName& from_node) {
+  DropPeer(from_node);
 }
 
 }  // namespace edk

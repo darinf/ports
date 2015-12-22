@@ -77,6 +77,9 @@ class ChannelPosix : public Channel,
         self_(this),
         handle_(std::move(handle)),
         io_task_runner_(io_task_runner) {
+  }
+
+  void Start() override {
     io_task_runner_->PostTask(
         FROM_HERE, base::Bind(&ChannelPosix::StartOnIOThread, this));
   }

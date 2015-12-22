@@ -25,7 +25,9 @@ ChannelDispatcher::ChannelDispatcher(
     ScopedPlatformHandle platform_handle,
     scoped_refptr<base::TaskRunner> io_task_runner)
     : channel_(Channel::Create(this, std::move(platform_handle),
-                               io_task_runner)) {}
+                               io_task_runner)) {
+  channel_->Start();
+}
 
 Dispatcher::Type ChannelDispatcher::GetType() const {
   return Type::MESSAGE_PIPE;

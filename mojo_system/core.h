@@ -20,6 +20,7 @@
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
 #include "ports/mojo_system/dispatcher.h"
+#include "ports/mojo_system/node.h"
 
 namespace mojo {
 namespace edk {
@@ -165,8 +166,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                               uint32_t *result_index,
                               HandleSignalsState* signals_states);
 
+  Node node_;
+
   scoped_refptr<base::TaskRunner> io_task_runner_;
-  scoped_ptr<Node> node_;
 
   base::Lock dispatchers_lock_;
   MojoHandle next_handle_ = MOJO_HANDLE_INVALID + 1;

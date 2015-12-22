@@ -26,107 +26,122 @@ namespace edk {
 // Wraps a Channel to send and receive Node control messages.
 class NodeChannel : public Channel::Delegate {
  public:
-  class Message;
-  using MessagePtr = scoped_ptr<Message>;
+  class IncomingMessage;
+  using IncomingMessagePtr = scoped_ptr<IncomingMessage>;
 
-  class Message {
+  class OutgoingMessage;
+  using OutgoingMessagePtr = scoped_ptr<OutgoingMessage>;
+
+  enum class MessageType : uint32_t {
+    // Sent from the parent node to any child on child startup. Must be the
+    // first message received by a child node.
+    HELLO_CHILD = 0,
+
+    // Sent from the child to the parent to complete the handshake.
+    HELLO_PARENT = 1,
+
+    // Encodes a ports::Event from one node to another.
+    EVENT = 2,
+  };
+
+  struct MessageHeader {
+    MessageType type;
+    uint32_t padding;
+  };
+  static_assert(sizeof(MessageHeader) % kChannelMessageAlignment == 0,
+      "MessageHeader must be aligned to kChannelMessageAlignment bytes.");
+
+  struct HelloChildMessageData {
+    ports::NodeName parent_name;
+    ports::NodeName token_name;
+  };
+
+  struct HelloParentMessageData {
+    ports::NodeName token_name;
+    ports::NodeName child_name;
+  };
+
+  struct EventMessageData {
+    uint32_t type;
+    ports::PortName port_name;
+    union {
+      struct {
+        ports::NodeName proxy_node_name;
+        ports::PortName proxy_peer_name;
+        ports::NodeName proxy_to_node_name;
+        ports::PortName proxy_to_peer_name;
+      } observe_proxy;
+      struct {
+        uint32_t last_sequence_num;
+      } observe_proxy_ack;
+      struct {
+        uint32_t last_sequence_num;
+      } observe_closure;
+    };
+  };
+
+  class IncomingMessage {
    public:
-    enum class Type : uint32_t {
-      // Sent from the parent node to any child on child startup. Must be the
-      // first message received by a child node.
-      HELLO_CHILD = 0,
+    // Copies bytes and takes handles from |message|
+    IncomingMessage(Channel::IncomingMessage* message);
+    ~IncomingMessage();
 
-      // Sent from the child to the parent to complete the handshake.
-      HELLO_PARENT = 1,
+    MessageType type() const { return header()->type; }
 
-      // Encodes a ports::Event from one node to another.
-      EVENT = 2,
-    };
+    template <typename T>
+    const T& payload() const {
+      DCHECK(data_.size() >= sizeof(MessageHeader) + sizeof(T));
+      return *reinterpret_cast<const T*>(&header()[1]);
+    }
 
-    struct HelloChildData {
-      ports::NodeName parent_name;
-      ports::NodeName token_name;
-    };
+    size_t payload_size() const { return data_.size(); }
 
-    struct HelloParentData {
-      ports::NodeName token_name;
-      ports::NodeName child_name;
-    };
-
-    struct EventData {
-      uint32_t type;
-      ports::PortName port_name;
-      union {
-        struct {
-          ports::NodeName proxy_node_name;
-          ports::PortName proxy_peer_name;
-          ports::NodeName proxy_to_node_name;
-          ports::PortName proxy_to_peer_name;
-        } observe_proxy;
-        struct {
-          uint32_t last_sequence_num;
-        } observe_proxy_ack;
-        struct {
-          uint32_t last_sequence_num;
-        } observe_closure;
-      };
-      ports::Message* message;
-    };
-
-    struct Header {
-      uint32_t num_bytes;
-      Type type;
-      uint32_t num_handles;
-      uint32_t padding;
-    };
-
-    static_assert(sizeof(Header) % 8 == 0,
-        "NodeChannel::Message::Header size must be 8-byte aligned.");
-
-    // Takes ownership of |data| contents and |handles|.
-    Message(std::vector<char> data,
-            ScopedPlatformHandleVectorPtr handles);
-    ~Message();
-
-    Type type() const { return header()->type; }
-
-    static MessagePtr NewHelloChildMessage(
-        const ports::NodeName& parent_name,
-        const ports::NodeName& token_name);
-    static MessagePtr NewHelloParentMessage(
-        const ports::NodeName& token_name,
-        const ports::NodeName& child_name);
-    static MessagePtr NewEventMessage(ports::Event event);
-
-    const HelloChildData& AsHelloChild() const;
-    const HelloParentData& AsHelloParent() const;
-    const EventData& AsEvent() const;
-
-    const void* data() const { return data_.data(); }
-    size_t num_bytes() const { return data_.size(); }
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 
-   private:
-    Message(Type type, size_t num_bytes, ScopedPlatformHandleVectorPtr handles);
+    const HelloChildMessageData& AsHelloChild() const;
+    const HelloParentMessageData& AsHelloParent() const;
+    const EventMessageData& AsEvent() const;
 
-    Header* header() { return reinterpret_cast<Header*>(data_.data()); }
-    const Header* header() const {
-      return reinterpret_cast<const Header*>(data_.data());
+   private:
+    const MessageHeader* header() const {
+      return reinterpret_cast<const MessageHeader*>(data_.data());
     }
-    void* payload() { return &header()[1]; }
-    const void* payload() const { return &header()[1]; }
 
     std::vector<char> data_;
     ScopedPlatformHandleVectorPtr handles_;
 
-    DISALLOW_COPY_AND_ASSIGN(Message);
+    DISALLOW_COPY_AND_ASSIGN(IncomingMessage);
+  };
+
+  class OutgoingMessage {
+   public:
+    // Allocates an outgoing message which holds |num_bytes| bytes and
+    // takes ownership of |handles|.
+    OutgoingMessage(MessageType type,
+                    size_t payload_size,
+                    ScopedPlatformHandleVectorPtr handles);
+    ~OutgoingMessage();
+
+    MessageHeader* header() {
+      return static_cast<MessageHeader*>(message_->mutable_payload());
+    }
+
+    template <typename T>
+    T* payload() { return reinterpret_cast<T*>(&header()[1]); }
+
+    Channel::OutgoingMessagePtr TakeMessage() { return std::move(message_); }
+
+   private:
+    Channel::OutgoingMessagePtr message_;
+
+    DISALLOW_COPY_AND_ASSIGN(OutgoingMessage);
   };
 
   class Delegate {
    public:
     virtual ~Delegate() {}
     virtual void OnMessageReceived(const ports::NodeName& node,
-                                   MessagePtr message) = 0;
+                                   IncomingMessagePtr message) = 0;
     virtual void OnChannelError(const ports::NodeName& node) = 0;
   };
 
@@ -135,11 +150,22 @@ class NodeChannel : public Channel::Delegate {
               scoped_refptr<base::TaskRunner> io_task_runner);
   ~NodeChannel() override;
 
+  static OutgoingMessagePtr NewHelloChildMessage(
+      const ports::NodeName& parent_name,
+      const ports::NodeName& token_name);
+  static OutgoingMessagePtr NewHelloParentMessage(
+      const ports::NodeName& token_name,
+      const ports::NodeName& child_name);
+  static OutgoingMessagePtr NewEventMessage(ports::Event event);
+
+  // Start receiving messages.
+  void Start();
+
   // Used for context in delegate calls since delegates may be watching
   // multiple NodeChannels.
   void SetRemoteNodeName(const ports::NodeName& name);
 
-  void SendMessage(MessagePtr message);
+  void SendMessage(OutgoingMessagePtr message);
 
  private:
   // Channel::Delegate:
@@ -157,7 +183,7 @@ class NodeChannel : public Channel::Delegate {
 };
 
 std::ostream& operator<<(std::ostream& stream,
-                         NodeChannel::Message::Type message_type);
+                         NodeChannel::MessageType message_type);
 
 }  // namespace edk
 }  // namespace mojo

@@ -46,14 +46,18 @@ Channel::OutgoingMessage::OutgoingMessage(const void* payload,
   header_->num_bytes = data_.size();
   header_->num_handles = handles_ ? handles_->size() : 0;
   header_->padding = 0;
-  memcpy(data_.data() + sizeof(MessageHeader), payload, payload_size);
+
+  if (payload)
+    memcpy(data_.data() + sizeof(MessageHeader), payload, payload_size);
+  else
+    memset(data_.data() + sizeof(MessageHeader), 0, payload_size);
 }
 
 Channel::OutgoingMessage::~OutgoingMessage() {}
 
-Channel::Channel(Delegate* delegate) : delegate_(delegate) {DLOG(INFO)<<"CHANNEL INIT:"<<this;}
+Channel::Channel(Delegate* delegate) : delegate_(delegate) {}
 
-Channel::~Channel() {DLOG(INFO)<<"CHANNEL SHUTDOWN:"<<this;}
+Channel::~Channel() {}
 
 void Channel::OnReadCompleteNoLock(size_t bytes_read) {
   read_lock().AssertAcquired();
