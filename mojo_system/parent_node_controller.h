@@ -35,8 +35,6 @@ class ParentNodeController : public NodeController {
   void OnHelloParentMessage(const ports::NodeName& from_node,
                             const ports::NodeName& token_name,
                             const ports::NodeName& child_name) override;
-  void OnEventMessage(const ports::NodeName& from_node,
-                      ports::Event event) override;
 
   Node* const node_;
 

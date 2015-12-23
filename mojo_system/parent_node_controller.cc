@@ -88,10 +88,5 @@ void ParentNodeController::OnHelloParentMessage(
   DLOG(INFO) << "Parent accepted handshake from child " << child_name;
 }
 
-void ParentNodeController::OnEventMessage(const ports::NodeName& from_node,
-                                          ports::Event event) {
-  NOTIMPLEMENTED();
-}
-
 }  // namespace edk
 }  // namespace mojo

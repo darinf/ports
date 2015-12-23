@@ -146,8 +146,8 @@ void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
       DLOG(ERROR) << "Cannot dispatch event to unknown peer " << node;
       return;
     }
-    // TODO: remote dispatch
-    NOTIMPLEMENTED();
+
+    it->second->SendMessage(NodeChannel::NewEventMessage(std::move(event)));
   }
 }
 
@@ -222,7 +222,8 @@ void Node::OnMessageReceived(const ports::NodeName& from_node,
       }
       memcpy(&event.observe_proxy, &data.observe_proxy,
           sizeof(event.observe_proxy));
-      controller_->OnEventMessage(from_node, std::move(event));
+
+      SendEvent(name_, std::move(event));
       break;
     }
 

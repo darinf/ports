@@ -75,10 +75,5 @@ void ChildNodeController::OnHelloParentMessage(
   node_->DropPeer(from_node);
 }
 
-void ChildNodeController::OnEventMessage(const ports::NodeName& from_node,
-                                         ports::Event event) {
-  NOTIMPLEMENTED();
-}
-
 }  // namespace edk
 }  // namespace mojo
