@@ -38,11 +38,13 @@ inline bool operator<(const ScopedMessage& a, const ScopedMessage& b) {
   return a->sequence_num > b->sequence_num;
 }
 
-MessageQueue::MessageQueue()
-    : next_sequence_num_(kInitialSequenceNum),
+MessageQueue::MessageQueue() : MessageQueue(kInitialSequenceNum) {}
+
+MessageQueue::MessageQueue(uint32_t next_sequence_num)
+    : next_sequence_num_(next_sequence_num),
       may_signal_(true) {
   // The message queue is blocked waiting for a message with sequence number
-  // equal to kInitialSequenceNum.
+  // equal to |next_sequence_num|.
 }
 
 MessageQueue::~MessageQueue() {

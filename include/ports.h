@@ -110,7 +110,8 @@ struct PortDescriptor {
   PortName peer_port_name;
   NodeName referring_node_name;
   PortName referring_port_name;
-  uint32_t next_sequence_num;
+  uint32_t next_sequence_num_to_send;
+  uint32_t next_sequence_num_to_receive;
 };
 
 struct Message {

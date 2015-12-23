@@ -54,7 +54,8 @@ struct Port {
   bool remove_proxy_on_last_message;
   bool peer_closed;
 
-  explicit Port(uint32_t next_sequence_num);
+  Port(uint32_t next_sequence_num_to_send,
+       uint32_t next_sequence_num_to_receive);
   ~Port();
 };
 

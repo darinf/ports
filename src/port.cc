@@ -31,10 +31,12 @@
 
 namespace ports {
 
-Port::Port(uint32_t next_sequence_num)
+Port::Port(uint32_t next_sequence_num_to_send,
+           uint32_t next_sequence_num_to_receive)
     : state(kReceiving),
-      next_sequence_num_to_send(next_sequence_num),
+      next_sequence_num_to_send(next_sequence_num_to_send),
       last_sequence_num_to_receive(0),
+      message_queue(next_sequence_num_to_receive),
       remove_proxy_on_last_message(false),
       peer_closed(false) {}
 

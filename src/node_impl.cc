@@ -65,7 +65,8 @@ Node::Impl::~Impl() {
 }
 
 int Node::Impl::CreatePort(PortName* port_name) {
-  std::shared_ptr<Port> port = std::make_shared<Port>(kInitialSequenceNum);
+  std::shared_ptr<Port> port = std::make_shared<Port>(kInitialSequenceNum,
+                                                      kInitialSequenceNum);
   return AddPort(std::move(port), port_name);
 }
 
@@ -528,7 +529,9 @@ void Node::Impl::WillSendPort_Locked(Port* port,
   port_descriptor->peer_port_name = port->peer_port_name;
   port_descriptor->referring_node_name = name_;
   port_descriptor->referring_port_name = local_port_name;
-  port_descriptor->next_sequence_num = port->next_sequence_num_to_send;
+  port_descriptor->next_sequence_num_to_send = port->next_sequence_num_to_send;
+  port_descriptor->next_sequence_num_to_receive =
+      port->message_queue.next_sequence_num();
 
   // Configure the local port to point to the new port.
   port->peer_node_name = to_node_name;
@@ -537,7 +540,8 @@ void Node::Impl::WillSendPort_Locked(Port* port,
 
 int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
   std::shared_ptr<Port> port =
-      std::make_shared<Port>(port_descriptor.next_sequence_num);
+      std::make_shared<Port>(port_descriptor.next_sequence_num_to_send,
+                             port_descriptor.next_sequence_num_to_receive);
   port->peer_node_name = port_descriptor.peer_node_name;
   port->peer_port_name = port_descriptor.peer_port_name;
 

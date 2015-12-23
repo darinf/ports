@@ -42,7 +42,8 @@ const uint32_t kInitialSequenceNum = 1;
 
 class MessageQueue {
  public:
-  MessageQueue();
+  explicit MessageQueue();
+  explicit MessageQueue(uint32_t next_sequence_num);
   ~MessageQueue();
 
   uint32_t next_sequence_num() const { return next_sequence_num_; }
