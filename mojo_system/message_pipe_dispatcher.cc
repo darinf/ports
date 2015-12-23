@@ -13,7 +13,6 @@ MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
                                              bool connected)
     : connected_(connected), node_(node), port_name_(port_name) {
   node_->SetPortObserver(port_name_, this);
-  LOG(ERROR) << "NEW PIPE FOR " << port_name;
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
@@ -31,9 +30,7 @@ void MessagePipeDispatcher::SetRemotePeer(const ports::NodeName& peer_node,
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
-  LOG(ERROR) << "DEAD PIPE FOR " << port_name_;
   node_->SetPortObserver(port_name_, nullptr);
-  LOG(ERROR) << "MPD DYING: " << this;
 }
 
 void MessagePipeDispatcher::CloseImplNoLock() {
