@@ -49,6 +49,8 @@ class Node::Impl {
                      const NodeName& peer_node_name,
                      const PortName& peer_port_name);
   int CreatePortPair(PortName* port_name_0, PortName* port_name_1);
+  int SetUserData(const PortName& port_name,
+                  std::shared_ptr<UserData> user_data);
   int ClosePort(const PortName& port_name);
   int GetMessage(const PortName& port_name, ScopedMessage* message);
   int SendMessage(const PortName& port_name, ScopedMessage message);

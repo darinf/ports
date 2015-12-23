@@ -17,6 +17,12 @@ namespace {
 template <typename T>
 void GenerateRandomName(T* out) { crypto::RandBytes(out, sizeof(T)); }
 
+struct PortObserverHolder : public ports::UserData {
+  Node::PortObserver* observer;
+
+  explicit PortObserverHolder(Node::PortObserver* o) : observer(o) {}
+};
+
 }  // namespace
 
 Node::~Node() {}
@@ -113,11 +119,13 @@ void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
 
 void Node::SetPortObserver(const ports::PortName& port_name,
                            PortObserver* observer) {
-  base::AutoLock lock(port_observers_lock_);
-  if (observer == nullptr)
-    port_observers_.erase(port_name);
-  else
-    port_observers_[port_name] = observer;
+  if (observer == nullptr) {
+    node_->SetUserData(port_name, std::shared_ptr<ports::UserData>());
+  } else {
+    std::shared_ptr<ports::UserData> user_data(
+        new PortObserverHolder(observer));
+    node_->SetUserData(port_name, std::move(user_data));
+  }
 }
 
 int Node::SendMessage(const ports::PortName& port_name,
@@ -152,7 +160,8 @@ void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
   }
 }
 
-void Node::MessagesAvailable(const ports::PortName& port) {
+void Node::MessagesAvailable(const ports::PortName& port,
+                             std::shared_ptr<ports::UserData> user_data) {
   int rv;
   do {
     ports::ScopedMessage message;
@@ -160,22 +169,14 @@ void Node::MessagesAvailable(const ports::PortName& port) {
     if (rv == ports::OK && !message)
       return;
 
-    // TODO: Avoid this lookup by storing a pointer on the ports::Port object?
-    PortObserver* observer = nullptr;
-    {
-      base::AutoLock lock(port_observers_lock_);
-      auto it = port_observers_.find(port);
-      DCHECK(it != port_observers_.end())
-          << "Received a message on a port with no observer: " << port;
-      observer = it->second;
-    }
-
-    DCHECK(observer);
+    PortObserver* observer =
+        static_cast<PortObserverHolder*>(user_data.get())->observer;
+    DCHECK(observer) << "Received a message on a port with no observer.";
 
     if (rv == ports::OK) {
       observer->OnMessageAvailable(port, std::move(message));
     } else {
-      node_->ClosePort(port);
+      observer->OnPeerClosed(port);
     }
   } while (rv == ports::OK);
 }
@@ -250,24 +251,6 @@ void Node::OnChannelError(const ports::NodeName& from_node) {
 
 void Node::AcceptEventOnEventThread(ports::Event event) {
   node_->AcceptEvent(std::move(event));
-
-  // TODO: maybe NodeDelegate should expose port closure explicitly?
-  if (event.type == ports::Event::kObserveClosure ||
-      event.type == ports::Event::kObserveProxyAck) {
-    // TODO: Avoid this lookup by storing a pointer on the ports::Port object?
-    PortObserver* observer = nullptr;
-    {
-      base::AutoLock lock(port_observers_lock_);
-      auto it = port_observers_.find(event.port_name);
-      if (it != port_observers_.end())
-        observer = it->second;
-    }
-
-    // It's possible that this port was forwarded somewhere else immediately
-    // and never had a local obsderver.
-    if (observer)
-      observer->OnClosed(event.port_name);
-  }
 }
 
 }  // namespace edk

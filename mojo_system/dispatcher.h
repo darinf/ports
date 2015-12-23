@@ -166,13 +166,13 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   base::Lock& lock() const { return lock_; }
   bool is_closed() const { return is_closed_; }
 
- private:
   // Closes the dispatcher. This must be done under lock, and unlike |Close()|,
   // the dispatcher must not be closed already. (This is the "equivalent" of
   // |CreateEquivalentDispatcherAndCloseNoLock()|, for situations where the
   // dispatcher must be disposed of instead of "transferred".)
   void CloseNoLock();
 
+ private:
   // This protects the following members as well as any state added by
   // subclasses.
   mutable base::Lock lock_;

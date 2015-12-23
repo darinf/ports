@@ -163,7 +163,8 @@ class TestNodeDelegate : public NodeDelegate {
     task_queue.push(new Task(node_name, std::move(event)));
   }
 
-  void MessagesAvailable(const PortName& port) override {
+  void MessagesAvailable(const PortName& port,
+                         std::shared_ptr<UserData> user_data) override {
     DLOG(INFO) << "MessagesAvailable for " << port << "@" << node_name_;
     if (!read_messages_)
       return;

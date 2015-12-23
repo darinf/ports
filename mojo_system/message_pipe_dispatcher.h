@@ -62,7 +62,7 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   // Node::PortObserver:
   void OnMessageAvailable(const ports::PortName& port,
                           ports::ScopedMessage message) override;
-  void OnClosed(const ports::PortName& port) override;
+  void OnPeerClosed(const ports::PortName& port) override;
 
   // Indicates whether the port is connected to a remote peer yet.
   bool connected_;
@@ -70,9 +70,8 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   Node* node_;
   const ports::PortName port_name_;
 
-  // Indicates if the port has been permanently closed.
-  bool port_closed_ = false;
-
+  bool peer_closed_ = false;
+  bool port_transferred_ = false;
   AwakableList awakables_;
   std::queue<ports::ScopedMessage> incoming_messages_;
 

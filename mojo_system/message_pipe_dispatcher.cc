@@ -29,12 +29,14 @@ void MessagePipeDispatcher::SetRemotePeer(const ports::NodeName& peer_node,
   awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 
-MessagePipeDispatcher::~MessagePipeDispatcher() {}
+MessagePipeDispatcher::~MessagePipeDispatcher() {
+  node_->SetPortObserver(port_name_, nullptr);
+}
 
 void MessagePipeDispatcher::CloseImplNoLock() {
   lock().AssertAcquired();
   DCHECK(is_closed());
-  if (!port_closed_)
+  if (!port_transferred_)
     node_->ClosePort(port_name_);
 }
 
@@ -122,7 +124,7 @@ MessagePipeDispatcher::GetHandleSignalsStateImplNoLock() const {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
   }
-  if (!port_closed_) {
+  if (!peer_closed_) {
     if (connected_)
       rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
@@ -164,18 +166,18 @@ void MessagePipeDispatcher::RemoveAwakableImplNoLock(
 }
 
 bool MessagePipeDispatcher::BeginTransitImplNoLock() {
-  DCHECK(!self_while_in_transit_);
-  self_while_in_transit_ = this;
   return true;
 }
 
 void MessagePipeDispatcher::EndTransitImplNoLock(bool canceled) {
-  DCHECK(self_while_in_transit_);
+  if (!canceled) {
+    // port_name_ has been closed by virtue of having been transferred.
+    // This dispatcher needs to be closed as well.
+    port_transferred_ = true;
+    CloseNoLock();
 
-  // We only release here if the transit was canceled. Otherwise we wait until
-  // the local port is actually closed. See OnClosed() below.
-  if (canceled)
-    self_while_in_transit_ = nullptr;
+    // TODO: Need to implement CancelAllAwakablesNoLock.
+  }
 }
 
 void MessagePipeDispatcher::OnMessageAvailable(const ports::PortName& port,
@@ -188,22 +190,11 @@ void MessagePipeDispatcher::OnMessageAvailable(const ports::PortName& port,
     awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 
-void MessagePipeDispatcher::OnClosed(const ports::PortName& port) {
-  scoped_refptr<MessagePipeDispatcher> self;
-  {
-    base::AutoLock dispatcher_lock(lock());
-    DCHECK(port == port_name_);
-    port_closed_ = true;
-    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
-
-    // Retain a reference to |this| in case we're an orphaned dispatcher waiting
-    // for closure as a proxy. Once |self| goes out of scope, if not null,
-    // we will be deleted.
-    self = self_while_in_transit_;
-    self_while_in_transit_ = nullptr;
-  }
-
-  self->Close();
+void MessagePipeDispatcher::OnPeerClosed(const ports::PortName& port) {
+  base::AutoLock dispatcher_lock(lock());
+  DCHECK(port == port_name_);
+  peer_closed_ = true;
+  awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 
 }  // namespace edk
