@@ -169,6 +169,11 @@ struct Event {
   typedef void MoveOnlyTypeForCPP03;
 };
 
+class UserData {
+ public:
+  virtual ~UserData() {}
+};
+
 // Implemented by the embedder.
 class NodeDelegate {
  public:
@@ -183,7 +188,8 @@ class NodeDelegate {
 
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
-  virtual void MessagesAvailable(const PortName& port) = 0;
+  virtual void MessagesAvailable(const PortName& port,
+                                 std::shared_ptr<UserData> user_data) = 0;
 };
 
 class Node {
@@ -206,6 +212,9 @@ class Node {
   // Generates a new connected pair of ports bound to this node. These ports
   // are initialized and ready to go.
   int CreatePortPair(PortName* port0, PortName* port1);
+
+  // User data associated with the port. Passed to MessagesAvailable.
+  int SetUserData(const PortName& port, std::shared_ptr<UserData> user_data);
 
   // Prevents further messages from being sent from this port or delivered to
   // this port. The port is removed, and the port's peer is notified of the

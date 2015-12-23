@@ -77,7 +77,8 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // ports::NodeDelegate:
   void GenerateRandomPortName(ports::PortName* port_name) override;
   void SendEvent(const ports::NodeName& node, ports::Event event) override;
-  void MessagesAvailable(const ports::PortName& port) override;
+  void MessagesAvailable(const ports::PortName& port,
+                         std::shared_ptr<ports::UserData> user_data) override;
 
   // NodeChannel::Delegate:
   void OnMessageReceived(const ports::NodeName& from_node,
@@ -97,9 +98,6 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   base::Lock peers_lock_;
   std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>> peers_;
-
-  base::Lock port_observers_lock_;
-  std::unordered_map<ports::PortName, PortObserver*> port_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };

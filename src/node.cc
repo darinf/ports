@@ -53,6 +53,11 @@ int Node::CreatePortPair(PortName* port0, PortName* port1) {
   return impl_->CreatePortPair(port0, port1);
 }
 
+int Node::SetUserData(const PortName& port,
+                      std::shared_ptr<UserData> user_data) {
+  return impl_->SetUserData(port, std::move(user_data));
+}
+
 int Node::ClosePort(const PortName& port_name) {
   return impl_->ClosePort(port_name);
 }

@@ -111,6 +111,18 @@ int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
   return OK;
 }
 
+int Node::Impl::SetUserData(const PortName& port_name,
+                            std::shared_ptr<UserData> user_data) {
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR_PORT_UNKNOWN;
+  
+  std::lock_guard<std::mutex> guard(port->lock);
+  port->user_data = std::move(user_data);
+
+  return OK;
+}
+
 int Node::Impl::ClosePort(const PortName& port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -206,6 +218,7 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
              << " to node " << node_name;
 
   std::vector<PortName> ports_to_notify;
+  std::vector<std::shared_ptr<UserData>> associated_user_data;
 
   {
     std::lock_guard<std::mutex> guard(ports_lock_);
@@ -225,8 +238,10 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
             port->last_sequence_num_to_receive =
                 port->message_queue.next_sequence_num() - 1;
 
-            if (port->state == Port::kReceiving)
+            if (port->state == Port::kReceiving) {
               ports_to_notify.push_back(iter->first);
+              associated_user_data.push_back(port->user_data);
+            }
           }
 
           // We do not expect to forward any further messages, and we do not
@@ -245,8 +260,10 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
     }
   }
 
-  for (auto port_name : ports_to_notify)
-    delegate_->MessagesAvailable(port_name);
+  for (size_t i = 0; i < ports_to_notify.size(); ++i) {
+    delegate_->MessagesAvailable(ports_to_notify[i],
+                                 std::move(associated_user_data[i]));
+  }
 
   return OK;
 }
@@ -282,6 +299,7 @@ int Node::Impl::AcceptMessage(const PortName& port_name,
 
   bool has_next_message = false;
   bool message_accepted = false;
+  std::shared_ptr<UserData> associated_user_data;
 
   if (port) {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -291,6 +309,8 @@ int Node::Impl::AcceptMessage(const PortName& port_name,
     if (CanAcceptMoreMessages(port.get())) {
       message_accepted = true;
       port->message_queue.AcceptMessage(std::move(message), &has_next_message);
+
+      associated_user_data = port->user_data;
 
       if (port->state == Port::kBuffering) {
         has_next_message = false;
@@ -315,7 +335,7 @@ int Node::Impl::AcceptMessage(const PortName& port_name,
     for (size_t i = 0; i < message->num_ports; ++i)
       ClosePort(message->ports[i].name);
   } else if (has_next_message) {
-    delegate_->MessagesAvailable(port_name);
+    delegate_->MessagesAvailable(port_name, std::move(associated_user_data));
   }
 
   return OK;
@@ -438,6 +458,7 @@ int Node::Impl::ObserveClosure(Event event) {
 
   PortName port_name = event.port_name;
   bool notify_delegate = false;
+  std::shared_ptr<UserData> associated_user_data;
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
@@ -455,6 +476,7 @@ int Node::Impl::ObserveClosure(Event event) {
       if (!CanAcceptMoreMessages(port.get())) {
         assert(port->message_queue.may_signal());
         notify_delegate = true;
+        associated_user_data = port->user_data;
       }
     } else {
       NodeName next_node_name = port->peer_node_name;
@@ -474,7 +496,7 @@ int Node::Impl::ObserveClosure(Event event) {
     }
   }
   if (notify_delegate)
-    delegate_->MessagesAvailable(port_name);
+    delegate_->MessagesAvailable(port_name, std::move(associated_user_data));
   return OK;
 }
 
