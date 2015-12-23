@@ -54,8 +54,7 @@ bool Core::AddDispatchersForReceivedPorts(ports::Message* message) {
   std::vector<Dispatcher::DispatcherInTransit> dispatchers(message->num_ports);
   for (size_t i = 0; i < message->num_ports; ++i) {
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(
-        &node_, message->ports[i].name, true /* connected */);
+    d.dispatcher = new MessagePipeDispatcher(&node_, message->ports[i].name);
   }
 
   // TODO: This is fine, but a bit of hack
@@ -74,7 +73,7 @@ MojoHandle Core::CreateMessagePipeWithRemotePeer(
   ports::PortName port_name;
   node_.CreateUninitializedPort(&port_name);
   scoped_refptr<MessagePipeDispatcher> mpd =
-      new MessagePipeDispatcher(&node_, port_name, false /* connected */);
+      new MessagePipeDispatcher(&node_, port_name);
   MojoHandle handle = AddDispatcher(mpd);
   DCHECK_NE(handle, MOJO_HANDLE_INVALID);
 
@@ -182,9 +181,9 @@ MojoResult Core::CreateMessagePipe(
   ports::PortName port0, port1;
   node_.CreatePortPair(&port0, &port1);
   *message_pipe_handle0 = AddDispatcher(
-      new MessagePipeDispatcher(&node_, port0, true /* connected */));
+      new MessagePipeDispatcher(&node_, port0));
   *message_pipe_handle1 = AddDispatcher(
-      new MessagePipeDispatcher(&node_, port1, true /* connected */));
+      new MessagePipeDispatcher(&node_, port1));
   return MOJO_RESULT_OK;
 }
 

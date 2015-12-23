@@ -18,20 +18,12 @@ namespace edk {
 
 class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
  public:
-  // Create a MessagePipeDispatcher for port |port_name| on |node|. Note that
-  // |connected| should be false iff |port_name| refers to an uninitialized
-  // port. In such cases, the MPD can be fully initialized and activated later
-  // by calling SetRemotePeer().
-  MessagePipeDispatcher(Node* node,
-                        const ports::PortName& port_name,
-                        bool connected);
+  // Create a MessagePipeDispatcher for port |port_name| on |node|.
+  MessagePipeDispatcher(Node* node, const ports::PortName& port_name);
 
   Type GetType() const override;
 
   const ports::PortName& GetPortName() const { return port_name_; }
-
-  void SetRemotePeer(const ports::NodeName& peer_node,
-                     const ports::PortName& peer_port);
 
  private:
   ~MessagePipeDispatcher() override;
@@ -63,9 +55,6 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   void OnMessageAvailable(const ports::PortName& port,
                           ports::ScopedMessage message) override;
   void OnPeerClosed(const ports::PortName& port) override;
-
-  // Indicates whether the port is connected to a remote peer yet.
-  bool connected_;
 
   Node* node_;
   const ports::PortName port_name_;

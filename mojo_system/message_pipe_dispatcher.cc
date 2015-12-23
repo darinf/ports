@@ -9,24 +9,13 @@ namespace mojo {
 namespace edk {
 
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
-                                             const ports::PortName& port_name,
-                                             bool connected)
-    : connected_(connected), node_(node), port_name_(port_name) {
+                                             const ports::PortName& port_name)
+    : node_(node), port_name_(port_name) {
   node_->SetPortObserver(port_name_, this);
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
   return Type::MESSAGE_PIPE;
-}
-
-void MessagePipeDispatcher::SetRemotePeer(const ports::NodeName& peer_node,
-                                          const ports::PortName& peer_port) {
-  base::AutoLock dispatcher_lock(lock());
-  DCHECK(!connected_);
-  int rv = node_->InitializePort(port_name_, peer_node, peer_port);
-  DCHECK_EQ(rv, ports::OK);
-  connected_ = true;
-  awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
@@ -47,12 +36,6 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     uint32_t num_dispatchers,
     MojoWriteMessageFlags flags) {
   lock().AssertAcquired();
-
-  // TODO: WriteMessage is not allowed to return MOJO_RESULT_SHOULD_WAIT.  It
-  // should always be writable. The way the bindings are designed depends on
-  // this.
-  if (!connected_)
-    return MOJO_RESULT_SHOULD_WAIT;
 
   ports::ScopedMessage message(ports::AllocMessage(num_bytes, num_dispatchers));
   memcpy(message->bytes, bytes, num_bytes);
@@ -82,7 +65,7 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     uint32_t* num_handles,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
-  if (!connected_ || incoming_messages_.empty())
+  if (incoming_messages_.empty())
     return MOJO_RESULT_SHOULD_WAIT;
   ports::ScopedMessage message = std::move(incoming_messages_.front());
   size_t bytes_to_read = 0;
@@ -125,8 +108,7 @@ MessagePipeDispatcher::GetHandleSignalsStateImplNoLock() const {
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
   }
   if (!peer_closed_) {
-    if (connected_)
-      rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
+    rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
   } else {

@@ -114,7 +114,7 @@ void RemotePeerConnector::ConnectPipeAndGoAway() {
   DCHECK(peer_node_name_ != ports::kInvalidNodeName);
   DCHECK(peer_port_name_ != ports::kInvalidPortName);
 
-  dispatcher_->SetRemotePeer(peer_node_name_, peer_port_name_);
+  //dispatcher_->SetRemotePeer(peer_node_name_, peer_port_name_);
   delete this;
 }
 
