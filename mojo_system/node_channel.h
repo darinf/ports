@@ -110,7 +110,9 @@ class NodeChannel : public Channel::Delegate {
       return *reinterpret_cast<const T*>(&header()[1]);
     }
 
-    size_t payload_size() const { return data_.size(); }
+    size_t payload_size() const {
+      return data_.size() - sizeof(MessageHeader);
+    }
 
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 
