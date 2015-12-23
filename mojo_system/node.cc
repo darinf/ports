@@ -93,6 +93,7 @@ void Node::DropPeer(const ports::NodeName& name) {
 
   DCHECK(controller_);
   controller_->OnPeerLost(peer);
+  node_->LostConnectionToNode(name);
 }
 
 void Node::CreateUninitializedPort(ports::PortName* port_name) {
