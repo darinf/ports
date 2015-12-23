@@ -31,9 +31,8 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
     virtual void OnMessageAvailable(const ports::PortName& name,
                                     ports::ScopedMessage message) = 0;
 
-    // Notifies the observer that a port has been closed. Note that the
-    // the observer is automatically removed from the port in this case.
-    virtual void OnClosed(const ports::PortName& name) = 0;
+    // Notifies the observer that a port's peer has been closed.
+    virtual void OnPeerClosed(const ports::PortName& name) = 0;
   };
 
   Node();

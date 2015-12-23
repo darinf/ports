@@ -136,7 +136,7 @@ void Node::MessagesAvailable(const ports::PortName& port) {
     if (rv == ports::OK) {
       observer->OnMessageAvailable(port, std::move(message));
     } else {
-      node_->ClosePort(port);
+      observer->OnPeerClosed(port);
     }
   } while (rv == ports::OK);
 }
@@ -200,21 +200,6 @@ void Node::OnChannelError(const ports::NodeName& from_node) {
 
 void Node::AcceptEventOnEventThread(ports::Event event) {
   node_->AcceptEvent(std::move(event));
-
-  // TODO: maybe NodeDelegate should expose port closure explicitly?
-  if (event.type == ports::Event::kObserveClosure ||
-      event.type == ports::Event::kObserveProxyAck) {
-    // TODO: Avoid this lookup by storing a pointer on the ports::Port object?
-    PortObserver* observer = nullptr;
-    {
-      base::AutoLock lock(port_observers_lock_);
-      auto it = port_observers_.find(event.port_name);
-      DCHECK(it != port_observers_.end())
-          << "Received closure on a port with no observer.";
-      observer = it->second;
-    }
-    observer->OnClosed(event.port_name);
-  }
 }
 
 }  // namespace edk
