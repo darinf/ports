@@ -78,11 +78,11 @@ void VerifyTransmission(MojoHandle source,
   EXPECT_EQ(message, ReadString(dest));
 }
 
-void VerifyChannelEcho(MojoHandle mp, const std::string& message) {
+void VerifyEcho(MojoHandle mp, const std::string& message) {
   VerifyTransmission(mp, mp, message);
 }
 
-void SendChannelExit(MojoHandle mp) {
+void SendExitMessage(MojoHandle mp) {
   WriteString(mp, "exit");
 }
 
@@ -91,14 +91,15 @@ class PipesTest : public test::MultiprocessMessagePipeTestBase {
   PipesTest() {}
 };
 
+// Echos the primordial channel until "exit".
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(ChannelEchoClient) {
   ScopedPlatformHandle client_platform_handle =
       std::move(test::MultiprocessTestHelper::client_platform_handle);
   CHECK(client_platform_handle.is_valid());
   ScopedMessagePipeHandle mp =
       CreateMessagePipe(std::move(client_platform_handle));
-
   MojoHandle h = mp.get().value();
+
   for (;;) {
     WaitToRead(h);
     std::string message = ReadString(h);
@@ -110,16 +111,41 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(ChannelEchoClient) {
   return 0;
 }
 
+// Receives a pipe handle from the primordial channel and echos on it until
+// "exit". Used to test simple pipe transfer across processes via channels.
+MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoServiceClient) {
+  ScopedPlatformHandle client_platform_handle =
+      std::move(test::MultiprocessTestHelper::client_platform_handle);
+  CHECK(client_platform_handle.is_valid());
+  ScopedMessagePipeHandle mp =
+      CreateMessagePipe(std::move(client_platform_handle));
+  MojoHandle h = mp.get().value();
+
+  WaitToRead(h);
+  MojoHandle p;
+  ReadStringWithHandles(h, &p, 1);
+  for (;;) {
+    WaitToRead(p);
+    std::string message = ReadString(p);
+    if (message == "exit")
+      break;
+    WriteString(p, message);
+  }
+
+  return 0;
+}
+
 TEST_F(PipesTest, MultiprocessChannelDispatch) {
   helper()->StartChild("ChannelEchoClient");
   ScopedMessagePipeHandle mp =
       CreateMessagePipe(std::move(helper()->server_platform_handle));
-
   MojoHandle h = mp.get().value();
-  VerifyChannelEcho(h, "in an interstellar burst");
-  VerifyChannelEcho(h, "i am back to save the universe");
-  VerifyChannelEcho(h, std::string(10 * 1024 * 1024, 'o'));
-  SendChannelExit(h);
+
+  VerifyEcho(h, "in an interstellar burst");
+  VerifyEcho(h, "i am back to save the universe");
+  VerifyEcho(h, std::string(10 * 1024 * 1024, 'o'));
+
+  SendExitMessage(h);
   EXPECT_EQ(0, helper()->WaitForChildShutdown());
 }
 
@@ -155,6 +181,25 @@ TEST_F(PipesTest, PassMessagePipeLocal) {
   // Verify that the received handle (now in p2) still works.
   VerifyTransmission(p2, p3, "Easy come, easy go; will you let me go?");
   VerifyTransmission(p3, p2, "Bismillah! NO! We will not let you go!");
+}
+
+TEST_F(PipesTest, PassMessagePipeCrossProcess) {
+  helper()->StartChild("EchoServiceClient");
+  ScopedMessagePipeHandle mp =
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
+  MojoHandle h = mp.get().value();
+
+  MojoHandle p0, p1;
+  CreatePipePair(&p0, &p1);
+
+  // Pass one end of the pipe to the other process.
+  WriteStringWithHandles(h, "here take this", &p1, 1);
+
+  VerifyEcho(p0, "and you may ask yourself");
+  VerifyEcho(p0, "where does that highway go?");
+
+  SendExitMessage(p0);
+  EXPECT_EQ(0, helper()->WaitForChildShutdown());
 }
 
 }  // namespace
