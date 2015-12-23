@@ -45,8 +45,8 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
                                     MojoWriteMessageFlags flags) override;
   MojoResult ReadMessageImplNoLock(void* bytes,
                                    uint32_t* num_bytes,
-                                   DispatcherInTransit* dispatchers,
-                                   uint32_t* num_dispatchers,
+                                   MojoHandle* handles,
+                                   uint32_t* num_handles,
                                    MojoReadMessageFlags flags) override;
   HandleSignalsState GetHandleSignalsStateImplNoLock() const override;
   MojoResult AddAwakableImplNoLock(Awakable* awakable,

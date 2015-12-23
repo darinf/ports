@@ -37,14 +37,13 @@ MojoResult Dispatcher::WriteMessage(const void* bytes,
 
 MojoResult Dispatcher::ReadMessage(void* bytes,
                                    uint32_t* num_bytes,
-                                   DispatcherInTransit* dispatchers,
-                                   uint32_t* num_dispatchers,
+                                   MojoHandle* handles,
+                                   uint32_t* num_handles,
                                    MojoReadMessageFlags flags) {
   base::AutoLock locker(lock_);
   if (is_closed_)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  return ReadMessageImplNoLock(bytes, num_bytes, dispatchers, num_dispatchers,
-                               flags);
+  return ReadMessageImplNoLock(bytes, num_bytes, handles, num_handles, flags);
 }
 
 HandleSignalsState Dispatcher::GetHandleSignalsState() const {
@@ -124,8 +123,8 @@ MojoResult Dispatcher::WriteMessageImplNoLock(
 
 MojoResult Dispatcher::ReadMessageImplNoLock(void* bytes,
                                              uint32_t* num_bytes,
-                                             DispatcherInTransit* dispatchers,
-                                             uint32_t* num_dispatchers,
+                                             MojoHandle* handles,
+                                             uint32_t* num_handles,
                                              MojoReadMessageFlags flags) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);

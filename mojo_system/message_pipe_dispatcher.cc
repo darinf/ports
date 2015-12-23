@@ -13,6 +13,7 @@ MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
                                              bool connected)
     : connected_(connected), node_(node), port_name_(port_name) {
   node_->SetPortObserver(port_name_, this);
+  LOG(ERROR) << "NEW PIPE FOR " << port_name;
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
@@ -30,7 +31,9 @@ void MessagePipeDispatcher::SetRemotePeer(const ports::NodeName& peer_node,
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
+  LOG(ERROR) << "DEAD PIPE FOR " << port_name_;
   node_->SetPortObserver(port_name_, nullptr);
+  LOG(ERROR) << "MPD DYING: " << this;
 }
 
 void MessagePipeDispatcher::CloseImplNoLock() {
@@ -78,8 +81,8 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
 MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     void* bytes,
     uint32_t* num_bytes,
-    DispatcherInTransit* dispatchers,
-    uint32_t* num_dispatchers,
+    MojoHandle* handles,
+    uint32_t* num_handles,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
   if (!connected_ || incoming_messages_.empty())
@@ -93,10 +96,10 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
   }
 
   size_t handles_to_read = 0;
-  if (num_dispatchers) {
-    handles_to_read = std::min(static_cast<size_t>(*num_dispatchers),
+  if (num_handles) {
+    handles_to_read = std::min(static_cast<size_t>(*num_handles),
                                message->num_ports);
-    *num_dispatchers = message->num_ports;
+    *num_handles = message->num_ports;
   }
 
   if (bytes_to_read < message->num_bytes ||
@@ -109,13 +112,8 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
 
   memcpy(bytes, message->bytes, message->num_bytes);
 
-  for (size_t i = 0; i < message->num_ports; ++i) {
-    DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(
-        node_, message->ports[i].name, true /* connected */);
-  }
-
-  // TODO: support reading other types of handles
+  // NOTE: This relies on |message| having its ports rewritten as Mojo handles.
+  memcpy(handles, message->ports, message->num_ports * sizeof(MojoHandle));
 
   return MOJO_RESULT_OK;
 }

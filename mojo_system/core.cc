@@ -23,7 +23,7 @@
 namespace mojo {
 namespace edk {
 
-Core::Core() {}
+Core::Core() : node_(this) {}
 
 Core::~Core() {}
 
@@ -48,6 +48,25 @@ void Core::InitChild(ScopedPlatformHandle platform_handle) {
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
   base::AutoLock lock(handles_lock_);
   return handles_.AddDispatcher(dispatcher);
+}
+
+bool Core::AddDispatchersForReceivedPorts(ports::Message* message) {
+  std::vector<Dispatcher::DispatcherInTransit> dispatchers(message->num_ports);
+  for (size_t i = 0; i < message->num_ports; ++i) {
+    Dispatcher::DispatcherInTransit& d = dispatchers[i];
+    d.dispatcher = new MessagePipeDispatcher(
+        &node_, message->ports[i].name, true /* connected */);
+  }
+
+  // TODO: This is fine, but a bit of hack
+  base::AutoLock lock(handles_lock_);
+  if (!handles_.AddDispatchersFromTransit(
+          dispatchers, reinterpret_cast<MojoHandle*>(message->ports))) {
+    for (auto d : dispatchers)
+      d.dispatcher->Close();
+    return false;
+  }
+  return true;
 }
 
 MojoHandle Core::CreateMessagePipeWithRemotePeer(
@@ -211,33 +230,7 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
   auto dispatcher = GetDispatcher(message_pipe_handle);
   if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
     return MOJO_RESULT_INVALID_ARGUMENT;
-
-  if (!num_handles || *num_handles == 0) {
-    // Fast path: not actually reading any handles.
-    return dispatcher->ReadMessage(
-        bytes, num_bytes, nullptr, num_handles, flags);
-  }
-
-  std::vector<Dispatcher::DispatcherInTransit> dispatchers(*num_handles);
-  MojoResult rv = dispatcher->ReadMessage(
-      bytes, num_bytes, dispatchers.data(), num_handles, flags);
-
-  // Shrink to the number of handles actually read.
-  DCHECK_GE(dispatchers.size(), *num_handles);
-  dispatchers.resize(*num_handles);
-
-  if (rv == MOJO_RESULT_OK) {
-    base::AutoLock lock(handles_lock_);
-    if (!handles_.AddDispatchersFromTransit(dispatchers, handles))
-      rv = MOJO_RESULT_RESOURCE_EXHAUSTED;
-  }
-
-  if (rv != MOJO_RESULT_OK) {
-    for (const auto& d : dispatchers)
-      d.dispatcher->Close();
-  }
-
-  return rv;
+  return dispatcher->ReadMessage(bytes, num_bytes, handles, num_handles, flags);
 }
 
 MojoResult Core::CreateDataPipe(

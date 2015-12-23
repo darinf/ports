@@ -22,6 +22,8 @@
 namespace mojo {
 namespace edk {
 
+class Core;
+
 class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
  public:
   class Observer {
@@ -44,7 +46,8 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
     virtual void OnPeerClosed(const ports::PortName& name) = 0;
   };
 
-  Node();
+  // |core| owns and out-lives us.
+  explicit Node(Core* core);
   ~Node() override;
 
   const ports::NodeName& name() const { return name_; }
@@ -112,6 +115,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   void AcceptEventOnEventThread(ports::Event event);
 
+  Core* core_;
   base::Thread event_thread_;
 
   // These are safe to access from any thread without locking as long as the

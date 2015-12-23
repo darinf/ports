@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "crypto/random.h"
+#include "ports/mojo_system/core.h"
 #include "ports/mojo_system/node_controller.h"
 
 namespace mojo {
@@ -27,7 +28,8 @@ struct PortObserverHolder : public ports::UserData {
 
 Node::~Node() {}
 
-Node::Node() : event_thread_("EDK ports node event thread") {
+Node::Node(Core* core)
+    : core_(core), event_thread_("EDK ports node event thread") {
   GenerateRandomName(&name_);
   DLOG(INFO) << "Initializing node " << name_;
 
@@ -173,7 +175,10 @@ void Node::MessagesAvailable(const ports::PortName& port,
         static_cast<PortObserverHolder*>(user_data.get())->observer;
     DCHECK(observer) << "Received a message on a port with no observer.";
 
-    if (rv == ports::OK) {
+    // Create new pipe handles for any ports that have arrived so we can
+    // immediately begin accepting events for them.
+    if (rv == ports::OK &&
+        core_->AddDispatchersForReceivedPorts(message.get())) {
       observer->OnMessageAvailable(port, std::move(message));
     } else {
       observer->OnPeerClosed(port);
