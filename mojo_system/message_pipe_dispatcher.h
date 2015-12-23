@@ -75,10 +75,6 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   AwakableList awakables_;
   std::queue<ports::ScopedMessage> incoming_messages_;
 
-  // This is held while in transit to ensure the dispatcher stays alive until
-  // its port is closed.
-  scoped_refptr<MessagePipeDispatcher> self_while_in_transit_;
-
   DISALLOW_COPY_AND_ASSIGN(MessagePipeDispatcher);
 };
 

@@ -47,8 +47,13 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     uint32_t num_dispatchers,
     MojoWriteMessageFlags flags) {
   lock().AssertAcquired();
+
+  // TODO: WriteMessage is not allowed to return MOJO_RESULT_SHOULD_WAIT.  It
+  // should always be writable. The way the bindings are designed depends on
+  // this.
   if (!connected_)
     return MOJO_RESULT_SHOULD_WAIT;
+
   ports::ScopedMessage message(ports::AllocMessage(num_bytes, num_dispatchers));
   memcpy(message->bytes, bytes, num_bytes);
   for (size_t i = 0; i < num_dispatchers; ++i) {
