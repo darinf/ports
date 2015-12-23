@@ -73,6 +73,7 @@ RemotePeerConnector::RemotePeerConnector(
 }
 
 RemotePeerConnector::~RemotePeerConnector() {
+  channel_->ShutDown();
   node_->RemoveObserver(node_observer_.get());
 }
 

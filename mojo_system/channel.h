@@ -124,11 +124,13 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
       ScopedPlatformHandle platform_handle,
       scoped_refptr<base::TaskRunner> io_task_runner);
 
+  void ShutDown();
+
   // Request that the Channel start processing IO events.
   virtual void Start() = 0;
 
   // Request that the Channel shut itself down.
-  virtual void ShutDown() = 0;
+  virtual void ShutDownImpl() = 0;
 
   // Queues an outgoing message on the Channel. This message will either
   // eventually be written, or will fail to write and trigger Delegate::OnError.

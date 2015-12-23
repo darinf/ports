@@ -50,6 +50,11 @@ Channel::Channel(Delegate* delegate)
 
 Channel::~Channel() {}
 
+void Channel::ShutDown() {
+  delegate_ = nullptr;
+  ShutDownImpl();
+}
+
 char* Channel::GetReadBuffer(size_t *buffer_capacity) {
   const size_t required_capacity = kReadBufferSize;
 
@@ -111,15 +116,17 @@ void Channel::OnReadCompleteNoLock(size_t bytes_read) {
 
     // We've got a complete message! Dispatch it and try another.
     IncomingMessage message(header, std::move(handles));
-    delegate_->OnChannelRead(&message);
+    if (delegate_)
+      delegate_->OnChannelRead(&message);
 
     read_offset_ += header->num_bytes;
   }
 }
 
 void Channel::OnError() {
+  if (delegate_)
+    delegate_->OnChannelError();
   ShutDown();
-  delegate_->OnChannelError();
 }
 
 }  // namespace edk

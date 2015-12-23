@@ -88,7 +88,7 @@ class ChannelPosix : public Channel,
         FROM_HERE, base::Bind(&ChannelPosix::StartOnIOThread, this));
   }
 
-  void ShutDown() override {
+  void ShutDownImpl() override {
     io_task_runner_->PostTask(
         FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
   }
