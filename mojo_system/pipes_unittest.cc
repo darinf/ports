@@ -31,6 +31,10 @@ void WriteStringWithHandles(MojoHandle mp,
                             const std::string& message,
                             MojoHandle *handles,
                             uint32_t num_handles) {
+  CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_WRITABLE, MOJO_DEADLINE_INDEFINITE,
+                    nullptr),
+           MOJO_RESULT_OK);
+
   CHECK_EQ(MojoWriteMessage(mp, message.data(),
                             static_cast<uint32_t>(message.size()),
                             handles, num_handles, MOJO_WRITE_MESSAGE_FLAG_NONE),
@@ -44,6 +48,10 @@ void WriteString(MojoHandle mp, const std::string& message) {
 std::string ReadStringWithHandles(MojoHandle mp,
                                   MojoHandle* handles,
                                   uint32_t expected_num_handles) {
+  CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
+                    nullptr),
+           MOJO_RESULT_OK);
+
   uint32_t message_size = 0;
   uint32_t num_handles = 0;
   CHECK_EQ(MojoReadMessage(mp, nullptr, &message_size, nullptr, &num_handles,
@@ -64,17 +72,10 @@ std::string ReadString(MojoHandle mp) {
   return ReadStringWithHandles(mp, nullptr, 0);
 }
 
-void WaitToRead(MojoHandle mp) {
-  CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
-                   nullptr),
-          MOJO_RESULT_OK);
-}
-
 void VerifyTransmission(MojoHandle source,
                         MojoHandle dest,
                         const std::string& message) {
   WriteString(source, message);
-  WaitToRead(dest);
   EXPECT_EQ(message, ReadString(dest));
 }
 
@@ -101,7 +102,6 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(ChannelEchoClient) {
   MojoHandle h = mp.get().value();
 
   for (;;) {
-    WaitToRead(h);
     std::string message = ReadString(h);
     if (message == "exit")
       break;
@@ -121,11 +121,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoServiceClient) {
       CreateMessagePipe(std::move(client_platform_handle));
   MojoHandle h = mp.get().value();
 
-  WaitToRead(h);
   MojoHandle p;
   ReadStringWithHandles(h, &p, 1);
   for (;;) {
-    WaitToRead(p);
     std::string message = ReadString(p);
     if (message == "exit")
       break;
@@ -175,7 +173,6 @@ TEST_F(PipesTest, PassMessagePipeLocal) {
   // Pass p2 over p0 to p1.
   const std::string message = "ceci n'est pas une pipe";
   WriteStringWithHandles(p0, message, &p2, 1);
-  WaitToRead(p1);
   EXPECT_EQ(message, ReadStringWithHandles(p1, &p2, 1));
 
   // Verify that the received handle (now in p2) still works.

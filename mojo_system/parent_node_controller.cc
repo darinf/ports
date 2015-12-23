@@ -82,10 +82,10 @@ void ParentNodeController::OnHelloParentMessage(
     return;
   }
 
-  DLOG(INFO) << "Parent accepting handshake from child " << child_name;
-
   DCHECK(channel);
   node_->AddPeer(child_name, std::move(channel));
+
+  DLOG(INFO) << "Parent accepted handshake from child " << child_name;
 }
 
 void ParentNodeController::OnEventMessage(const ports::NodeName& from_node,

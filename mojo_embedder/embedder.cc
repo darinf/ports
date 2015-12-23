@@ -8,7 +8,6 @@
 #include "base/memory/ref_counted.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/core.h"
-#include "ports/mojo_system/channel_dispatcher.h"
 
 namespace mojo {
 namespace edk {
@@ -92,11 +91,9 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
-  scoped_refptr<ChannelDispatcher> dispatcher =
-      new ChannelDispatcher(std::move(platform_handle),
-                            internal::g_io_thread_task_runner);
-  ScopedMessagePipeHandle rv(
-      MessagePipeHandle(internal::g_core->AddDispatcher(dispatcher)));
+  ScopedMessagePipeHandle rv(MessagePipeHandle(
+      internal::g_core->CreateMessagePipeWithRemotePeer(
+          std::move(platform_handle))));
   CHECK(rv.is_valid());
   return rv;
 }

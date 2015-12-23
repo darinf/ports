@@ -29,6 +29,16 @@ Node::Node() : event_thread_("EDK ports node event thread") {
   event_thread_.Start();
 }
 
+void Node::AddObserver(Observer* observer) {
+  base::AutoLock lock(observers_lock_);
+  observers_.insert(observer);
+}
+
+void Node::RemoveObserver(Observer* observer) {
+  base::AutoLock lock(observers_lock_);
+  observers_.erase(observer);
+}
+
 void Node::ConnectToPeer(
     const ports::NodeName& peer_name,
     ScopedPlatformHandle platform_handle,
@@ -41,13 +51,31 @@ void Node::ConnectToPeer(
   controller_->AcceptPeer(peer_name, std::move(channel));
 }
 
+bool Node::HasPeer(const ports::NodeName& node) {
+  base::AutoLock lock(peers_lock_);
+  return peers_.find(node) != peers_.end();
+}
+
 void Node::AddPeer(const ports::NodeName& name,
                    scoped_ptr<NodeChannel> channel) {
   DCHECK(name != ports::kInvalidNodeName);
-  base::AutoLock lock(peers_lock_);
-  channel->SetRemoteNodeName(name);
-  auto result = peers_.insert(std::make_pair(name, std::move(channel)));
-  DLOG_IF(ERROR, !result.second) << "Ignoring duplicate peer name " << name;
+  {
+    base::AutoLock lock(peers_lock_);
+    channel->SetRemoteNodeName(name);
+    auto result = peers_.insert(std::make_pair(name, std::move(channel)));
+    DLOG_IF(ERROR, !result.second) << "Ignoring duplicate peer name " << name;
+  }
+
+  std::set<Observer*> observers;
+  {
+    // Copy the set of observers under lock so that they may be modified during
+    // observation. Adding peers doesn't happen very often...
+    base::AutoLock lock(observers_lock_);
+    observers = observers_;
+  }
+
+  for (auto observer : observers)
+    observer->OnPeerAdded(name);
 }
 
 void Node::DropPeer(const ports::NodeName& name) {
@@ -65,6 +93,16 @@ void Node::DropPeer(const ports::NodeName& name) {
 
   DCHECK(controller_);
   controller_->OnPeerLost(peer);
+}
+
+void Node::CreateUninitializedPort(ports::PortName* port_name) {
+  node_->CreatePort(port_name);
+}
+
+int Node::InitializePort(const ports::PortName& port_name,
+                         const ports::NodeName& peer_node_name,
+                         const ports::PortName& peer_port_name) {
+  return node_->InitializePort(port_name, peer_node_name, peer_port_name);
 }
 
 void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
@@ -185,6 +223,16 @@ void Node::OnMessageReceived(const ports::NodeName& from_node,
       memcpy(&event.observe_proxy, &data.observe_proxy,
           sizeof(event.observe_proxy));
       controller_->OnEventMessage(from_node, std::move(event));
+      break;
+    }
+
+    case NodeChannel::MessageType::CREATE_PORT: {
+      // TODO
+      break;
+    }
+
+    case NodeChannel::MessageType::CREATE_PORT_ACK: {
+      // TODO
       break;
     }
 

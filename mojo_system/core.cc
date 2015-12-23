@@ -18,6 +18,7 @@
 #include "ports/mojo_system/child_node_controller.h"
 #include "ports/mojo_system/message_pipe_dispatcher.h"
 #include "ports/mojo_system/parent_node_controller.h"
+#include "ports/mojo_system/remote_peer_connector.h"
 
 namespace mojo {
 namespace edk {
@@ -47,6 +48,25 @@ void Core::InitChild(ScopedPlatformHandle platform_handle) {
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
   base::AutoLock lock(handles_lock_);
   return handles_.AddDispatcher(dispatcher);
+}
+
+MojoHandle Core::CreateMessagePipeWithRemotePeer(
+    ScopedPlatformHandle platform_handle) {
+  ports::PortName port_name;
+  node_.CreateUninitializedPort(&port_name);
+  scoped_refptr<MessagePipeDispatcher> mpd =
+      new MessagePipeDispatcher(&node_, port_name, false /* connected */);
+  MojoHandle handle = AddDispatcher(mpd);
+  DCHECK_NE(handle, MOJO_HANDLE_INVALID);
+
+  // Owns itself and should clean itself up once the connection is established.
+  //
+  // TODO: The way this is currently implemented, it can leak forever if the two
+  // channel endpoints fail to complete their initial node handshake. Fix that.
+  new RemotePeerConnector(
+      &node_, std::move(platform_handle), io_task_runner_, mpd);
+
+  return handle;
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,
@@ -143,9 +163,9 @@ MojoResult Core::CreateMessagePipe(
   ports::PortName port0, port1;
   node_.CreatePortPair(&port0, &port1);
   *message_pipe_handle0 = AddDispatcher(
-      new MessagePipeDispatcher(&node_, port0));
+      new MessagePipeDispatcher(&node_, port0, true /* connected */));
   *message_pipe_handle1 = AddDispatcher(
-      new MessagePipeDispatcher(&node_, port1));
+      new MessagePipeDispatcher(&node_, port1, true /* connected */));
   return MOJO_RESULT_OK;
 }
 
@@ -156,11 +176,8 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
                               uint32_t num_handles,
                               MojoWriteMessageFlags flags) {
   auto dispatcher = GetDispatcher(message_pipe_handle);
-  if (!dispatcher ||
-      (dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE &&
-       dispatcher->GetType() != Dispatcher::Type::CHANNEL)) {
+  if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  }
 
   if (num_handles == 0) {
     // Fast path: no handles.
@@ -192,11 +209,8 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
                              uint32_t* num_handles,
                              MojoReadMessageFlags flags) {
   auto dispatcher = GetDispatcher(message_pipe_handle);
-  if (!dispatcher ||
-      (dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE &&
-       dispatcher->GetType() != Dispatcher::Type::CHANNEL)) {
+  if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
     return MOJO_RESULT_INVALID_ARGUMENT;
-  }
 
   if (!num_handles || *num_handles == 0) {
     // Fast path: not actually reading any handles.

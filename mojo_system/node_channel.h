@@ -42,6 +42,13 @@ class NodeChannel : public Channel::Delegate {
 
     // Encodes a ports::Event from one node to another.
     EVENT = 2,
+
+    // Sent from one node to another to create a new entangled port pair
+    // between them.
+    CREATE_PORT = 3,
+
+    // Reply to CREATE_PORT with the receiver's new port name.
+    CREATE_PORT_ACK = 4,
   };
 
   struct MessageHeader {
@@ -80,6 +87,15 @@ class NodeChannel : public Channel::Delegate {
     };
   };
 
+  struct CreatePortMessageData {
+    ports::PortName initiator_port_name;
+  };
+
+  struct CreatePortAckMessageData {
+    ports::PortName initiator_port_name;
+    ports::PortName entangled_port_name;
+  };
+
   class IncomingMessage {
    public:
     // Copies bytes and takes handles from |message|
@@ -97,10 +113,6 @@ class NodeChannel : public Channel::Delegate {
     size_t payload_size() const { return data_.size(); }
 
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
-
-    const HelloChildMessageData& AsHelloChild() const;
-    const HelloParentMessageData& AsHelloParent() const;
-    const EventMessageData& AsEvent() const;
 
    private:
     const MessageHeader* header() const {
@@ -157,6 +169,11 @@ class NodeChannel : public Channel::Delegate {
       const ports::NodeName& token_name,
       const ports::NodeName& child_name);
   static OutgoingMessagePtr NewEventMessage(ports::Event event);
+  static OutgoingMessagePtr NewCreatePortMessage(
+      const ports::PortName& initiator_port_name);
+  static OutgoingMessagePtr NewCreatePortAckMessage(
+      const ports::PortName& initiator_port_name,
+      const ports::PortName& entangled_port_name);
 
   // Start receiving messages.
   void Start();

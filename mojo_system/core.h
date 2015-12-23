@@ -35,6 +35,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   explicit Core();
   virtual ~Core();
 
+  Node* node() { return &node_; }
+
   // Called exactly once, shortly after construction, and before any other
   // methods are called on this object.
   void SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner);
@@ -44,6 +46,13 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
 
   // Called in a child process exactly once during early initialization.
   void InitChild(ScopedPlatformHandle platform_handle);
+
+  // Creates a new message pipe connected to a remote endpoint via
+  // |platform_handle|. Note that both endpoints must exist in a process with
+  // Core already initialized, and both endpoints must themselves be initialized
+  // using this call.
+  MojoHandle CreateMessagePipeWithRemotePeer(
+      ScopedPlatformHandle platform_handle);
 
   MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 

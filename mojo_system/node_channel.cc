@@ -101,6 +101,28 @@ NodeChannel::OutgoingMessagePtr NodeChannel::NewEventMessage(
   return message;
 }
 
+NodeChannel::OutgoingMessagePtr NodeChannel::NewCreatePortMessage(
+    const ports::PortName& initiator_port_name) {
+  OutgoingMessagePtr message(
+      new OutgoingMessage(MessageType::CREATE_PORT,
+                          sizeof(CreatePortMessageData), nullptr));
+  CreatePortMessageData* data = message->payload<CreatePortMessageData>();
+  data->initiator_port_name = initiator_port_name;
+  return message;
+}
+
+NodeChannel::OutgoingMessagePtr NodeChannel::NewCreatePortAckMessage(
+    const ports::PortName& initiator_port_name,
+    const ports::PortName& entangled_port_name) {
+  OutgoingMessagePtr message(
+      new OutgoingMessage(MessageType::CREATE_PORT_ACK,
+                          sizeof(CreatePortAckMessageData), nullptr));
+  CreatePortAckMessageData* data = message->payload<CreatePortAckMessageData>();
+  data->initiator_port_name = initiator_port_name;
+  data->entangled_port_name = entangled_port_name;
+  return message;
+}
+
 NodeChannel::NodeChannel(Delegate* delegate,
                          ScopedPlatformHandle platform_handle,
                          scoped_refptr<base::TaskRunner> io_task_runner)
@@ -151,6 +173,10 @@ std::ostream& operator<<(std::ostream& stream,
     case NodeChannel::MessageType::EVENT:
       stream << "EVENT";
       break;
+    case NodeChannel::MessageType::CREATE_PORT:
+      stream << "CREATE_PORT";
+    case NodeChannel::MessageType::CREATE_PORT_ACK:
+      stream << "CREATE_PORT_ACK";
     default:
       stream << "UNKNOWN(" << static_cast<int>(message_type) << ")";
       break;

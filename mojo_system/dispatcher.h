@@ -51,10 +51,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
 
     // "Private" types (not exposed via the public interface):
     PLATFORM_HANDLE = -1,
-
-    // A special kind of message pipe which operates directly on a concrete
-    // platform channel. It can transfer anything but message pipe handles.
-    CHANNEL = -2,
   };
   virtual Type GetType() const = 0;
 
