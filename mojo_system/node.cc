@@ -166,7 +166,7 @@ void Node::MessagesAvailable(const ports::PortName& port) {
       base::AutoLock lock(port_observers_lock_);
       auto it = port_observers_.find(port);
       DCHECK(it != port_observers_.end())
-          << "Received a message on a port with no observer.";
+          << "Received a message on a port with no observer: " << port;
       observer = it->second;
     }
 
@@ -259,11 +259,14 @@ void Node::AcceptEventOnEventThread(ports::Event event) {
     {
       base::AutoLock lock(port_observers_lock_);
       auto it = port_observers_.find(event.port_name);
-      DCHECK(it != port_observers_.end())
-          << "Received closure on a port with no observer.";
-      observer = it->second;
+      if (it != port_observers_.end())
+        observer = it->second;
     }
-    observer->OnClosed(event.port_name);
+
+    // It's possible that this port was forwarded somewhere else immediately
+    // and never had a local obsderver.
+    if (observer)
+      observer->OnClosed(event.port_name);
   }
 }
 

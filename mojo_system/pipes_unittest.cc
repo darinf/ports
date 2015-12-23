@@ -21,7 +21,7 @@ namespace mojo {
 namespace edk {
 namespace {
 
-void CreatePipePair(MojoHandle *p0, MojoHandle* p1) {
+void CreateMessagePipe(MojoHandle *p0, MojoHandle* p1) {
   MojoCreateMessagePipe(nullptr, p0, p1);
   CHECK_NE(*p0, MOJO_HANDLE_INVALID);
   CHECK_NE(*p1, MOJO_HANDLE_INVALID);
@@ -76,7 +76,9 @@ void VerifyTransmission(MojoHandle source,
                         MojoHandle dest,
                         const std::string& message) {
   WriteString(source, message);
-  EXPECT_EQ(message, ReadString(dest));
+
+  // We don't use EXPECT_EQ; failures on really long messages make life hard.
+  EXPECT_TRUE(message == ReadString(dest));
 }
 
 void VerifyEcho(MojoHandle mp, const std::string& message) {
@@ -133,7 +135,49 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoServiceClient) {
   return 0;
 }
 
-TEST_F(PipesTest, MultiprocessChannelDispatch) {
+// Receives a pipe handle from the primordial channel and reads new handles
+// from it. Each read handle establishes a new echo channel.
+MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoServiceFactoryClient) {
+  ScopedPlatformHandle client_platform_handle =
+      std::move(test::MultiprocessTestHelper::client_platform_handle);
+  CHECK(client_platform_handle.is_valid());
+  ScopedMessagePipeHandle mp =
+      CreateMessagePipe(std::move(client_platform_handle));
+  MojoHandle h = mp.get().value();
+
+  MojoHandle p;
+  ReadStringWithHandles(h, &p, 1);
+
+  std::vector<MojoHandle> handles(2);
+  handles[0] = h;
+  handles[1] = p;
+  std::vector<MojoHandleSignals> signals(2, MOJO_HANDLE_SIGNAL_READABLE);
+  for (;;) {
+    uint32_t index;
+    CHECK_EQ(MojoWaitMany(handles.data(), signals.data(), handles.size(),
+                          MOJO_DEADLINE_INDEFINITE, &index, nullptr),
+             MOJO_RESULT_OK);
+    DCHECK_LE(index, handles.size());
+    if (index == 0) {
+      // If data is available on the first pipe, it should be an exit command.
+      EXPECT_EQ(std::string("exit"), ReadString(h));
+      break;
+    } else if (index == 1) {
+      // If the second pipe, it should be a new handle requesting echo service.
+      MojoHandle echo_request;
+      ReadStringWithHandles(p, &echo_request, 1);
+      handles.push_back(echo_request);
+      signals.push_back(MOJO_HANDLE_SIGNAL_READABLE);
+    } else {
+      // Otherwise it was one of our established echo pipes. Echo!
+      WriteString(handles[index], ReadString(handles[index]));
+    }
+  }
+
+  return 0;
+}
+
+TEST_F(PipesTest, MultiprocessChannelPipe) {
   helper()->StartChild("ChannelEchoClient");
   ScopedMessagePipeHandle mp =
       CreateMessagePipe(std::move(helper()->server_platform_handle));
@@ -149,7 +193,7 @@ TEST_F(PipesTest, MultiprocessChannelDispatch) {
 
 TEST_F(PipesTest, CreateMessagePipe) {
   MojoHandle p0, p1;
-  CreatePipePair(&p0, &p1);
+  CreateMessagePipe(&p0, &p1);
 
   VerifyTransmission(p0, p1, "hey man");
   VerifyTransmission(p1, p0, "slow down");
@@ -159,13 +203,13 @@ TEST_F(PipesTest, CreateMessagePipe) {
 
 TEST_F(PipesTest, PassMessagePipeLocal) {
   MojoHandle p0, p1;
-  CreatePipePair(&p0, &p1);
+  CreateMessagePipe(&p0, &p1);
 
   VerifyTransmission(p0, p1, "testing testing");
   VerifyTransmission(p1, p0, "one two three");
 
   MojoHandle p2, p3;
-  CreatePipePair(&p2, &p3);
+  CreateMessagePipe(&p2, &p3);
 
   VerifyTransmission(p2, p3, "testing testing");
   VerifyTransmission(p3, p2, "one two three");
@@ -187,15 +231,59 @@ TEST_F(PipesTest, PassMessagePipeCrossProcess) {
   MojoHandle h = mp.get().value();
 
   MojoHandle p0, p1;
-  CreatePipePair(&p0, &p1);
+  CreateMessagePipe(&p0, &p1);
 
   // Pass one end of the pipe to the other process.
   WriteStringWithHandles(h, "here take this", &p1, 1);
 
   VerifyEcho(p0, "and you may ask yourself");
   VerifyEcho(p0, "where does that highway go?");
+  VerifyEcho(p0, std::string(20 * 1024 * 1024, 'i'));
 
   SendExitMessage(p0);
+  EXPECT_EQ(0, helper()->WaitForChildShutdown());
+}
+
+TEST_F(PipesTest, PassMoarMessagePipesCrossProcess) {
+  helper()->StartChild("EchoServiceFactoryClient");
+  ScopedMessagePipeHandle mp =
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
+  MojoHandle h = mp.get().value();
+
+  MojoHandle echo_factory_proxy, echo_factory_request;
+  CreateMessagePipe(&echo_factory_proxy, &echo_factory_request);
+
+  WriteStringWithHandles(h, "gief factory naow plz", &echo_factory_request, 1);
+
+  MojoHandle echo_proxy_a, echo_request_a;
+  CreateMessagePipe(&echo_proxy_a, &echo_request_a);
+
+  MojoHandle echo_proxy_b, echo_request_b;
+  CreateMessagePipe(&echo_proxy_b, &echo_request_b);
+
+  WriteStringWithHandles(echo_factory_proxy, "give me an echo service plz!",
+                         &echo_request_a, 1);
+  WriteStringWithHandles(echo_factory_proxy, "give me one too!",
+                         &echo_request_b, 1);
+
+  VerifyEcho(echo_proxy_a, "i came here for an argument");
+  VerifyEcho(echo_proxy_a, "shut your festering gob");
+  VerifyEcho(echo_proxy_a, "oh sorry, this is abuse. argument's down the hall");
+
+  VerifyEcho(echo_proxy_b, "wubalubadubdub");
+  VerifyEcho(echo_proxy_b, "wubalubadubdub");
+
+  MojoHandle echo_proxy_c, echo_request_c;
+  CreateMessagePipe(&echo_proxy_c, &echo_request_c);
+
+  WriteStringWithHandles(echo_factory_proxy, "hook me up also thanks",
+                         &echo_request_c, 1);
+
+  VerifyEcho(echo_proxy_a, "the frobinators taste like frobinators");
+  VerifyEcho(echo_proxy_b, "beep bop boop");
+  VerifyEcho(echo_proxy_c, "zzzzzzzzzzzzzzzzzzzzzzzzzz");
+
+  SendExitMessage(h);
   EXPECT_EQ(0, helper()->WaitForChildShutdown());
 }
 
