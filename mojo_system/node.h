@@ -5,7 +5,6 @@
 #ifndef PORTS_MOJO_SYSTEM_NODE_H_
 #define PORTS_MOJO_SYSTEM_NODE_H_
 
-#include <set>
 #include <unordered_map>
 
 #include "base/macros.h"
@@ -26,14 +25,6 @@ class Core;
 
 class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
  public:
-  class Observer {
-   public:
-    virtual ~Observer() {}
-
-    // Notifies the observer that a new peer connection has been established.
-    virtual void OnPeerAdded(const ports::NodeName& name) = 0;
-  };
-
   class PortObserver {
    public:
     virtual ~PortObserver() {}
@@ -58,11 +49,6 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   NodeController* controller() const { return controller_.get(); }
 
-  // Adds or removes an observer on this Node. The observer must outlive the
-  // Node or remove itself before dying.
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
-
   // Connects this node to a via an OS pipe under |platform_handle|.
   // If |peer_name| is unknown, it should be set to |ports::kInvalidNodeName|.
   void ConnectToPeer(const ports::NodeName& peer_name,
@@ -79,13 +65,17 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Drops the connection to peer named |name| if one exists.
   void DropPeer(const ports::NodeName& name);
 
+  // Sends a NodeChannel message to a peer node.
+  void SendPeerMessage(const ports::NodeName& name,
+                       NodeChannel::OutgoingMessagePtr message);
+
   // Creates a single uninitialized port which is not ready for use.
   void CreateUninitializedPort(ports::PortName* port_name);
 
-  // Initializes a previously uninitialized port with peer info.
-  int InitializePort(const ports::PortName& port_name,
-                     const ports::NodeName& peer_node_name,
-                     const ports::PortName& peer_port_name);
+  // Initializes a port with peer information.
+  void InitializePort(const ports::PortName& port_name,
+                      const ports::NodeName& peer_node_name,
+                      const ports::PortName& peer_port_name);
 
   // Creates a new pair of local ports on this node, returning their names.
   void CreatePortPair(ports::PortName* port0, ports::PortName* port1);
@@ -122,9 +112,6 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Node is alive.
   ports::NodeName name_;
   scoped_ptr<ports::Node> node_;
-
-  base::Lock observers_lock_;
-  std::set<Observer*> observers_;
 
   scoped_ptr<NodeController> controller_;
 

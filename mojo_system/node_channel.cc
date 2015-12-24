@@ -101,25 +101,29 @@ NodeChannel::OutgoingMessagePtr NodeChannel::NewEventMessage(
   return message;
 }
 
-NodeChannel::OutgoingMessagePtr NodeChannel::NewCreatePortMessage(
-    const ports::PortName& initiator_port_name) {
+NodeChannel::OutgoingMessagePtr NodeChannel::NewConnectPortMessage(
+    const ports::PortName& child_port_name,
+    const std::string& token) {
   OutgoingMessagePtr message(
-      new OutgoingMessage(MessageType::CREATE_PORT,
-                          sizeof(CreatePortMessageData), nullptr));
-  CreatePortMessageData* data = message->payload<CreatePortMessageData>();
-  data->initiator_port_name = initiator_port_name;
+      new OutgoingMessage(MessageType::CONNECT_PORT,
+                          sizeof(ConnectPortMessageData) + token.size(),
+                          nullptr));
+  ConnectPortMessageData* data = message->payload<ConnectPortMessageData>();
+  data->child_port_name = child_port_name;
+  memcpy(&data[1], token.data(), token.size());
   return message;
 }
 
-NodeChannel::OutgoingMessagePtr NodeChannel::NewCreatePortAckMessage(
-    const ports::PortName& initiator_port_name,
-    const ports::PortName& entangled_port_name) {
+NodeChannel::OutgoingMessagePtr NodeChannel::NewConnectPortAckMessage(
+    const ports::PortName& child_port_name,
+    const ports::PortName& parent_port_name) {
   OutgoingMessagePtr message(
-      new OutgoingMessage(MessageType::CREATE_PORT_ACK,
-                          sizeof(CreatePortAckMessageData), nullptr));
-  CreatePortAckMessageData* data = message->payload<CreatePortAckMessageData>();
-  data->initiator_port_name = initiator_port_name;
-  data->entangled_port_name = entangled_port_name;
+      new OutgoingMessage(MessageType::CONNECT_PORT_ACK,
+                          sizeof(ConnectPortAckMessageData), nullptr));
+  ConnectPortAckMessageData* data =
+      message->payload<ConnectPortAckMessageData>();
+  data->child_port_name = child_port_name;
+  data->parent_port_name = parent_port_name;
   return message;
 }
 
@@ -173,10 +177,12 @@ std::ostream& operator<<(std::ostream& stream,
     case NodeChannel::MessageType::EVENT:
       stream << "EVENT";
       break;
-    case NodeChannel::MessageType::CREATE_PORT:
-      stream << "CREATE_PORT";
-    case NodeChannel::MessageType::CREATE_PORT_ACK:
-      stream << "CREATE_PORT_ACK";
+    case NodeChannel::MessageType::CONNECT_PORT:
+      stream << "CONNECT_PORT";
+      break;
+    case NodeChannel::MessageType::CONNECT_PORT_ACK:
+      stream << "CONNECT_PORT_ACK";
+      break;
     default:
       stream << "UNKNOWN(" << static_cast<int>(message_type) << ")";
       break;

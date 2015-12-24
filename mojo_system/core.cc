@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/time/time.h"
@@ -18,10 +19,22 @@
 #include "ports/mojo_system/child_node_controller.h"
 #include "ports/mojo_system/message_pipe_dispatcher.h"
 #include "ports/mojo_system/parent_node_controller.h"
-#include "ports/mojo_system/remote_peer_connector.h"
 
 namespace mojo {
 namespace edk {
+
+namespace {
+
+void OnRemotePeerConnected(
+    Core* core,
+    const ports::PortName& local_port_name,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+  DLOG(INFO) << "Remote peer connected for " << local_port_name;
+  callback.Run(ScopedMessagePipeHandle(MessagePipeHandle(core->AddDispatcher(
+      new MessagePipeDispatcher(core->node(), local_port_name)))));
+}
+
+}  // namespace
 
 Core::Core() : node_(this) {}
 
@@ -68,23 +81,28 @@ bool Core::AddDispatchersForReceivedPorts(ports::Message* message) {
   return true;
 }
 
-MojoHandle Core::CreateMessagePipeWithRemotePeer(
-    ScopedPlatformHandle platform_handle) {
+void Core::CreateParentMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+  DCHECK(node_.controller());
   ports::PortName port_name;
   node_.CreateUninitializedPort(&port_name);
-  scoped_refptr<MessagePipeDispatcher> mpd =
-      new MessagePipeDispatcher(&node_, port_name);
-  MojoHandle handle = AddDispatcher(mpd);
-  DCHECK_NE(handle, MOJO_HANDLE_INVALID);
+  node_.controller()->ReservePortForToken(
+      port_name, token,
+      base::Bind(&OnRemotePeerConnected,
+                 base::Unretained(this), port_name, callback));
+}
 
-  // Owns itself and should clean itself up once the connection is established.
-  //
-  // TODO: The way this is currently implemented, it can leak forever if the two
-  // channel endpoints fail to complete their initial node handshake. Fix that.
-  new RemotePeerConnector(
-      &node_, std::move(platform_handle), io_task_runner_, mpd);
-
-  return handle;
+void Core::CreateChildMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+  DCHECK(node_.controller());
+  ports::PortName port_name;
+  node_.CreateUninitializedPort(&port_name);
+  node_.controller()->ConnectPortByToken(
+      port_name, token,
+      base::Bind(&OnRemotePeerConnected,
+                 base::Unretained(this), port_name, callback));
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,

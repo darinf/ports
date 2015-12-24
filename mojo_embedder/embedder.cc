@@ -91,11 +91,24 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
-  ScopedMessagePipeHandle rv(MessagePipeHandle(
-      internal::g_core->CreateMessagePipeWithRemotePeer(
-          std::move(platform_handle))));
-  CHECK(rv.is_valid());
-  return rv;
+  NOTIMPLEMENTED();
+  return ScopedMessagePipeHandle();
+}
+
+void CreateParentMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+  DCHECK(internal::g_core);
+  internal::g_core->CreateParentMessagePipe(token, callback);
+}
+
+// Asynchronously creates a message pipe from an arbitrary token string. Safe
+// to call from any thread, but should only be called in a child process.
+void CreateChildMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+  DCHECK(internal::g_core);
+  internal::g_core->CreateChildMessagePipe(token, callback);
 }
 
 }  // namespace edk

@@ -43,12 +43,12 @@ class NodeChannel : public Channel::Delegate {
     // Encodes a ports::Event from one node to another.
     EVENT = 2,
 
-    // Sent from one node to another to create a new entangled port pair
-    // between them.
-    CREATE_PORT = 3,
+    // Sent from a child to a parent when it wishes to connect to a reserved
+    // port by token name.
+    CONNECT_PORT = 3,
 
-    // Reply to CREATE_PORT with the receiver's new port name.
-    CREATE_PORT_ACK = 4,
+    // Reply to CONNECT_PORT with the name of the parent's newly entangled port.
+    CONNECT_PORT_ACK = 4,
   };
 
   struct MessageHeader {
@@ -68,6 +68,7 @@ class NodeChannel : public Channel::Delegate {
     ports::NodeName child_name;
   };
 
+  // This data is followed by a serialized ports::Message in the payload.
   struct EventMessageData {
     uint32_t type;
     ports::PortName port_name;
@@ -87,13 +88,16 @@ class NodeChannel : public Channel::Delegate {
     };
   };
 
-  struct CreatePortMessageData {
-    ports::PortName initiator_port_name;
+  // This data is followed by arbitrary string contents in the payload, which
+  // are used as the token.
+  struct ConnectPortMessageData {
+    ports::PortName child_port_name;
   };
 
-  struct CreatePortAckMessageData {
-    ports::PortName initiator_port_name;
-    ports::PortName entangled_port_name;
+  // If the parent rejects the request, |parent_port_name| will be invalid.
+  struct ConnectPortAckMessageData {
+    ports::PortName child_port_name;
+    ports::PortName parent_port_name;
   };
 
   class IncomingMessage {
@@ -171,11 +175,12 @@ class NodeChannel : public Channel::Delegate {
       const ports::NodeName& token_name,
       const ports::NodeName& child_name);
   static OutgoingMessagePtr NewEventMessage(ports::Event event);
-  static OutgoingMessagePtr NewCreatePortMessage(
-      const ports::PortName& initiator_port_name);
-  static OutgoingMessagePtr NewCreatePortAckMessage(
-      const ports::PortName& initiator_port_name,
-      const ports::PortName& entangled_port_name);
+  static OutgoingMessagePtr NewConnectPortMessage(
+      const ports::PortName& child_port_name,
+      const std::string& token);
+  static OutgoingMessagePtr NewConnectPortAckMessage(
+      const ports::PortName& child_port_name,
+      const ports::PortName& parent_port_name);
 
   // Start receiving messages.
   void Start();

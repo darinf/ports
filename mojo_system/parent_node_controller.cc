@@ -4,6 +4,7 @@
 
 #include "ports/mojo_system/parent_node_controller.h"
 
+#include "base/callback.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "crypto/random.h"
@@ -12,6 +13,10 @@
 
 namespace mojo {
 namespace edk {
+
+ParentNodeController::ReservedPort::ReservedPort() {}
+
+ParentNodeController::ReservedPort::~ReservedPort() {}
 
 ParentNodeController::ParentNodeController(Node* node) : node_(node) {
   DCHECK(node_);
@@ -86,6 +91,68 @@ void ParentNodeController::OnHelloParentMessage(
   node_->AddPeer(child_name, std::move(channel));
 
   DLOG(INFO) << "Parent accepted handshake from child " << child_name;
+}
+
+void ParentNodeController::ReservePortForToken(
+    const ports::PortName& port_name,
+    const std::string& token,
+    const base::Closure& on_connect) {
+  ReservedPort reservation;
+  reservation.local_port = port_name;
+  reservation.callback = on_connect;
+
+  base::AutoLock lock(reserved_ports_lock_);
+  auto result = reserved_ports_.insert(std::make_pair(token, reservation));
+  if (!result.second)
+    DLOG(ERROR) << "Can't reserve port for duplicate token: " << token;
+}
+
+void ParentNodeController::ConnectPortByToken(
+    const ports::PortName& port_name,
+    const std::string& token,
+    const base::Closure& on_connect) {
+  NOTIMPLEMENTED();
+}
+
+void ParentNodeController::OnConnectPortMessage(
+    const ports::NodeName& from_node,
+    const ports::PortName& child_port_name,
+    const std::string& token) {
+  if (!node_->HasPeer(from_node)) {
+    DLOG(ERROR) << "Ignoring CONNECT_PORT message from unknown node "
+        << from_node;
+    return;
+  }
+
+  ports::PortName parent_port_name;
+  base::Closure callback;
+  {
+    base::AutoLock lock(reserved_ports_lock_);
+    auto it = reserved_ports_.find(token);
+    if (it == reserved_ports_.end()) {
+      parent_port_name = ports::kInvalidPortName;
+    } else {
+      parent_port_name = it->second.local_port;
+      callback = it->second.callback;
+      reserved_ports_.erase(it);
+    }
+  }
+
+  if (!callback.is_null()) {
+    node_->InitializePort(parent_port_name, from_node, child_port_name);
+    callback.Run();
+  }
+
+  node_->SendPeerMessage(from_node,
+      NodeChannel::NewConnectPortAckMessage(child_port_name, parent_port_name));
+}
+
+void ParentNodeController::OnConnectPortAckMessage(
+    const ports::NodeName& from_node,
+    const ports::PortName& child_port_name,
+    const ports::PortName& parent_port_name) {
+  DLOG(INFO) << "Ignoring CONNECT_PORT_ACK message in parent.";
+  node_->DropPeer(from_node);
 }
 
 }  // namespace edk

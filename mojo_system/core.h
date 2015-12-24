@@ -19,6 +19,7 @@
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
+#include "mojo/public/cpp/system/message_pipe.h"
 #include "ports/mojo_system/dispatcher.h"
 #include "ports/mojo_system/handle_table.h"
 #include "ports/mojo_system/node.h"
@@ -47,12 +48,13 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // Called in a child process exactly once during early initialization.
   void InitChild(ScopedPlatformHandle platform_handle);
 
-  // Creates a new message pipe connected to a remote endpoint via
-  // |platform_handle|. Note that both endpoints must exist in a process with
-  // Core already initialized, and both endpoints must themselves be initialized
-  // using this call.
-  MojoHandle CreateMessagePipeWithRemotePeer(
-      ScopedPlatformHandle platform_handle);
+  void CreateParentMessagePipe(
+      const std::string& token,
+      const base::Callback<void(ScopedMessagePipeHandle)>& callback);
+
+  void CreateChildMessagePipe(
+      const std::string& token,
+      const base::Callback<void(ScopedMessagePipeHandle)>& callback);
 
   MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 

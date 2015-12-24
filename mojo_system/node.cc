@@ -37,16 +37,6 @@ Node::Node(Core* core)
   event_thread_.Start();
 }
 
-void Node::AddObserver(Observer* observer) {
-  base::AutoLock lock(observers_lock_);
-  observers_.insert(observer);
-}
-
-void Node::RemoveObserver(Observer* observer) {
-  base::AutoLock lock(observers_lock_);
-  observers_.erase(observer);
-}
-
 void Node::ConnectToPeer(
     const ports::NodeName& peer_name,
     ScopedPlatformHandle platform_handle,
@@ -73,17 +63,6 @@ void Node::AddPeer(const ports::NodeName& name,
     auto result = peers_.insert(std::make_pair(name, std::move(channel)));
     DLOG_IF(ERROR, !result.second) << "Ignoring duplicate peer name " << name;
   }
-
-  std::set<Observer*> observers;
-  {
-    // Copy the set of observers under lock so that they may be modified during
-    // observation. Adding peers doesn't happen very often...
-    base::AutoLock lock(observers_lock_);
-    observers = observers_;
-  }
-
-  for (auto observer : observers)
-    observer->OnPeerAdded(name);
 }
 
 void Node::DropPeer(const ports::NodeName& name) {
@@ -104,14 +83,27 @@ void Node::DropPeer(const ports::NodeName& name) {
   node_->LostConnectionToNode(name);
 }
 
+void Node::SendPeerMessage(const ports::NodeName& name,
+                           NodeChannel::OutgoingMessagePtr message) {
+  base::AutoLock lock(peers_lock_);
+  auto it = peers_.find(name);
+  if (it == peers_.end()) {
+    DLOG(ERROR) << "Not sending node message to unknown peer " << name;
+    return;
+  }
+
+  it->second->SendMessage(std::move(message));
+}
+
 void Node::CreateUninitializedPort(ports::PortName* port_name) {
   node_->CreatePort(port_name);
 }
 
-int Node::InitializePort(const ports::PortName& port_name,
-                         const ports::NodeName& peer_node_name,
-                         const ports::PortName& peer_port_name) {
-  return node_->InitializePort(port_name, peer_node_name, peer_port_name);
+void Node::InitializePort(const ports::PortName& port_name,
+                          const ports::NodeName& peer_node_name,
+                          const ports::PortName& peer_port_name) {
+  int rv = node_->InitializePort(port_name, peer_node_name, peer_port_name);
+  DCHECK_EQ(rv, ports::OK);
 }
 
 void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
@@ -151,14 +143,7 @@ void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
         base::Bind(&Node::AcceptEventOnEventThread,
                    base::Unretained(this), base::Passed(&event)));
   } else {
-    base::AutoLock lock(peers_lock_);
-    auto it = peers_.find(node);
-    if (it == peers_.end()) {
-      DLOG(ERROR) << "Cannot dispatch event to unknown peer " << node;
-      return;
-    }
-
-    it->second->SendMessage(NodeChannel::NewEventMessage(std::move(event)));
+    SendPeerMessage(node, NodeChannel::NewEventMessage(std::move(event)));
   }
 }
 
@@ -234,13 +219,21 @@ void Node::OnMessageReceived(const ports::NodeName& from_node,
       break;
     }
 
-    case NodeChannel::MessageType::CREATE_PORT: {
-      // TODO
+    case NodeChannel::MessageType::CONNECT_PORT: {
+      const auto& data =
+          message->payload<NodeChannel::ConnectPortMessageData>();
+      // TODO: yikes
+      std::string token(reinterpret_cast<const char*>(&(&data)[1]),
+                        message->payload_size() - sizeof(data));
+      controller_->OnConnectPortMessage(from_node, data.child_port_name, token);
       break;
     }
 
-    case NodeChannel::MessageType::CREATE_PORT_ACK: {
-      // TODO
+    case NodeChannel::MessageType::CONNECT_PORT_ACK: {
+      const auto& data =
+          message->payload<NodeChannel::ConnectPortAckMessageData>();
+      controller_->OnConnectPortAckMessage(
+          from_node, data.child_port_name, data.parent_port_name);
       break;
     }
 

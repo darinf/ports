@@ -49,18 +49,20 @@ executable("ports_edk_unittests") {
   testonly = true
 
   sources = [
+    "mojo_system/multiprocess_test_helper.cc",
+    "mojo_system/multiprocess_test_helper.h",
     "mojo_system/pipes_unittest.cc",
 
-    "//mojo/edk/system/message_pipe_test_utils.cc",
-    "//mojo/edk/system/message_pipe_test_utils.h",
     "//mojo/edk/test/run_all_unittests.cc",
+    "//mojo/edk/test/scoped_ipc_support.cc",
+    "//mojo/edk/test/scoped_ipc_support.h",
   ]
 
   deps = [
     ":ports",
     "//base",
     "//base/test:test_support",
-    "//mojo/edk/test:test_support",
+    "//crypto",
     "//mojo/edk/test:test_support_impl",
     "//mojo/public/cpp/environment:standalone",
     "//testing/gtest",

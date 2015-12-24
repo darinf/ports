@@ -5,6 +5,7 @@
 #ifndef PORTS_MOJO_SYSTEM_NODE_CONTROLLER_H_
 #define PORTS_MOJO_SYSTEM_NODE_CONTROLLER_H_
 
+#include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "ports/include/ports.h"
@@ -30,6 +31,19 @@ class NodeController {
                                     const ports::NodeName& child_name) {}
   virtual void OnEventMessage(const ports::NodeName& from_node,
                               ports::Event event) {}
+  virtual void OnConnectPortMessage(const ports::NodeName& from_node,
+                                    const ports::PortName& child_port_name,
+                                    const std::string& token) {}
+  virtual void OnConnectPortAckMessage(
+      const ports::NodeName& from_node,
+      const ports::PortName& child_port_name,
+      const ports::PortName& parent_port_name) {}
+  virtual void ReservePortForToken(const ports::PortName& port_name,
+                                   const std::string& token,
+                                   const base::Closure& on_connect) {}
+  virtual void ConnectPortByToken(const ports::PortName& port_name,
+                                  const std::string& token,
+                                  const base::Closure& on_connect) {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NodeController);

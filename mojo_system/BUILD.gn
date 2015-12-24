@@ -24,8 +24,6 @@ source_set("mojo_system") {
     "node_controller.h",
     "parent_node_controller.cc",
     "parent_node_controller.h",
-    "remote_peer_connector.cc",
-    "remote_peer_connector.h",
   ]
 
   # Sources we can repurpose from the existing EDK impl
