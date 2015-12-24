@@ -4,12 +4,10 @@
 
 #include <utility>
 
-#include "base/bind.h"
 #include "base/logging.h"
-#include "mojo/edk/embedder/embedder.h"
-#include "mojo/edk/system/handle_signals_state.h"
-#include "mojo/public/c/system/functions.h"
+#include "mojo/public/c/system/types.h"
 #include "mojo/public/cpp/system/message_pipe.h"
+#include "ports/mojo_system/multiprocess_test_base.h"
 #include "ports/mojo_system/multiprocess_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -17,104 +15,7 @@ namespace mojo {
 namespace edk {
 namespace {
 
-void CreatePipe(MojoHandle *p0, MojoHandle* p1) {
-  MojoCreateMessagePipe(nullptr, p0, p1);
-  CHECK_NE(*p0, MOJO_HANDLE_INVALID);
-  CHECK_NE(*p1, MOJO_HANDLE_INVALID);
-}
-
-void WriteStringWithHandles(MojoHandle mp,
-                            const std::string& message,
-                            MojoHandle *handles,
-                            uint32_t num_handles) {
-  CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_WRITABLE, MOJO_DEADLINE_INDEFINITE,
-                    nullptr),
-           MOJO_RESULT_OK);
-
-  CHECK_EQ(MojoWriteMessage(mp, message.data(),
-                            static_cast<uint32_t>(message.size()),
-                            handles, num_handles, MOJO_WRITE_MESSAGE_FLAG_NONE),
-           MOJO_RESULT_OK);
-}
-
-void WriteString(MojoHandle mp, const std::string& message) {
-  WriteStringWithHandles(mp, message, nullptr, 0);
-}
-
-std::string ReadStringWithHandles(MojoHandle mp,
-                                  MojoHandle* handles,
-                                  uint32_t expected_num_handles) {
-  CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
-                    nullptr),
-           MOJO_RESULT_OK);
-
-  uint32_t message_size = 0;
-  uint32_t num_handles = 0;
-  CHECK_EQ(MojoReadMessage(mp, nullptr, &message_size, nullptr, &num_handles,
-                           MOJO_READ_MESSAGE_FLAG_NONE),
-           MOJO_RESULT_RESOURCE_EXHAUSTED);
-  CHECK_EQ(expected_num_handles, num_handles);
-
-  std::string message(message_size, 'x');
-  CHECK_EQ(MojoReadMessage(mp, &message[0], &message_size, handles,
-                           &num_handles, MOJO_READ_MESSAGE_FLAG_NONE),
-           MOJO_RESULT_OK);
-  CHECK_EQ(expected_num_handles, num_handles);
-
-  return message;
-}
-
-std::string ReadString(MojoHandle mp) {
-  return ReadStringWithHandles(mp, nullptr, 0);
-}
-
-void VerifyTransmission(MojoHandle source,
-                        MojoHandle dest,
-                        const std::string& message) {
-  WriteString(source, message);
-
-  // We don't use EXPECT_EQ; failures on really long messages make life hard.
-  EXPECT_TRUE(message == ReadString(dest));
-}
-
-void VerifyEcho(MojoHandle mp, const std::string& message) {
-  VerifyTransmission(mp, mp, message);
-}
-
-void SendExitMessage(MojoHandle mp) {
-  WriteString(mp, "exit");
-}
-
-class PipesTest : public testing::Test {
- public:
-  PipesTest() {}
-
- protected:
-  // These helpers let tests call RunChild with lambdas for readability.
-  template <typename FuncType>
-  static void CallPipeHandler(FuncType f, ScopedMessagePipeHandle pipe) {
-    f(std::move(pipe));
-  }
-
-  template <typename FuncType>
-  static base::Callback<void(ScopedMessagePipeHandle)>
-  BindPipeHandler(FuncType f) {
-    return base::Bind(&CallPipeHandler<FuncType>, f);
-  }
-
-  // Runs a new child process using |client_name| for the child test client.
-  // |callback| is invoked with a message pipe handle connected to
-  // |test::MultiprocessTestHelper::child_message_pipe| in the child process.
-  //
-  // RunChild does not return until the child process exits.
-  template <typename CallbackType>
-  void RunChild(const std::string& client_name, CallbackType callback) {
-    test::MultiprocessTestHelper helper_;
-    helper_.StartChild(client_name, BindPipeHandler(callback));
-    helper_.RunUntilQuit();
-    EXPECT_EQ(0, helper_.WaitForChildShutdown());
-  }
-};
+using PipesTest = test::MultiprocessTestBase;
 
 // Echos the primordial channel until "exit".
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(ChannelEchoClient) {
@@ -231,7 +132,7 @@ TEST_F(PipesTest, MultiprocessChannelPipe) {
     VerifyEcho(h, "i am back to save the universe");
     VerifyEcho(h, std::string(10 * 1024 * 1024, 'o'));
 
-    SendExitMessage(h);
+    WriteString(h, "exit");
   });
 }
 
@@ -249,7 +150,7 @@ TEST_F(PipesTest, PassMessagePipeCrossProcess) {
     VerifyEcho(p0, "where does that highway go?");
     VerifyEcho(p0, std::string(20 * 1024 * 1024, 'i'));
 
-    SendExitMessage(p0);
+    WriteString(p0, "exit");
   });
 }
 
@@ -291,7 +192,7 @@ TEST_F(PipesTest, PassMoarMessagePipesCrossProcess) {
     VerifyEcho(echo_proxy_b, "beep bop boop");
     VerifyEcho(echo_proxy_c, "zzzzzzzzzzzzzzzzzzzzzzzzzz");
 
-    SendExitMessage(h);
+    WriteString(h, "exit");
   });
 }
 

@@ -102,8 +102,6 @@ void CreateParentMessagePipe(
   internal::g_core->CreateParentMessagePipe(token, callback);
 }
 
-// Asynchronously creates a message pipe from an arbitrary token string. Safe
-// to call from any thread, but should only be called in a child process.
 void CreateChildMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {

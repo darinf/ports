@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MOJO_EDK_TEST_MULTIPROCESS_TEST_HELPER_H_
-#define MOJO_EDK_TEST_MULTIPROCESS_TEST_HELPER_H_
+#ifndef PORTS_MOJO_SYSTEM_MULTIPROCESS_TEST_HELPER_H_
+#define PORTS_MOJO_SYSTEM_MULTIPROCESS_TEST_HELPER_H_
 
 #include <string>
 
@@ -99,18 +99,23 @@ class MultiprocessTestHelper {
 // Use this to declare the child process's "main()" function for tests using
 // |MultiprocessTestHelper|. It returns an |int|, which will be the process's
 // exit code (but see the comment about |WaitForChildShutdown()|).
-#define MOJO_MULTIPROCESS_TEST_CHILD_MAIN(test_child_name)      \
-  int test_child_name##TestChildAsyncMain();                    \
-  MULTIPROCESS_TEST_MAIN_WITH_SETUP(                            \
-      test_child_name##TestChildMain,                           \
-      test::MultiprocessTestHelper::ChildSetup) {               \
-        return test::MultiprocessTestHelper::RunChildAsyncMain( \
-            base::Bind(&test_child_name##TestChildAsyncMain));  \
-      }                                                         \
-      int test_child_name##TestChildAsyncMain()
+//
+// The function is defined as a static member of a class derived from
+// mojo::edk::test::MultiprocessTestBase so that code within has access to that
+// class's static helpers.
+#define MOJO_MULTIPROCESS_TEST_CHILD_MAIN(test_child_name)                  \
+  class test_child_name##_MainFixture : public test::MultiprocessTestBase { \
+   public: static int AsyncMain(); };                                       \
+  MULTIPROCESS_TEST_MAIN_WITH_SETUP(                                        \
+      test_child_name##TestChildMain,                                       \
+      test::MultiprocessTestHelper::ChildSetup) {                           \
+        return test::MultiprocessTestHelper::RunChildAsyncMain(             \
+            base::Bind(&test_child_name##_MainFixture::AsyncMain));         \
+      }                                                                     \
+      int test_child_name##_MainFixture::AsyncMain()
 
 }  // namespace test
 }  // namespace edk
 }  // namespace mojo
 
-#endif  // MOJO_EDK_TEST_MULTIPROCESS_TEST_HELPER_H_
+#endif  // PORTS_MOJO_SYSTEM_MULTIPROCESS_TEST_HELPER_H_
