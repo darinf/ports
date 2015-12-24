@@ -144,9 +144,10 @@ MessagePipeDispatcher::GetHandleSignalsStateImplNoLock() const {
   lock().AssertAcquired();
 
   HandleSignalsState rv;
-  if (port_readable_)
+  if (port_readable_) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
-  rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
+    rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
+  }
   if (!peer_closed_) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
