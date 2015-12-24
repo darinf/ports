@@ -207,8 +207,27 @@ void MessagePipeDispatcher::OnMessagesAvailable() {
   LOG(ERROR) << "OnMessagesAvailable";
 
   base::AutoLock dispatcher_lock(lock());
-  port_readable_ = true;
-  awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+
+  // Check to see if the queue is actually readable before signaling.
+  //
+  // We can be notified of messages being available when in fact its peer has
+  // just been closed.
+  //
+  // TODO: something better
+  bool is_port_readable = false;
+  ports::ScopedMessage message;
+  int rv = node_->GetMessageIf(
+      port_name_, [&is_port_readable](const ports::Message&) {
+        is_port_readable = true;
+        return false;
+      }, &message);
+
+  DCHECK(rv == ports::OK || ports::ERROR_PORT_PEER_CLOSED);
+
+  if (!port_readable_ && is_port_readable) {
+    port_readable_ = true;
+    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+  }
 }
 
 }  // namespace edk
