@@ -204,8 +204,6 @@ void MessagePipeDispatcher::EndTransitImplNoLock(bool canceled) {
 }
 
 void MessagePipeDispatcher::OnMessagesAvailable() {
-  LOG(ERROR) << "OnMessagesAvailable";
-
   base::AutoLock dispatcher_lock(lock());
 
   // Check to see if the queue is actually readable before signaling.
