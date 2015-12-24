@@ -4,6 +4,7 @@
 
 #include "ports/mojo_system/message_pipe_dispatcher.h"
 
+#include "ports/mojo_system/core.h"
 
 namespace mojo {
 namespace edk {
@@ -65,36 +66,62 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     uint32_t* num_handles,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
-  if (incoming_messages_.empty())
-    return MOJO_RESULT_SHOULD_WAIT;
-  ports::ScopedMessage message = std::move(incoming_messages_.front());
-  size_t bytes_to_read = 0;
-  if (num_bytes) {
-    bytes_to_read = std::min(static_cast<size_t>(*num_bytes),
-                             message->num_bytes);
-    *num_bytes = message->num_bytes;
+
+  bool no_space = false;
+
+  ports::ScopedMessage message;
+  int rv = node_->GetMessageIf(
+      port_name_,
+      [num_bytes, num_handles, &no_space](const ports::Message& next_message) {
+        size_t bytes_to_read = 0;
+        if (num_bytes) {
+          bytes_to_read = std::min(static_cast<size_t>(*num_bytes),
+                                   next_message.num_bytes);
+          *num_bytes = next_message.num_bytes;
+        }
+
+        size_t handles_to_read = 0;
+        if (num_handles) {
+          handles_to_read = std::min(static_cast<size_t>(*num_handles),
+                                     next_message.num_ports);
+          *num_handles = next_message.num_ports;
+        }
+
+        if (bytes_to_read < next_message.num_bytes ||
+            handles_to_read < next_message.num_ports) {
+          no_space = true;
+          LOG(ERROR) << "returning false from lambda";
+          return false;
+        }
+       
+        LOG(ERROR) << "returning true from lambda";
+        return true;
+      },
+      &message);
+
+  if (rv != ports::OK) {
+    if (rv == ports::ERROR_PORT_UNKNOWN)
+      return MOJO_RESULT_INVALID_ARGUMENT;
+    if (rv == ports::ERROR_PORT_PEER_CLOSED) {
+      peer_closed_ = true;
+      awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+      return MOJO_RESULT_FAILED_PRECONDITION;
+    }
+    return MOJO_RESULT_UNKNOWN;  // TODO: Add a better error code here?
   }
 
-  size_t handles_to_read = 0;
-  if (num_handles) {
-    handles_to_read = std::min(static_cast<size_t>(*num_handles),
-                               message->num_ports);
-    *num_handles = message->num_ports;
-  }
-
-  if (bytes_to_read < message->num_bytes ||
-      handles_to_read < message->num_ports) {
-    incoming_messages_.front() = std::move(message);
+  if (no_space)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
-  }
 
-  incoming_messages_.pop();
+  if (!message)
+    return MOJO_RESULT_SHOULD_WAIT;
+
+  if (!node_->core()->AddDispatchersForReceivedPorts(*message, handles)) {
+    // TODO: Close all of the received ports.
+    return MOJO_RESULT_UNKNOWN;  // TODO: Add a better error code here?
+  }
 
   memcpy(bytes, message->bytes, message->num_bytes);
-
-  // NOTE: This relies on |message| having its ports rewritten as Mojo handles.
-  memcpy(handles, message->ports, message->num_ports * sizeof(MojoHandle));
-
   return MOJO_RESULT_OK;
 }
 
@@ -103,7 +130,7 @@ MessagePipeDispatcher::GetHandleSignalsStateImplNoLock() const {
   lock().AssertAcquired();
 
   HandleSignalsState rv;
-  if (!incoming_messages_.empty()) {
+  if (port_readable) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
   }
@@ -162,20 +189,11 @@ void MessagePipeDispatcher::EndTransitImplNoLock(bool canceled) {
   }
 }
 
-void MessagePipeDispatcher::OnMessageAvailable(const ports::PortName& port,
-                                               ports::ScopedMessage message) {
-  base::AutoLock dispatcher_lock(lock());
-  DCHECK(port == port_name_);
-  bool should_wake = incoming_messages_.empty();
-  incoming_messages_.emplace(std::move(message));
-  if (should_wake)
-    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
-}
+void MessagePipeDispatcher::OnMessagesAvailable() {
+  LOG(ERROR) << "OnMessagesAvailable";
 
-void MessagePipeDispatcher::OnPeerClosed(const ports::PortName& port) {
   base::AutoLock dispatcher_lock(lock());
-  DCHECK(port == port_name_);
-  peer_closed_ = true;
+  port_readable = true;
   awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 

@@ -59,10 +59,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 
   // Adds new message pipe dispatchers for every port contained in |message|.
-  //
-  // This replaces the message's pipe descriptor data with a list of
-  // MojoHandles.
-  bool AddDispatchersForReceivedPorts(ports::Message* message);
+  // |handles| should be an array of size |message.num_ports|.
+  bool AddDispatchersForReceivedPorts(const ports::Message& message,
+                                      MojoHandle* handles);
 
   // Watches on the given handle for the given signals, calling |callback| when
   // a signal is satisfied or when all signals become unsatisfiable. |callback|

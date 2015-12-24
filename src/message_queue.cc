@@ -50,11 +50,17 @@ MessageQueue::MessageQueue(uint32_t next_sequence_num)
 MessageQueue::~MessageQueue() {
 }
 
-void MessageQueue::GetNextMessage(ScopedMessage* message) {
+void MessageQueue::GetNextMessageIf(MessageSelector* selector,
+                                    ScopedMessage* message) {
   if (heap_.empty() || heap_[0]->sequence_num != next_sequence_num_) {
     message->reset();
     may_signal_ = true;
   } else {
+    if (selector && !selector->Select(*heap_[0].get())) {
+      message->reset();
+      return;
+    }
+
     std::pop_heap(heap_.begin(), heap_.end());
     *message = std::move(heap_.back());
     heap_.pop_back();

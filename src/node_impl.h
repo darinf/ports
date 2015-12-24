@@ -53,6 +53,9 @@ class Node::Impl {
                   std::shared_ptr<UserData> user_data);
   int ClosePort(const PortName& port_name);
   int GetMessage(const PortName& port_name, ScopedMessage* message);
+  int GetMessageIf(const PortName& port_name,
+                   MessageSelector* selector,
+                   ScopedMessage* message);
   int SendMessage(const PortName& port_name, ScopedMessage message);
   int AcceptEvent(Event event);
   int LostConnectionToNode(const NodeName& node_name);

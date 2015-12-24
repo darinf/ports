@@ -29,12 +29,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
    public:
     virtual ~PortObserver() {}
 
-    // Notifies the observer that a message is available on a port.
-    virtual void OnMessageAvailable(const ports::PortName& name,
-                                    ports::ScopedMessage message) = 0;
-
-    // Notifies the observer that a port's peer has been closed.
-    virtual void OnPeerClosed(const ports::PortName& name) = 0;
+    virtual void OnMessagesAvailable() = 0;
   };
 
   // |core| owns and out-lives us.
@@ -42,6 +37,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   ~Node() override;
 
   const ports::NodeName& name() const { return name_; }
+  Core* core() const { return core_; }
 
   void set_controller(scoped_ptr<NodeController> controller) {
     controller_ = std::move(controller);
@@ -87,6 +83,22 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Sends a message on a port to its peer.
   int SendMessage(const ports::PortName& port_name,
                   ports::ScopedMessage message);
+
+  // Enable use of lambda functions for selecting messages.
+  template <typename Predicate>
+  int GetMessageIf(const ports::PortName& port_name,
+                   Predicate predicate,
+                   ports::ScopedMessage* message) {
+    class Adaptor : public ports::MessageSelector {
+     public:
+      explicit Adaptor(Predicate predicate) : predicate_(predicate) {}
+      bool Select(const ports::Message& message) override {
+        return predicate_(message);
+      }
+      Predicate predicate_;
+    } adaptor(predicate);
+    return node_->GetMessageIf(port_name, &adaptor, message);
+  }
 
   // Closes a port.
   void ClosePort(const ports::PortName& port_name);

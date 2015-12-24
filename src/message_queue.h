@@ -49,8 +49,8 @@ class MessageQueue {
   uint32_t next_sequence_num() const { return next_sequence_num_; }
   bool may_signal() const { return may_signal_; }
 
-  // Gives ownership of the message.
-  void GetNextMessage(ScopedMessage* message);
+  // Gives ownership of the message. The selector may be null.
+  void GetNextMessageIf(MessageSelector* selector, ScopedMessage* message);
 
   // Takes ownership of the message. Note: Messages are ordered, so while we
   // have added a message to the queue, we may still be waiting on a message

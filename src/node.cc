@@ -66,6 +66,12 @@ int Node::GetMessage(const PortName& port, ScopedMessage* message) {
   return impl_->GetMessage(port, message);
 }
 
+int Node::GetMessageIf(const PortName& port,
+                       MessageSelector* selector,
+                       ScopedMessage* message) {
+  return impl_->GetMessageIf(port, selector, message);
+}
+
 int Node::SendMessage(const PortName& port, ScopedMessage message) {
   return impl_->SendMessage(port, std::move(message));
 }

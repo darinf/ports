@@ -52,17 +52,15 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   void EndTransitImplNoLock(bool canceled) override;
 
   // Node::PortObserver:
-  void OnMessageAvailable(const ports::PortName& port,
-                          ports::ScopedMessage message) override;
-  void OnPeerClosed(const ports::PortName& port) override;
+  void OnMessagesAvailable() override;
 
   Node* node_;
   const ports::PortName port_name_;
 
   bool peer_closed_ = false;
   bool port_transferred_ = false;
+  bool port_readable = false;
   AwakableList awakables_;
-  std::queue<ports::ScopedMessage> incoming_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePipeDispatcher);
 };

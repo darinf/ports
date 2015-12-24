@@ -63,17 +63,16 @@ MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
   return handles_.AddDispatcher(dispatcher);
 }
 
-bool Core::AddDispatchersForReceivedPorts(ports::Message* message) {
-  std::vector<Dispatcher::DispatcherInTransit> dispatchers(message->num_ports);
-  for (size_t i = 0; i < message->num_ports; ++i) {
+bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
+                                          MojoHandle* handles) {
+  std::vector<Dispatcher::DispatcherInTransit> dispatchers(message.num_ports);
+  for (size_t i = 0; i < message.num_ports; ++i) {
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(&node_, message->ports[i].name);
+    d.dispatcher = new MessagePipeDispatcher(&node_, message.ports[i].name);
   }
 
-  // TODO: This is fine, but a bit of hack
   base::AutoLock lock(handles_lock_);
-  if (!handles_.AddDispatchersFromTransit(
-          dispatchers, reinterpret_cast<MojoHandle*>(message->ports))) {
+  if (!handles_.AddDispatchersFromTransit(dispatchers, handles)) {
     for (auto d : dispatchers)
       d.dispatcher->Close();
     return false;

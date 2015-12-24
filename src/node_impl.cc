@@ -141,9 +141,15 @@ int Node::Impl::ClosePort(const PortName& port_name) {
 }
 
 int Node::Impl::GetMessage(const PortName& port_name, ScopedMessage* message) {
+  return GetMessageIf(port_name, nullptr, message);
+}
+
+int Node::Impl::GetMessageIf(const PortName& port_name,
+                             MessageSelector* selector,
+                             ScopedMessage* message) {
   *message = nullptr;
 
-  DLOG(INFO) << "GetMessage for " << port_name << "@" << name_;
+  DLOG(INFO) << "GetMessageIf for " << port_name << "@" << name_;
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -162,7 +168,7 @@ int Node::Impl::GetMessage(const PortName& port_name, ScopedMessage* message) {
     if (!CanAcceptMoreMessages(port.get()))
       return ERROR_PORT_PEER_CLOSED;
 
-    port->message_queue.GetNextMessage(message);
+    port->message_queue.GetNextMessageIf(selector, message);
   }
   return OK;
 }
@@ -644,7 +650,7 @@ int Node::Impl::SendMessage_Locked(Port* port,
 int Node::Impl::ForwardMessages_Locked(Port* port, const PortName &port_name) {
   for (;;) {
     ScopedMessage message;
-    port->message_queue.GetNextMessage(&message);
+    port->message_queue.GetNextMessageIf(nullptr, &message);
     if (!message)
       break;
 

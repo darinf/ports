@@ -149,26 +149,10 @@ void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
 
 void Node::MessagesAvailable(const ports::PortName& port,
                              std::shared_ptr<ports::UserData> user_data) {
-  int rv;
-  do {
-    ports::ScopedMessage message;
-    rv = node_->GetMessage(port, &message);
-    if (rv == ports::OK && !message)
-      return;
-
-    PortObserver* observer =
-        static_cast<PortObserverHolder*>(user_data.get())->observer;
-    DCHECK(observer) << "Received a message on a port with no observer.";
-
-    // Create new pipe handles for any ports that have arrived so we can
-    // immediately begin accepting events for them.
-    if (rv == ports::OK &&
-        core_->AddDispatchersForReceivedPorts(message.get())) {
-      observer->OnMessageAvailable(port, std::move(message));
-    } else {
-      observer->OnPeerClosed(port);
-    }
-  } while (rv == ports::OK);
+  PortObserver* observer =
+      static_cast<PortObserverHolder*>(user_data.get())->observer;
+  DCHECK(observer) << "Received a message on a port with no observer.";
+  observer->OnMessagesAvailable();
 }
 
 void Node::OnMessageReceived(const ports::NodeName& from_node,

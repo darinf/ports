@@ -174,6 +174,12 @@ class UserData {
   virtual ~UserData() {}
 };
 
+class MessageSelector {
+ public:
+  // Returns true to select the given message.
+  virtual bool Select(const Message& message) = 0;
+};
+
 // Implemented by the embedder.
 class NodeDelegate {
  public:
@@ -226,6 +232,14 @@ class Node {
   // indicate that this port's peer has closed, meaning that no further
   // messages will be readable from this port.
   int GetMessage(const PortName& port, ScopedMessage* message);
+
+  // Like GetMessage, but the caller may optionally supply a MessageSelector
+  // that decides whether or not to return the message. If |selector| is null,
+  // then GetMessageIf acts just like GetMessage. The |selector| may not call
+  // any Node methods.
+  int GetMessageIf(const PortName& port,
+                   MessageSelector* selector,
+                   ScopedMessage* message);
 
   // Sends a message from the specified port to its peer.
   int SendMessage(const PortName& port, ScopedMessage message);
