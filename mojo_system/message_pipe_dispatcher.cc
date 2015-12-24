@@ -4,15 +4,35 @@
 
 #include "ports/mojo_system/message_pipe_dispatcher.h"
 
+#include "base/macros.h"
 #include "ports/mojo_system/core.h"
+#include "ports/mojo_system/node.h"
 
 namespace mojo {
 namespace edk {
 
+// A PortObserver which forwards to a MessagePipeDispatcher. This owns a
+// reference to the MPD to ensure it lives as long as the observed port.
+class MessagePipeDispatcher::LocalPortObserver : public Node::PortObserver {
+ public:
+  explicit LocalPortObserver(scoped_refptr<MessagePipeDispatcher> dispatcher)
+      : dispatcher_(dispatcher) {}
+  ~LocalPortObserver() override {}
+
+ private:
+  // Node::PortObserver:
+  void OnMessagesAvailable() override { dispatcher_->OnMessagesAvailable(); }
+
+  scoped_refptr<MessagePipeDispatcher> dispatcher_;
+
+  DISALLOW_COPY_AND_ASSIGN(LocalPortObserver);
+};
+
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
                                              const ports::PortName& port_name)
     : node_(node), port_name_(port_name) {
-  node_->SetPortObserver(port_name_, this);
+  node_->SetPortObserver(
+      port_name_, make_scoped_ptr(new LocalPortObserver(this)));
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
@@ -20,7 +40,6 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
-  node_->SetPortObserver(port_name_, nullptr);
 }
 
 void MessagePipeDispatcher::CloseImplNoLock() {

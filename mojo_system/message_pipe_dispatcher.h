@@ -11,12 +11,13 @@
 #include "mojo/edk/system/awakable_list.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/dispatcher.h"
-#include "ports/mojo_system/node.h"
 
 namespace mojo {
 namespace edk {
 
-class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
+class Node;
+
+class MessagePipeDispatcher : public Dispatcher {
  public:
   // Create a MessagePipeDispatcher for port |port_name| on |node|.
   MessagePipeDispatcher(Node* node, const ports::PortName& port_name);
@@ -26,6 +27,9 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   const ports::PortName& GetPortName() const { return port_name_; }
 
  private:
+  class LocalPortObserver;
+  friend class LocalPortObserver;
+
   ~MessagePipeDispatcher() override;
 
   // Dispatcher:
@@ -51,8 +55,8 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
   bool BeginTransitImplNoLock() override;
   void EndTransitImplNoLock(bool canceled) override;
 
-  // Node::PortObserver:
-  void OnMessagesAvailable() override;
+  // Called by LocalPortObserver when messages are available on the port.
+  void OnMessagesAvailable();
 
   Node* node_;
   const ports::PortName port_name_;
