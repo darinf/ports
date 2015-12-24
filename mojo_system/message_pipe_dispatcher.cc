@@ -31,8 +31,14 @@ class MessagePipeDispatcher::LocalPortObserver : public Node::PortObserver {
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
                                              const ports::PortName& port_name)
     : node_(node), port_name_(port_name) {
+  // OnMessagesAvailable (via LocalPortObserver) may be called before this
+  // constructor returns. Hold a lock here to prevent signal races.
+  base::AutoLock dispatcher_lock(lock());
   node_->SetPortObserver(
       port_name_, make_scoped_ptr(new LocalPortObserver(this)));
+  if (HasMessagesQueuedNoLock()) {
+    port_readable_ = true;
+  }
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
@@ -140,17 +146,7 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
 
   memcpy(bytes, message->bytes, message->num_bytes);
 
-  // Check to see if the queue is completely drained so we can unset the
-  // READABLE signal on the handle.
-  //
-  // TODO: maybe there's a better way to do this?
-  bool still_readable = false;
-  rv = node_->GetMessageIf(
-      port_name_, [&still_readable](const ports::Message&) {
-        still_readable = true;
-        return false;
-      }, &message);
-  if (!still_readable ) {
+  if (!HasMessagesQueuedNoLock()) {
     port_readable_ = false;
     awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
   }
@@ -222,26 +218,28 @@ void MessagePipeDispatcher::EndTransitImplNoLock(bool canceled) {
   }
 }
 
-void MessagePipeDispatcher::OnMessagesAvailable() {
-  base::AutoLock dispatcher_lock(lock());
-
-  // Check to see if the queue is actually readable before signaling.
+bool MessagePipeDispatcher::HasMessagesQueuedNoLock() {
+  // Peek at the queue. If our selector function runs at all, it's not empty.
   //
-  // We can be notified of messages being available when in fact its peer has
-  // just been closed.
-  //
-  // TODO: something better
-  bool is_port_readable = false;
+  // TODO: maybe Node should have an interface for this test?
+  bool empty = true;
   ports::ScopedMessage message;
   int rv = node_->GetMessageIf(
-      port_name_, [&is_port_readable](const ports::Message&) {
-        is_port_readable = true;
+      port_name_,
+      [&empty](const ports::Message&) {
+        empty = false;
         return false;
-      }, &message);
+      },
+      &message);
 
   DCHECK(rv == ports::OK || ports::ERROR_PORT_PEER_CLOSED);
 
-  if (!port_readable_ && is_port_readable) {
+  return !empty;
+}
+
+void MessagePipeDispatcher::OnMessagesAvailable() {
+  base::AutoLock dispatcher_lock(lock());
+  if (!port_readable_ && HasMessagesQueuedNoLock()) {
     port_readable_ = true;
     awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
   }

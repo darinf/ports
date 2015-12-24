@@ -147,10 +147,13 @@ void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
 
 void Node::MessagesAvailable(const ports::PortName& port,
                              std::shared_ptr<ports::UserData> user_data) {
-  PortObserver* observer =
-      static_cast<PortObserverHolder*>(user_data.get())->observer.get();
-  DCHECK(observer) << "Received a message on a port with no observer.";
-  observer->OnMessagesAvailable();
+  PortObserverHolder* user_data_holder =
+      static_cast<PortObserverHolder*>(user_data.get());
+  if (user_data_holder) {
+    PortObserver* observer = user_data_holder->observer.get();
+    DCHECK(observer);
+    observer->OnMessagesAvailable();
+  }
 }
 
 void Node::OnMessageReceived(const ports::NodeName& from_node,
