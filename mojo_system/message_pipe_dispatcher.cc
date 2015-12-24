@@ -90,11 +90,9 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
         if (bytes_to_read < next_message.num_bytes ||
             handles_to_read < next_message.num_ports) {
           no_space = true;
-          LOG(ERROR) << "returning false from lambda";
           return false;
         }
-       
-        LOG(ERROR) << "returning true from lambda";
+
         return true;
       },
       &message);
@@ -122,6 +120,22 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
   }
 
   memcpy(bytes, message->bytes, message->num_bytes);
+
+  // Check to see if the queue is completely drained so we can unset the
+  // READABLE signal on the handle.
+  //
+  // TODO: maybe there's a better way to do this?
+  bool still_readable = false;
+  rv = node_->GetMessageIf(
+      port_name_, [&still_readable](const ports::Message&) {
+        still_readable = true;
+        return false;
+      }, &message);
+  if (!still_readable ) {
+    port_readable_ = false;
+    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+  }
+
   return MOJO_RESULT_OK;
 }
 
@@ -130,10 +144,9 @@ MessagePipeDispatcher::GetHandleSignalsStateImplNoLock() const {
   lock().AssertAcquired();
 
   HandleSignalsState rv;
-  if (port_readable) {
+  if (port_readable_)
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
-    rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
-  }
+  rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
   if (!peer_closed_) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
@@ -193,7 +206,7 @@ void MessagePipeDispatcher::OnMessagesAvailable() {
   LOG(ERROR) << "OnMessagesAvailable";
 
   base::AutoLock dispatcher_lock(lock());
-  port_readable = true;
+  port_readable_ = true;
   awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
 }
 

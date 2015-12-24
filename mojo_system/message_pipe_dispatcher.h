@@ -59,7 +59,7 @@ class MessagePipeDispatcher : public Dispatcher, public Node::PortObserver {
 
   bool peer_closed_ = false;
   bool port_transferred_ = false;
-  bool port_readable = false;
+  bool port_readable_ = false;
   AwakableList awakables_;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePipeDispatcher);
