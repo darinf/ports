@@ -145,7 +145,40 @@ std::string MultiprocessTestBase::ReadStringWithHandles(
   CHECK_EQ(MojoReadMessage(mp, &message[0], &message_size, handles,
                            &num_handles, MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
-  CHECK_EQ(expected_num_handles, num_handles);
+  CHECK_EQ(message_size, message.size());
+  CHECK_EQ(num_handles, expected_num_handles);
+
+  return message;
+}
+
+// static
+std::string MultiprocessTestBase::ReadStringWithOptionalHandle(
+    MojoHandle mp,
+    MojoHandle* handle) {
+  CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
+                    nullptr),
+           MOJO_RESULT_OK);
+
+  uint32_t message_size = 0;
+  uint32_t num_handles = 0;
+  CHECK_EQ(MojoReadMessage(mp, nullptr, &message_size, nullptr, &num_handles,
+                           MOJO_READ_MESSAGE_FLAG_NONE),
+           MOJO_RESULT_RESOURCE_EXHAUSTED);
+  CHECK(num_handles == 0 || num_handles == 1);
+
+  CHECK(handle);
+
+  std::string message(message_size, 'x');
+  CHECK_EQ(MojoReadMessage(mp, &message[0], &message_size, handle,
+                           &num_handles, MOJO_READ_MESSAGE_FLAG_NONE),
+           MOJO_RESULT_OK);
+  CHECK_EQ(message_size, message.size());
+  CHECK(num_handles == 0 || num_handles == 1);
+
+  if (num_handles)
+    CHECK_NE(*handle, MOJO_HANDLE_INVALID);
+  else
+    *handle = MOJO_HANDLE_INVALID;
 
   return message;
 }

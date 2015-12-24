@@ -47,15 +47,13 @@ void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
 void Core::AddChild(ScopedPlatformHandle platform_handle) {
   if (!node_.controller())
     node_.set_controller(make_scoped_ptr(new ParentNodeController(&node_)));
-  node_.ConnectToPeer(
-      ports::kInvalidNodeName, std::move(platform_handle), io_task_runner_);
+  node_.ConnectToPeer(ports::kInvalidNodeName, std::move(platform_handle));
 }
 
 void Core::InitChild(ScopedPlatformHandle platform_handle) {
   CHECK(!node_.controller());
   node_.set_controller(make_scoped_ptr(new ChildNodeController(&node_)));
-  node_.ConnectToPeer(
-      ports::kInvalidNodeName, std::move(platform_handle), io_task_runner_);
+  node_.ConnectToPeer(ports::kInvalidNodeName, std::move(platform_handle));
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {

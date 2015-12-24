@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "base/logging.h"
+#include "base/strings/string_split.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "ports/mojo_system/multiprocess_test_base.h"
@@ -14,7 +17,37 @@ namespace mojo {
 namespace edk {
 namespace {
 
-using PipesTest = test::MultiprocessTestBase;
+class PipesTest : public test::MultiprocessTestBase {
+ protected:
+  // Convenience class for tests which will control command-driven children.
+  // See the CommandDrivenClient definition below.
+  class ClientController {
+   public:
+    explicit ClientController(MojoHandle h) : h_(h) {}
+
+    void Send(const std::string& command) {
+      WriteString(h_, command);
+      EXPECT_EQ("ok", ReadString(h_));
+    }
+
+    void SendHandle(const std::string& name, MojoHandle p) {
+      WriteStringWithHandles(h_, "take:" + name, &p, 1);
+      EXPECT_EQ("ok", ReadString(h_));
+    }
+
+    MojoHandle RetrieveHandle(const std::string& name) {
+      WriteString(h_, "return:" + name);
+      MojoHandle p;
+      EXPECT_EQ("ok", ReadStringWithHandles(h_, &p, 1));
+      return p;
+    }
+
+    void Exit() { WriteString(h_, "exit"); }
+
+   private:
+    MojoHandle h_;
+  };
+};
 
 // Echos the primordial channel until "exit".
 DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, h) {
@@ -70,6 +103,76 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient, h) {
     } else {
       // Otherwise it was one of our established echo pipes. Echo!
       WriteString(handles[index], ReadString(handles[index]));
+    }
+  }
+  return 0;
+}
+
+// Parses commands from the parent pipe and does whatever it's asked to do.
+DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, h) {
+  std::unordered_map<std::string, MojoHandle> named_pipes;
+  for (;;) {
+    MojoHandle p;
+    auto parts = base::SplitString(ReadStringWithOptionalHandle(h, &p), ":",
+                                   base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+    CHECK(!parts.empty());
+    std::string command = parts[0];
+    if (command == "take") {
+      // Take a pipe.
+      CHECK_EQ(parts.size(), 2u);
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      named_pipes[parts[1]] = p;
+      WriteString(h, "ok");
+    } else if (command == "return") {
+      // Return a pipe.
+      CHECK_EQ(parts.size(), 2u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      p = named_pipes[parts[1]];
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      named_pipes.erase(parts[1]);
+      WriteStringWithHandles(h, "ok", &p, 1);
+    } else if (command == "say") {
+      // Say something to a named pipe.
+      CHECK_EQ(parts.size(), 3u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      p = named_pipes[parts[1]];
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      CHECK(!parts[2].empty());
+      WriteString(p, parts[2]);
+      WriteString(h, "ok");
+    } else if (command == "hear") {
+      // Expect to read something from a named pipe.
+      CHECK_EQ(parts.size(), 3u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      p = named_pipes[parts[1]];
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      CHECK(!parts[2].empty());
+      CHECK_EQ(parts[2], ReadString(p));
+      WriteString(h, "ok");
+    } else if (command == "pass") {
+      // Pass one named pipe over another named pipe.
+      CHECK_EQ(parts.size(), 3u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      p = named_pipes[parts[1]];
+      MojoHandle carrier = named_pipes[parts[2]];
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      CHECK_NE(carrier, MOJO_HANDLE_INVALID);
+      named_pipes.erase(parts[1]);
+      WriteStringWithHandles(carrier, "got a pipe for ya", &p, 1);
+      WriteString(h, "ok");
+    } else if (command == "catch") {
+      // Expect to receive one named pipe from another named pipe.
+      CHECK_EQ(parts.size(), 3u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      MojoHandle carrier = named_pipes[parts[2]];
+      CHECK_NE(carrier, MOJO_HANDLE_INVALID);
+      ReadStringWithHandles(carrier, &p, 1);
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      named_pipes[parts[1]] = p;
+      WriteString(h, "ok");
+    } else if (command == "exit") {
+      CHECK_EQ(parts.size(), 1u);
+      break;
     }
   }
   return 0;
@@ -166,12 +269,75 @@ TEST_F(PipesTest, PassMoarMessagePipesCrossProcess) {
 
 TEST_F(PipesTest, ChannelPipesWithMultipleChildren) {
   RUN_WITH_CHILDREN("ChannelEchoClient", "ChannelEchoClient")
-  ON_PIPES(pipes)
-    VerifyEcho(pipes[0], "hello child 0");
-    VerifyEcho(pipes[1], "hello child 1");
+  ON_PIPES(h)
+    VerifyEcho(h[0], "hello child 0");
+    VerifyEcho(h[1], "hello child 1");
 
-    WriteString(pipes[0], "exit");
-    WriteString(pipes[1], "exit");
+    WriteString(h[0], "exit");
+    WriteString(h[1], "exit");
+  END_CHILDREN()
+}
+
+TEST_F(PipesTest, ChildToChildPipes) {
+  RUN_WITH_CHILDREN("CommandDrivenClient", "CommandDrivenClient")
+  ON_PIPES(h)
+    ClientController a(h[0]);
+    ClientController b(h[1]);
+
+    // Create a pipe and pass each end to a different client.
+    CREATE_PIPE(p0, p1);
+    a.SendHandle("x", p0);
+    b.SendHandle("y", p1);
+
+    // Make sure they can talk.
+    a.Send("say:x:hello sir");
+    b.Send("hear:y:hello sir");
+
+    b.Send("say:y:i love multiprocess pipes!");
+    a.Send("hear:x:i love multiprocess pipes!");
+
+    a.Exit();
+    b.Exit();
+  END_CHILDREN()
+}
+
+TEST_F(PipesTest, MoreChildToChildPipes) {
+  RUN_WITH_CHILDREN("CommandDrivenClient", "CommandDrivenClient",
+                    "CommandDrivenClient", "CommandDrivenClient")
+  ON_PIPES(h)
+    ClientController a(h[0]), b(h[1]), c(h[2]), d(h[3]);
+
+    // Connect a to b and c to d
+
+    CREATE_PIPE(p0, p1);
+    a.SendHandle("b_pipe", p0);
+    b.SendHandle("a_pipe", p1);
+
+    CREATE_PIPE(p2, p3);
+    c.SendHandle("d_pipe", p2);
+    d.SendHandle("c_pipe", p3);
+
+    // Connect b to c via a and d
+    CREATE_PIPE(p4, p5);
+    a.SendHandle("d_pipe", p4);
+    d.SendHandle("a_pipe", p5);
+
+    // Have |a| pass its new |d|-pipe to |b|. It will eventually connect to |c|.
+    a.Send("pass:d_pipe:b_pipe");
+    b.Send("catch:c_pipe:a_pipe");
+
+    // Have |d| pass its new |a|-pipe to |c|. It will now be connected to |b|.
+    d.Send("pass:a_pipe:c_pipe");
+    c.Send("catch:b_pipe:d_pipe");
+
+    // Make sure b and c and talk.
+    b.Send("say:c_pipe:it's a beautiful day");
+    c.Send("hear:b_pipe:it's a beautiful day");
+
+    a.Exit();
+    b.Exit();
+    c.Exit();
+    d.Exit();
   END_CHILDREN()
 }
 

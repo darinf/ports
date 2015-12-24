@@ -49,6 +49,12 @@ class NodeChannel : public Channel::Delegate {
 
     // Reply to CONNECT_PORT with the name of the parent's newly entangled port.
     CONNECT_PORT_ACK = 4,
+
+    // Requests an introduction to a node by name.
+    REQUEST_INTRODUCTION = 5,
+
+    // Introduce one node to another.
+    INTRODUCE = 6,
   };
 
   struct MessageHeader {
@@ -98,6 +104,15 @@ class NodeChannel : public Channel::Delegate {
   struct ConnectPortAckMessageData {
     ports::PortName child_port_name;
     ports::PortName parent_port_name;
+  };
+
+  // Used for both REQUEST_INTRODUCTION and INTRODUCE.
+  //
+  // For INTRODUCE the message must also include a platform handle the recipient
+  // can use to communicate with the named node. If said handle is omitted, the
+  // peer cannot be introduced.
+  struct IntroductionMessageData {
+    ports::NodeName name;
   };
 
   class IncomingMessage {
@@ -181,6 +196,11 @@ class NodeChannel : public Channel::Delegate {
   static OutgoingMessagePtr NewConnectPortAckMessage(
       const ports::PortName& child_port_name,
       const ports::PortName& parent_port_name);
+  static OutgoingMessagePtr NewRequestIntroductionMessage(
+      const ports::NodeName& name);
+  static OutgoingMessagePtr NewIntroduceMessage(
+      const ports::NodeName& name,
+      ScopedPlatformHandle channel_handle);
 
   // Start receiving messages.
   void Start();

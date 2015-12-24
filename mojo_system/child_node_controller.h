@@ -6,6 +6,7 @@
 #define PORTS_MOJO_SYSTEM_CHILD_NODE_CONTROLLER_H_
 
 #include <string>
+#include <queue>
 #include <unordered_map>
 #include <vector>
 
@@ -57,6 +58,11 @@ class ChildNodeController : public NodeController {
       const ports::NodeName& from_node,
       const ports::PortName& child_port_name,
       const ports::PortName& parent_port_name) override;
+  void OnRequestIntroductionMessage(const ports::NodeName& from_node,
+                                    const ports::NodeName& name) override;
+  void OnIntroduceMessage(const ports::NodeName& from_name,
+                          const ports::NodeName& name,
+                          ScopedPlatformHandle channel_handle) override;
   void ReservePortForToken(const ports::PortName& port_name,
                            const std::string& token,
                            const base::Closure& on_connect) override;
@@ -67,6 +73,9 @@ class ChildNodeController : public NodeController {
   void ConnectPortByTokenNow(const ports::PortName& port_name,
                              const std::string& token,
                              const base::Closure& on_connect);
+  void RouteMessageToUnknownPeer(
+      const ports::NodeName& name,
+      NodeChannel::OutgoingMessagePtr message) override;
 
   Node* const node_;
 
@@ -81,6 +90,12 @@ class ChildNodeController : public NodeController {
   base::Lock pending_token_connections_lock_;
   std::vector<PendingTokenConnection> pending_token_connections_;
   std::unordered_map<ports::PortName, base::Closure> pending_connection_acks_;
+
+  // Message queues for peers we are in the process of discovering.
+  using OutgoingMessageQueue = std::queue<NodeChannel::OutgoingMessagePtr>;
+  base::Lock pending_peers_lock_;
+  std::unordered_map<ports::NodeName, OutgoingMessageQueue>
+      pending_peer_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildNodeController);
 };

@@ -5,6 +5,7 @@
 #ifndef PORTS_MOJO_SYSTEM_NODE_H_
 #define PORTS_MOJO_SYSTEM_NODE_H_
 
+#include <queue>
 #include <unordered_map>
 
 #include "base/macros.h"
@@ -48,8 +49,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Connects this node to a via an OS pipe under |platform_handle|.
   // If |peer_name| is unknown, it should be set to |ports::kInvalidNodeName|.
   void ConnectToPeer(const ports::NodeName& peer_name,
-                     ScopedPlatformHandle platform_handle,
-                     const scoped_refptr<base::TaskRunner>& io_task_runner);
+                     ScopedPlatformHandle platform_handle);
 
   // Indicates if a peer named |name| is already connected to this node.
   bool HasPeer(const ports::NodeName& name);
@@ -119,6 +119,8 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   Core* core_;
   base::Thread event_thread_;
+
+  scoped_refptr<base::TaskRunner> io_task_runner_;
 
   // These are safe to access from any thread without locking as long as the
   // Node is alive.

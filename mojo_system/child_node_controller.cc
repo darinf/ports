@@ -40,7 +40,24 @@ void ChildNodeController::AcceptPeer(const ports::NodeName& peer_name,
     return;
   }
 
-  NOTREACHED() << "Can't accept other child peers yet.";
+  DLOG(INFO) << "Accepting new peer " << peer_name
+             << " on node " << node_->name();
+
+  channel->Start();
+  node_->AddPeer(peer_name, std::move(channel));
+
+  // Flush any outgoing messages we've accumulated for this new peer.
+  base::AutoLock lock(pending_peers_lock_);
+  auto it = pending_peer_messages_.find(peer_name);
+  if (it != pending_peer_messages_.end()) {
+    while (!it->second.empty()) {
+      NodeChannel::OutgoingMessagePtr message = std::move(it->second.front());
+      it->second.pop();
+
+      node_->SendPeerMessage(peer_name, std::move(message));
+    }
+    pending_peer_messages_.erase(it);
+  }
 }
 
 void ChildNodeController::OnPeerLost(const ports::NodeName& name) {
@@ -94,6 +111,68 @@ void ChildNodeController::OnHelloParentMessage(
   node_->DropPeer(from_node);
 }
 
+void ChildNodeController::OnConnectPortMessage(
+    const ports::NodeName& from_node,
+    const ports::PortName& child_port_name,
+    const std::string& token) {
+  // TODO: maybe it makes sense to allow children to connect to each other
+  // using tokens? no interesting use case for it at the moment.
+  NOTIMPLEMENTED();
+}
+
+void ChildNodeController::OnConnectPortAckMessage(
+    const ports::NodeName& from_node,
+    const ports::PortName& child_port_name,
+    const ports::PortName& parent_port_name) {
+  if (from_node != parent_name_) {
+    DLOG(ERROR) << "Ignoring CONNECT_PORT_ACK from non-parent node.";
+    node_->DropPeer(from_node);
+    return;
+  }
+
+  base::Closure callback;
+  {
+    base::AutoLock lock(pending_token_connections_lock_);
+    auto it = pending_connection_acks_.find(child_port_name);
+    DCHECK(it != pending_connection_acks_.end());
+    callback = it->second;
+    pending_connection_acks_.erase(it);
+  }
+
+  node_->InitializePort(child_port_name, parent_name_, parent_port_name);
+  callback.Run();
+}
+
+void ChildNodeController::OnRequestIntroductionMessage(
+    const ports::NodeName& from_node,
+    const ports::NodeName& name) {
+  // TODO: maybe it makes sense to let children introduce each other
+  DLOG(INFO) << "Received unexpected REQUEST_INTRODUCTION_MESSAGE in child.";
+  DCHECK(from_node != parent_name_);
+  node_->DropPeer(from_node);
+}
+
+void ChildNodeController::OnIntroduceMessage(
+    const ports::NodeName& from_name,
+    const ports::NodeName& name,
+    ScopedPlatformHandle channel_handle) {
+  if (from_name != parent_name_) {
+    DLOG(INFO) << "Received unexpected INTRODUCE message from peer";
+    node_->DropPeer(from_name);
+    return;
+  }
+
+  if (!channel_handle.is_valid()) {
+    DLOG(ERROR) << "Could not be introduced to peer " << name;
+
+    base::AutoLock lock(pending_peers_lock_);
+    pending_peer_messages_.erase(name);
+    return;
+  }
+
+  node_->ConnectToPeer(name, std::move(channel_handle));
+}
+
 void ChildNodeController::ReservePortForToken(
     const ports::PortName& port_name,
     const std::string& token,
@@ -133,36 +212,17 @@ void ChildNodeController::ConnectPortByTokenNow(
       NodeChannel::NewConnectPortMessage(port_name, token));
 }
 
-void ChildNodeController::OnConnectPortMessage(
-    const ports::NodeName& from_node,
-    const ports::PortName& child_port_name,
-    const std::string& token) {
-  // TODO: maybe it makes sense to allow children to connect to each other
-  // using tokens? no interesting use case for it at the moment.
-  NOTIMPLEMENTED();
-}
-
-void ChildNodeController::OnConnectPortAckMessage(
-    const ports::NodeName& from_node,
-    const ports::PortName& child_port_name,
-    const ports::PortName& parent_port_name) {
-  if (from_node != parent_name_) {
-    DLOG(ERROR) << "Ignoring CONNECT_PORT_ACK from non-parent node.";
-    node_->DropPeer(from_node);
-    return;
+void ChildNodeController::RouteMessageToUnknownPeer(
+    const ports::NodeName& name,
+    NodeChannel::OutgoingMessagePtr message) {
+  DCHECK(IsConnected());
+  base::AutoLock lock(pending_peers_lock_);
+  auto& queue = pending_peer_messages_[name];
+  if (queue.empty()) {
+    node_->SendPeerMessage(parent_name_,
+        NodeChannel::NewRequestIntroductionMessage(name));
   }
-
-  base::Closure callback;
-  {
-    base::AutoLock lock(pending_token_connections_lock_);
-    auto it = pending_connection_acks_.find(child_port_name);
-    DCHECK(it != pending_connection_acks_.end());
-    callback = it->second;
-    pending_connection_acks_.erase(it);
-  }
-
-  node_->InitializePort(child_port_name, parent_name_, parent_port_name);
-  callback.Run();
+  queue.emplace(std::move(message));
 }
 
 }  // namespace edk

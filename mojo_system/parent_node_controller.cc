@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "crypto/random.h"
+#include "mojo/edk/embedder/platform_channel_pair.h"
 #include "ports/mojo_system/node.h"
 #include "ports/mojo_system/node_channel.h"
 
@@ -93,27 +94,6 @@ void ParentNodeController::OnHelloParentMessage(
   DLOG(INFO) << "Parent accepted handshake from child " << child_name;
 }
 
-void ParentNodeController::ReservePortForToken(
-    const ports::PortName& port_name,
-    const std::string& token,
-    const base::Closure& on_connect) {
-  ReservedPort reservation;
-  reservation.local_port = port_name;
-  reservation.callback = on_connect;
-
-  base::AutoLock lock(reserved_ports_lock_);
-  auto result = reserved_ports_.insert(std::make_pair(token, reservation));
-  if (!result.second)
-    DLOG(ERROR) << "Can't reserve port for duplicate token: " << token;
-}
-
-void ParentNodeController::ConnectPortByToken(
-    const ports::PortName& port_name,
-    const std::string& token,
-    const base::Closure& on_connect) {
-  NOTIMPLEMENTED();
-}
-
 void ParentNodeController::OnConnectPortMessage(
     const ports::NodeName& from_node,
     const ports::PortName& child_port_name,
@@ -153,6 +133,65 @@ void ParentNodeController::OnConnectPortAckMessage(
     const ports::PortName& parent_port_name) {
   DLOG(INFO) << "Ignoring CONNECT_PORT_ACK message in parent.";
   node_->DropPeer(from_node);
+}
+
+void ParentNodeController::OnRequestIntroductionMessage(
+    const ports::NodeName& from_node,
+    const ports::NodeName& name) {
+  if (from_node == name || name == ports::kInvalidNodeName) {
+    DLOG(ERROR) << "Rejecting invalid REQUEST_INTRODUCTION message.";
+    node_->DropPeer(from_node);
+    return;
+  }
+
+  if (!node_->HasPeer(name)) {
+    node_->SendPeerMessage(from_node,
+        NodeChannel::NewIntroduceMessage(name, ScopedPlatformHandle()));
+  } else {
+    PlatformChannelPair new_channel;
+    node_->SendPeerMessage(
+        from_node,
+        NodeChannel::NewIntroduceMessage(name, new_channel.PassServerHandle()));
+    node_->SendPeerMessage(
+        name,
+        NodeChannel::NewIntroduceMessage(from_node,
+                                         new_channel.PassClientHandle()));
+  }
+}
+
+void ParentNodeController::OnIntroduceMessage(
+    const ports::NodeName& from_name,
+    const ports::NodeName& name,
+    ScopedPlatformHandle channel_handle) {
+  DLOG(ERROR) << "Ignoring INTRODUCE message in parent.";
+  node_->DropPeer(from_name);
+}
+
+void ParentNodeController::ReservePortForToken(
+    const ports::PortName& port_name,
+    const std::string& token,
+    const base::Closure& on_connect) {
+  ReservedPort reservation;
+  reservation.local_port = port_name;
+  reservation.callback = on_connect;
+
+  base::AutoLock lock(reserved_ports_lock_);
+  auto result = reserved_ports_.insert(std::make_pair(token, reservation));
+  if (!result.second)
+    DLOG(ERROR) << "Can't reserve port for duplicate token: " << token;
+}
+
+void ParentNodeController::ConnectPortByToken(
+    const ports::PortName& port_name,
+    const std::string& token,
+    const base::Closure& on_connect) {
+  NOTIMPLEMENTED();
+}
+
+void ParentNodeController::RouteMessageToUnknownPeer(
+    const ports::NodeName& name,
+    NodeChannel::OutgoingMessagePtr message) {
+  DLOG(ERROR) << "Dropping message for unknown peer " << name;
 }
 
 }  // namespace edk

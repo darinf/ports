@@ -8,12 +8,12 @@
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "ports/include/ports.h"
+#include "ports/mojo_system/node_channel.h"
 
 namespace mojo {
 namespace edk {
-
-class NodeChannel;
 
 class NodeController {
  public:
@@ -38,12 +38,20 @@ class NodeController {
       const ports::NodeName& from_node,
       const ports::PortName& child_port_name,
       const ports::PortName& parent_port_name) {}
+  virtual void OnRequestIntroductionMessage(const ports::NodeName& from_node,
+                                            const ports::NodeName& name) {}
+  virtual void OnIntroduceMessage(const ports::NodeName& from_name,
+                                  const ports::NodeName& name,
+                                  ScopedPlatformHandle channel_handle) {}
   virtual void ReservePortForToken(const ports::PortName& port_name,
                                    const std::string& token,
                                    const base::Closure& on_connect) {}
   virtual void ConnectPortByToken(const ports::PortName& port_name,
                                   const std::string& token,
                                   const base::Closure& on_connect) {}
+  virtual void RouteMessageToUnknownPeer(
+      const ports::NodeName& name,
+      NodeChannel::OutgoingMessagePtr message) {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NodeController);

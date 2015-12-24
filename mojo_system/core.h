@@ -37,6 +37,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   virtual ~Core();
 
   Node* node() { return &node_; }
+  scoped_refptr<base::TaskRunner> io_task_runner() { return io_task_runner_; }
 
   // Called exactly once, shortly after construction, and before any other
   // methods are called on this object.

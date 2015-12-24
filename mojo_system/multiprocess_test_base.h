@@ -112,6 +112,11 @@ class MultiprocessTestBase : public testing::Test {
                                            MojoHandle* handles,
                                            uint32_t expected_num_handles);
 
+  // Reads a string from the pipe, expecting either zero or one handles.
+  // If no handle is read, |handle| will be reset.
+  static std::string ReadStringWithOptionalHandle(MojoHandle mp,
+                                                  MojoHandle* handle);
+
   // Reads a string from the pipe, expecting to read no handles.
   // Returns the string.
   static std::string ReadString(MojoHandle mp);

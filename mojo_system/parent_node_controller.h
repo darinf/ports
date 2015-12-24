@@ -52,12 +52,20 @@ class ParentNodeController : public NodeController {
       const ports::NodeName& from_node,
       const ports::PortName& child_port_name,
       const ports::PortName& parent_port_name) override;
+  void OnRequestIntroductionMessage(const ports::NodeName& from_node,
+                                    const ports::NodeName& name) override;
+  void OnIntroduceMessage(const ports::NodeName& from_name,
+                          const ports::NodeName& name,
+                          ScopedPlatformHandle channel_handle) override;
   void ReservePortForToken(const ports::PortName& port_name,
                            const std::string& token,
                            const base::Closure& on_connect) override;
   void ConnectPortByToken(const ports::PortName& port_name,
                           const std::string& token,
                           const base::Closure& on_connect) override;
+  void RouteMessageToUnknownPeer(
+      const ports::NodeName& name,
+      NodeChannel::OutgoingMessagePtr message) override;
 
   Node* const node_;
 

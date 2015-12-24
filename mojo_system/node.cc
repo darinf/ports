@@ -38,12 +38,11 @@ Node::Node(Core* core)
   event_thread_.Start();
 }
 
-void Node::ConnectToPeer(
-    const ports::NodeName& peer_name,
-    ScopedPlatformHandle platform_handle,
-    const scoped_refptr<base::TaskRunner>& io_task_runner) {
+void Node::ConnectToPeer(const ports::NodeName& peer_name,
+                         ScopedPlatformHandle platform_handle) {
   scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(platform_handle), io_task_runner));
+      new NodeChannel(this, std::move(platform_handle),
+                      core()->io_task_runner()));
   channel->SetRemoteNodeName(peer_name);
 
   DCHECK(controller_);
@@ -86,14 +85,16 @@ void Node::DropPeer(const ports::NodeName& name) {
 
 void Node::SendPeerMessage(const ports::NodeName& name,
                            NodeChannel::OutgoingMessagePtr message) {
-  base::AutoLock lock(peers_lock_);
-  auto it = peers_.find(name);
-  if (it == peers_.end()) {
-    DLOG(ERROR) << "Not sending node message to unknown peer " << name;
-    return;
+  {
+    base::AutoLock lock(peers_lock_);
+    auto it = peers_.find(name);
+    if (it != peers_.end()) {
+      it->second->SendMessage(std::move(message));
+      return;
+    }
   }
 
-  it->second->SendMessage(std::move(message));
+  controller_->RouteMessageToUnknownPeer(name, std::move(message));
 }
 
 void Node::CreateUninitializedPort(ports::PortName* port_name) {
@@ -161,7 +162,7 @@ void Node::OnMessageReceived(const ports::NodeName& from_node,
   DCHECK(controller_);
 
   DLOG(INFO) << "Node " << name_ << " received " << message->type()
-      << " message from node " << from_node;
+             << " message from node " << from_node;
 
   switch (message->type()) {
     case NodeChannel::MessageType::HELLO_CHILD: {
@@ -219,6 +220,26 @@ void Node::OnMessageReceived(const ports::NodeName& from_node,
           message->payload<NodeChannel::ConnectPortAckMessageData>();
       controller_->OnConnectPortAckMessage(
           from_node, data.child_port_name, data.parent_port_name);
+      break;
+    }
+
+    case NodeChannel::MessageType::REQUEST_INTRODUCTION: {
+      const auto& data =
+          message->payload<NodeChannel::IntroductionMessageData>();
+      controller_->OnRequestIntroductionMessage(from_node, data.name);
+      break;
+    }
+
+    case NodeChannel::MessageType::INTRODUCE: {
+      const auto& data =
+          message->payload<NodeChannel::IntroductionMessageData>();
+      ScopedPlatformHandleVectorPtr handles = message->TakeHandles();
+      ScopedPlatformHandle handle;
+      if (handles && !handles->empty()) {
+        handle = ScopedPlatformHandle(handles->at(0));
+        handles->clear();
+      }
+      controller_->OnIntroduceMessage(from_node, data.name, std::move(handle));
       break;
     }
 

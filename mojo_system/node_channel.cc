@@ -101,6 +101,7 @@ NodeChannel::OutgoingMessagePtr NodeChannel::NewEventMessage(
   return message;
 }
 
+// static
 NodeChannel::OutgoingMessagePtr NodeChannel::NewConnectPortMessage(
     const ports::PortName& child_port_name,
     const std::string& token) {
@@ -114,6 +115,7 @@ NodeChannel::OutgoingMessagePtr NodeChannel::NewConnectPortMessage(
   return message;
 }
 
+// static
 NodeChannel::OutgoingMessagePtr NodeChannel::NewConnectPortAckMessage(
     const ports::PortName& child_port_name,
     const ports::PortName& parent_port_name) {
@@ -124,6 +126,32 @@ NodeChannel::OutgoingMessagePtr NodeChannel::NewConnectPortAckMessage(
       message->payload<ConnectPortAckMessageData>();
   data->child_port_name = child_port_name;
   data->parent_port_name = parent_port_name;
+  return message;
+}
+
+// static
+NodeChannel::OutgoingMessagePtr NodeChannel::NewRequestIntroductionMessage(
+    const ports::NodeName& name) {
+  OutgoingMessagePtr message(
+      new OutgoingMessage(MessageType::REQUEST_INTRODUCTION,
+                          sizeof(IntroductionMessageData), nullptr));
+  IntroductionMessageData* data = message->payload<IntroductionMessageData>();
+  data->name = name;
+  return message;
+}
+
+// static
+NodeChannel::OutgoingMessagePtr NodeChannel::NewIntroduceMessage(
+    const ports::NodeName& name,
+    ScopedPlatformHandle channel_handle) {
+  ScopedPlatformHandleVectorPtr handles(new PlatformHandleVector());
+  if (channel_handle.is_valid())
+    handles->push_back(channel_handle.release());
+  OutgoingMessagePtr message(
+      new OutgoingMessage(MessageType::INTRODUCE,
+                          sizeof(IntroductionMessageData), std::move(handles)));
+  IntroductionMessageData* data = message->payload<IntroductionMessageData>();
+  data->name = name;
   return message;
 }
 
@@ -182,6 +210,12 @@ std::ostream& operator<<(std::ostream& stream,
       break;
     case NodeChannel::MessageType::CONNECT_PORT_ACK:
       stream << "CONNECT_PORT_ACK";
+      break;
+    case NodeChannel::MessageType::REQUEST_INTRODUCTION:
+      stream << "REQUEST_INTRODUCTION";
+      break;
+    case NodeChannel::MessageType::INTRODUCE:
+      stream << "INTRODUCE";
       break;
     default:
       stream << "UNKNOWN(" << static_cast<int>(message_type) << ")";
