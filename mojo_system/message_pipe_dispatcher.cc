@@ -234,6 +234,11 @@ bool MessagePipeDispatcher::HasMessagesQueuedNoLock() {
 
   DCHECK(rv == ports::OK || ports::ERROR_PORT_PEER_CLOSED);
 
+  if (rv == ports::ERROR_PORT_PEER_CLOSED && !peer_closed_) {
+    peer_closed_ = true;
+    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+  }
+
   return !empty;
 }
 
