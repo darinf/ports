@@ -4,6 +4,9 @@
 
 #include "ports/mojo_system/multiprocess_test_base.h"
 
+#include "base/memory/ref_counted.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/public/c/system/functions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -12,9 +15,86 @@ namespace mojo {
 namespace edk {
 namespace test {
 
+namespace {
+
+void StoreClientHandle(
+    size_t* clients_started,
+    std::vector<ScopedMessagePipeHandle>* client_handles,
+    size_t this_client_index,
+    const base::Closure& on_all_clients_started,
+    ScopedMessagePipeHandle pipe) {
+  (*clients_started)++;
+  client_handles->at(this_client_index) = std::move(pipe);
+  if (*clients_started == client_handles->size())
+    on_all_clients_started.Run();
+}
+
+void RunCallbacksInSequence(const base::Closure& first,
+                            const base::Closure& second) {
+  first.Run();
+  second.Run();
+}
+
+void RunPipesHandler(
+    const std::vector<ScopedMessagePipeHandle>* handles,
+    scoped_refptr<base::TaskRunner> task_runner,
+    const base::Callback<void(const std::vector<ScopedMessagePipeHandle>*)>&
+        callback,
+    const base::Closure& quit_closure) {
+  task_runner->PostTask(
+      FROM_HERE,
+      base::Bind(&RunCallbacksInSequence, base::Bind(callback, handles),
+                 quit_closure));
+}
+
+}  // namespace
+
 MultiprocessTestBase::MultiprocessTestBase() {}
 
 MultiprocessTestBase::~MultiprocessTestBase() {}
+
+void MultiprocessTestBase::RunChildWithCallback(
+    const std::string& client_name,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+  test::MultiprocessTestHelper helper;
+  base::MessageLoop message_loop;
+  base::RunLoop run_loop;
+  helper.StartChild(
+      client_name,
+      BindPipeHandler([callback, &run_loop](ScopedMessagePipeHandle mp) {
+        callback.Run(std::move(mp));
+        run_loop.Quit();
+      }));
+  run_loop.Run();
+  EXPECT_EQ(0, helper.WaitForChildShutdown());
+}
+
+void MultiprocessTestBase::RunChildrenWithCallback(
+    const std::vector<std::string>& client_names,
+    const base::Callback<void(const std::vector<ScopedMessagePipeHandle>*)>&
+        callback) {
+  base::MessageLoop message_loop;
+  base::RunLoop run_loop;
+
+  size_t clients_started = 0;
+  std::vector<ScopedMessagePipeHandle> handles(client_names.size());
+  std::vector<test::MultiprocessTestHelper> helpers(client_names.size());
+  base::Closure on_all_clients_started =
+      base::Bind(&RunPipesHandler, base::Unretained(&handles),
+                 message_loop.task_runner(), callback, run_loop.QuitClosure());
+
+  for (size_t i = 0; i < client_names.size(); ++i) {
+    auto handler = base::Bind(&StoreClientHandle,
+        base::Unretained(&clients_started), base::Unretained(&handles), i,
+        on_all_clients_started);
+    helpers[i].StartChild(client_names[i], handler);
+  }
+
+  run_loop.Run();
+
+  for (auto& helper : helpers)
+    EXPECT_EQ(0, helper.WaitForChildShutdown());
+}
 
 // static
 void MultiprocessTestBase::CreatePipe(MojoHandle *p0, MojoHandle* p1) {

@@ -9,10 +9,12 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "crypto/random.h"
 #include "mojo/edk/embedder/embedder.h"
@@ -41,29 +43,30 @@ std::string GenerateRandomToken() {
   return ss.str();
 }
 
-void RunChildMain(const base::Callback<int()>& main,
-                  const base::Closure& quit_closure,
-                  int* result_addr) {
-  *result_addr = main.Run();
+void RunChildMain(const base::Callback<int(ScopedMessagePipeHandle)>& main,
+                  int* result_addr,
+                  const base::Closure& quit_closure) {
+  *result_addr = main.Run(
+      std::move(MultiprocessTestHelper::child_message_pipe));
   quit_closure.Run();
 }
 
-void AsyncMainRunner(const base::Callback<int()>& main,
+void AsyncMainRunner(const base::Callback<int(ScopedMessagePipeHandle)>& main,
                      scoped_refptr<base::TaskRunner> main_runner,
-                     const base::Closure& quit_closure,
                      int* result_addr,
+                     const base::Closure& quit_closure,
                      ScopedMessagePipeHandle message_pipe) {
   MultiprocessTestHelper::child_message_pipe = std::move(message_pipe);
-  main_runner->PostTask(FROM_HERE, base::Bind(&RunChildMain, main, quit_closure,
-                                              base::Unretained(result_addr)));
+  main_runner->PostTask(
+      FROM_HERE,
+      base::Bind(&RunChildMain, main, base::Unretained(result_addr),
+                 quit_closure));
 }
 
 void RunChildHandler(
     const base::Callback<void(ScopedMessagePipeHandle)>& callback,
-    ScopedMessagePipeHandle message_pipe,
-    const base::Closure& quit_closure) {
+    ScopedMessagePipeHandle message_pipe) {
   callback.Run(std::move(message_pipe));
-  quit_closure.Run();
 }
 
 }  // namespace
@@ -82,16 +85,16 @@ MultiprocessTestHelper::~MultiprocessTestHelper() {
 
 void MultiprocessTestHelper::StartChild(
     const std::string& test_child_name,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+    const base::Callback<void(ScopedMessagePipeHandle)>& parent_main) {
   StartChildWithExtraSwitch(
-      test_child_name, std::string(), std::string(), callback);
+      test_child_name, std::string(), std::string(), parent_main);
 }
 
 void MultiprocessTestHelper::StartChildWithExtraSwitch(
     const std::string& test_child_name,
     const std::string& switch_string,
     const std::string& switch_value,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+    const base::Callback<void(ScopedMessagePipeHandle)>& parent_main) {
   CHECK(!test_child_name.empty());
   CHECK(!test_child_.IsValid());
 
@@ -138,7 +141,8 @@ void MultiprocessTestHelper::StartChildWithExtraSwitch(
   CreateParentMessagePipe(
       port_token_,
       base::Bind(&MultiprocessTestHelper::OnMessagePipeCreated,
-                 base::Unretained(this), callback));
+                 base::Unretained(this), base::ThreadTaskRunnerHandle::Get(),
+                 parent_main));
 
   CHECK(test_child_.IsValid());
 }
@@ -157,10 +161,6 @@ bool MultiprocessTestHelper::WaitForChildTestShutdown() {
   return WaitForChildShutdown() == 0;
 }
 
-void MultiprocessTestHelper::RunUntilQuit() {
-  run_loop_.Run();
-}
-
 // static
 void MultiprocessTestHelper::ChildSetup() {
   CHECK(base::CommandLine::InitializedForCurrentProcess());
@@ -175,7 +175,7 @@ void MultiprocessTestHelper::ChildSetup() {
 
 // static
 int MultiprocessTestHelper::RunChildAsyncMain(
-    const base::Callback<int()>& main) {
+    const base::Callback<int(ScopedMessagePipeHandle)>& main) {
   std::string port_token =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           kPortTokenSwitch);
@@ -186,18 +186,18 @@ int MultiprocessTestHelper::RunChildAsyncMain(
   CreateChildMessagePipe(
       port_token,
       base::Bind(&AsyncMainRunner, main, child_message_loop.task_runner(),
-                 run_loop.QuitClosure(), &result));
+                 &result, run_loop.QuitClosure()));
   run_loop.Run();
   return result;
 }
 
 void MultiprocessTestHelper::OnMessagePipeCreated(
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback,
+    scoped_refptr<base::TaskRunner> parent_main_task_runner,
+    const base::Callback<void(ScopedMessagePipeHandle)>& parent_main,
     ScopedMessagePipeHandle message_pipe) {
-  message_loop_.task_runner()->PostTask(
+  parent_main_task_runner->PostTask(
       FROM_HERE,
-      base::Bind(&RunChildHandler, callback, base::Passed(&message_pipe),
-                 run_loop_.QuitClosure()));
+      base::Bind(&RunChildHandler, parent_main, base::Passed(&message_pipe)));
 }
 
 }  // namespace test
