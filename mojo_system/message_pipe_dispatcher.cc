@@ -77,9 +77,20 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
 
   int rv = node_->SendMessage(port_name_, std::move(message));
 
-  // TODO: More detailed result code on failure
-  if (rv != ports::OK)
-    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (rv != ports::OK) {
+    if (rv == ports::ERROR_PORT_UNKNOWN ||
+        rv == ports::ERROR_PORT_STATE_UNEXPECTED)
+      return MOJO_RESULT_INVALID_ARGUMENT;
+
+    if (rv == ports::ERROR_PORT_PEER_CLOSED) {
+      peer_closed_ = true;
+      awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+      return MOJO_RESULT_FAILED_PRECONDITION;
+    }
+
+    NOTREACHED();
+    return MOJO_RESULT_UNKNOWN;
+  }
 
   return MOJO_RESULT_OK;
 }
@@ -93,6 +104,11 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
   lock().AssertAcquired();
 
   bool no_space = false;
+
+  // Ensure the provided buffers are large enough to hold the next message.
+  // GetMessageIf provides an atomic way to test the next message without
+  // committing to removing it from the port's underlying message queue until
+  // we are sure we can consume it.
 
   ports::ScopedMessage message;
   int rv = node_->GetMessageIf(
@@ -123,13 +139,17 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
       &message);
 
   if (rv != ports::OK) {
-    if (rv == ports::ERROR_PORT_UNKNOWN)
+    if (rv == ports::ERROR_PORT_UNKNOWN ||
+        rv == ports::ERROR_PORT_STATE_UNEXPECTED)
       return MOJO_RESULT_INVALID_ARGUMENT;
+
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
       peer_closed_ = true;
       awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
       return MOJO_RESULT_FAILED_PRECONDITION;
     }
+
+    NOTREACHED();
     return MOJO_RESULT_UNKNOWN;  // TODO: Add a better error code here?
   }
 
