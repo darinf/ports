@@ -55,7 +55,7 @@ class MessagePipeDispatcher : public Dispatcher {
   bool BeginTransitImplNoLock() override;
   void EndTransitImplNoLock(bool canceled) override;
 
-  bool HasMessagesQueuedNoLock();
+  bool UpdateSignalsStateNoLock();
 
   // Called by LocalPortObserver when messages are available on the port.
   void OnMessagesAvailable();

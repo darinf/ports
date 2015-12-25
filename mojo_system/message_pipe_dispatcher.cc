@@ -36,9 +36,6 @@ MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
   base::AutoLock dispatcher_lock(lock());
   node_->SetPortObserver(
       port_name_, make_scoped_ptr(new LocalPortObserver(this)));
-  if (HasMessagesQueuedNoLock()) {
-    port_readable_ = true;
-  }
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
@@ -156,8 +153,10 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
   if (no_space)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
-  if (!message)
+  if (!message) {
+    port_readable_ = false;
     return MOJO_RESULT_SHOULD_WAIT;
+  }
 
   if (!node_->core()->AddDispatchersForReceivedPorts(*message, handles)) {
     // TODO: Close all of the received ports.
@@ -165,11 +164,6 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
   }
 
   memcpy(bytes, message->bytes, message->num_bytes);
-
-  if (!HasMessagesQueuedNoLock()) {
-    port_readable_ = false;
-    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
-  }
 
   return MOJO_RESULT_OK;
 }
@@ -200,6 +194,9 @@ MojoResult MessagePipeDispatcher::AddAwakableImplNoLock(
     uintptr_t context,
     HandleSignalsState* signals_state) {
   lock().AssertAcquired();
+
+  UpdateSignalsStateNoLock();
+
   HandleSignalsState state = GetHandleSignalsStateImplNoLock();
   if (state.satisfies(signals)) {
     if (signals_state)
@@ -238,36 +235,44 @@ void MessagePipeDispatcher::EndTransitImplNoLock(bool canceled) {
   }
 }
 
-bool MessagePipeDispatcher::HasMessagesQueuedNoLock() {
+bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
   // Peek at the queue. If our selector function runs at all, it's not empty.
   //
   // TODO: maybe Node should have an interface for this test?
-  bool empty = true;
+  bool has_messages = false;
   ports::ScopedMessage message;
   int rv = node_->GetMessageIf(
       port_name_,
-      [&empty](const ports::Message&) {
-        empty = false;
-        return false;
+      [&has_messages](const ports::Message&) {
+        has_messages = true;
+        return false;  // Don't return the message.
       },
       &message);
 
   DCHECK(rv == ports::OK || ports::ERROR_PORT_PEER_CLOSED);
 
-  if (rv == ports::ERROR_PORT_PEER_CLOSED && !peer_closed_) {
-    peer_closed_ = true;
-    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+  // Awakables will not be interested in this becoming unreadable.
+  bool awakable_change = false;
+
+  if (rv == ports::OK) {
+    if (has_messages && !port_readable_)
+      awakable_change = true;
+    port_readable_ = has_messages;
   }
 
-  return !empty;
+  if (rv == ports::ERROR_PORT_PEER_CLOSED && !peer_closed_) {
+    peer_closed_ = true;
+    awakable_change = true;
+  }
+
+  return awakable_change;
 }
 
 void MessagePipeDispatcher::OnMessagesAvailable() {
   base::AutoLock dispatcher_lock(lock());
-  if (!port_readable_ && HasMessagesQueuedNoLock()) {
-    port_readable_ = true;
+
+  if (UpdateSignalsStateNoLock())
     awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
-  }
 }
 
 }  // namespace edk
