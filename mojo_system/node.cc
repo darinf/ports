@@ -61,7 +61,10 @@ void Node::AddPeer(const ports::NodeName& name,
     base::AutoLock lock(peers_lock_);
     channel->SetRemoteNodeName(name);
     auto result = peers_.insert(std::make_pair(name, std::move(channel)));
-    DLOG_IF(ERROR, !result.second) << "Ignoring duplicate peer name " << name;
+    // This can happen normally if two nodes race to be introduced to each
+    // other. The losing pipe will be silently closed and introduction should
+    // not be affected.
+    LOG_IF(INFO, !result.second) << "Ignoring duplicate peer name " << name;
   }
 }
 
