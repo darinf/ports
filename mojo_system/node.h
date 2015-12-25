@@ -11,8 +11,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
-#include "base/task_runner.h"
-#include "base/threading/thread.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/node_channel.h"
@@ -115,12 +113,9 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
                          NodeChannel::IncomingMessagePtr message) override;
   void OnChannelError(const ports::NodeName& from_node) override;
 
-  void AcceptEventOnEventThread(ports::Event event);
+  void AcceptEventOnIOThread(ports::Event event);
 
   Core* core_;
-  base::Thread event_thread_;
-
-  scoped_refptr<base::TaskRunner> io_task_runner_;
 
   // These are safe to access from any thread without locking as long as the
   // Node is alive.

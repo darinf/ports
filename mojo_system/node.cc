@@ -5,6 +5,7 @@
 #include "ports/mojo_system/node.h"
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "crypto/random.h"
 #include "ports/mojo_system/core.h"
@@ -29,20 +30,18 @@ struct PortObserverHolder : public ports::UserData {
 
 Node::~Node() {}
 
-Node::Node(Core* core)
-    : core_(core), event_thread_("EDK ports node event thread") {
+Node::Node(Core* core) : core_(core) {
   GenerateRandomName(&name_);
   DLOG(INFO) << "Initializing node " << name_;
 
   node_.reset(new ports::Node(name_, this));
-  event_thread_.Start();
 }
 
 void Node::ConnectToPeer(const ports::NodeName& peer_name,
                          ScopedPlatformHandle platform_handle) {
   scoped_ptr<NodeChannel> channel(
       new NodeChannel(this, std::move(platform_handle),
-                      core()->io_task_runner()));
+                      core_->io_task_runner()));
   channel->SetRemoteNodeName(peer_name);
 
   DCHECK(controller_);
@@ -140,10 +139,11 @@ void Node::GenerateRandomPortName(ports::PortName* port_name) {
 
 void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
   if (node == name_) {
-    event_thread_.task_runner()->PostTask(
+    core_->io_task_runner()->PostTask(
         FROM_HERE,
-        base::Bind(&Node::AcceptEventOnEventThread,
-                   base::Unretained(this), base::Passed(&event)));
+        base::Bind(&Node::AcceptEventOnIOThread,
+                   base::Unretained(this),
+                   base::Passed(&event)));
   } else {
     SendPeerMessage(node, NodeChannel::NewEventMessage(std::move(event)));
   }
@@ -256,7 +256,7 @@ void Node::OnChannelError(const ports::NodeName& from_node) {
   DropPeer(from_node);
 }
 
-void Node::AcceptEventOnEventThread(ports::Event event) {
+void Node::AcceptEventOnIOThread(ports::Event event) {
   node_->AcceptEvent(std::move(event));
 }
 
