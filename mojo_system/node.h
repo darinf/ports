@@ -24,10 +24,9 @@ class Core;
 
 class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
  public:
-  class PortObserver {
+  class PortObserver : public ports::UserData {
    public:
-    virtual ~PortObserver() {}
-
+    ~PortObserver() override {}
     virtual void OnMessagesAvailable() = 0;
   };
 
@@ -76,7 +75,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   // Sets a port's observer.
   void SetPortObserver(const ports::PortName& port_name,
-                       scoped_ptr<PortObserver> observer);
+                       std::shared_ptr<PortObserver> observer);
 
   // Sends a message on a port to its peer.
   int SendMessage(const ports::PortName& port_name,

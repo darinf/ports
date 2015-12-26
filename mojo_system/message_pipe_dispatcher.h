@@ -27,8 +27,8 @@ class MessagePipeDispatcher : public Dispatcher {
   const ports::PortName& GetPortName() const { return port_name_; }
 
  private:
-  class LocalPortObserver;
-  friend class LocalPortObserver;
+  class PortObserverThunk;
+  friend class PortObserverThunk;
 
   ~MessagePipeDispatcher() override;
 
@@ -57,7 +57,7 @@ class MessagePipeDispatcher : public Dispatcher {
 
   bool UpdateSignalsStateNoLock();
 
-  // Called by LocalPortObserver when messages are available on the port.
+  // Called by PortObserverThunk when messages are available on the port.
   void OnMessagesAvailable();
 
   Node* node_;

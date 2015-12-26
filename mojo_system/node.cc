@@ -19,13 +19,6 @@ namespace {
 template <typename T>
 void GenerateRandomName(T* out) { crypto::RandBytes(out, sizeof(T)); }
 
-struct PortObserverHolder : public ports::UserData {
-  scoped_ptr<Node::PortObserver> observer;
-
-  explicit PortObserverHolder(scoped_ptr<Node::PortObserver> o)
-      : observer(std::move(o)) {}
-};
-
 }  // namespace
 
 Node::~Node() {}
@@ -116,11 +109,9 @@ void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
 }
 
 void Node::SetPortObserver(const ports::PortName& port_name,
-                           scoped_ptr<PortObserver> observer) {
+                           std::shared_ptr<PortObserver> observer) {
   DCHECK(observer);
-  std::shared_ptr<ports::UserData> user_data(
-      new PortObserverHolder(std::move(observer)));
-  node_->SetUserData(port_name, user_data);
+  node_->SetUserData(port_name, std::move(observer));
 }
 
 int Node::SendMessage(const ports::PortName& port_name,
@@ -151,13 +142,9 @@ void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
 
 void Node::MessagesAvailable(const ports::PortName& port,
                              std::shared_ptr<ports::UserData> user_data) {
-  PortObserverHolder* user_data_holder =
-      static_cast<PortObserverHolder*>(user_data.get());
-  if (user_data_holder) {
-    PortObserver* observer = user_data_holder->observer.get();
-    DCHECK(observer);
+  PortObserver* observer = static_cast<PortObserver*>(user_data.get());
+  if (observer)
     observer->OnMessagesAvailable();
-  }
 }
 
 void Node::OnMessageReceived(const ports::NodeName& from_node,

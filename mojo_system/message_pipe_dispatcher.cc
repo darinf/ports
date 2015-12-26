@@ -13,11 +13,11 @@ namespace edk {
 
 // A PortObserver which forwards to a MessagePipeDispatcher. This owns a
 // reference to the MPD to ensure it lives as long as the observed port.
-class MessagePipeDispatcher::LocalPortObserver : public Node::PortObserver {
+class MessagePipeDispatcher::PortObserverThunk : public Node::PortObserver {
  public:
-  explicit LocalPortObserver(scoped_refptr<MessagePipeDispatcher> dispatcher)
+  explicit PortObserverThunk(scoped_refptr<MessagePipeDispatcher> dispatcher)
       : dispatcher_(dispatcher) {}
-  ~LocalPortObserver() override {}
+  ~PortObserverThunk() override {}
 
  private:
   // Node::PortObserver:
@@ -25,7 +25,7 @@ class MessagePipeDispatcher::LocalPortObserver : public Node::PortObserver {
 
   scoped_refptr<MessagePipeDispatcher> dispatcher_;
 
-  DISALLOW_COPY_AND_ASSIGN(LocalPortObserver);
+  DISALLOW_COPY_AND_ASSIGN(PortObserverThunk);
 };
 
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
@@ -35,7 +35,7 @@ MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
   // constructor returns. Hold a lock here to prevent signal races.
   base::AutoLock dispatcher_lock(lock());
   node_->SetPortObserver(
-      port_name_, make_scoped_ptr(new LocalPortObserver(this)));
+      port_name_, std::make_shared<PortObserverThunk>(this));
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
