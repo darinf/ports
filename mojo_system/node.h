@@ -8,13 +8,13 @@
 #include <queue>
 #include <unordered_map>
 
+#include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/node_channel.h"
-#include "ports/mojo_system/node_controller.h"
 #include "ports/src/hash_functions.h"
 
 namespace mojo {
@@ -37,30 +37,30 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   const ports::NodeName& name() const { return name_; }
   Core* core() const { return core_; }
 
-  void set_controller(scoped_ptr<NodeController> controller) {
-    controller_ = std::move(controller);
-  }
+  // Connects this node to a child node. This node will initiate a handshake.
+  void ConnectToChild(ScopedPlatformHandle platform_handle);
 
-  NodeController* controller() const { return controller_.get(); }
+  // Connects this node to a parent node. The parent node will initiate a
+  // handshake.
+  void ConnectToParent(ScopedPlatformHandle platform_handle);
 
   // Connects this node to a via an OS pipe under |platform_handle|.
-  // If |peer_name| is unknown, it should be set to |ports::kInvalidNodeName|.
   void ConnectToPeer(const ports::NodeName& peer_name,
                      ScopedPlatformHandle platform_handle);
 
-  // Indicates if a peer named |name| is already connected to this node.
-  bool HasPeer(const ports::NodeName& name);
-
-  // Registers a node named |name| with the given |channel|. |name| must be
-  // a valid node name.
-  void AddPeer(const ports::NodeName& name, scoped_ptr<NodeChannel> channel);
+  // Registers a peer named |name| with a new NodeChannel established over
+  // |platform_handle|. |name| must be a valid node name. If |start_channel|
+  // is true, |channel| will be started immediately after it's added as a peer.
+  void AddPeer(const ports::NodeName& name,
+               scoped_ptr<NodeChannel> channel,
+               bool start_channel);
 
   // Drops the connection to peer named |name| if one exists.
   void DropPeer(const ports::NodeName& name);
 
-  // Sends a NodeChannel message to a peer node.
-  void SendPeerMessage(const ports::NodeName& name,
-                       NodeChannel::OutgoingMessagePtr message);
+  // Sends a ports::Event to another node, or queues it for delivery if we
+  // don't yet know how to talk to that node.
+  void SendPeerEvent(const ports::NodeName& name, ports::Event event);
 
   // Creates a single uninitialized port which is not ready for use.
   void CreateUninitializedPort(ports::PortName* port_name);
@@ -100,7 +100,44 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Closes a port.
   void ClosePort(const ports::PortName& port_name);
 
+  void ReservePortForToken(const ports::PortName& port_name,
+                           const std::string& token,
+                           const base::Closure& on_connect);
+
+  void ConnectToParentPortByToken(const std::string& token,
+                                  const ports::PortName& local_port,
+                                  const base::Closure& on_connect);
+
  private:
+  using NodeMap = std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>>;
+  using OutgoingEventQueue = std::queue<ports::Event>;
+
+  struct PendingTokenConnection {
+    PendingTokenConnection();
+    ~PendingTokenConnection();
+
+    ports::PortName port;
+    std::string token;
+    base::Closure callback;
+  };
+
+  struct ReservedPort {
+    ReservedPort();
+    ~ReservedPort();
+
+    ports::PortName local_port;
+    base::Closure callback;
+  };
+
+  void AddPeerNoLock(const ports::NodeName& name,
+                     scoped_ptr<NodeChannel> channel,
+                     bool start_channel);
+  void DropPeerNoLock(const ports::NodeName& name);
+  void ConnectToParentPortByTokenNowNoLock(const std::string& token,
+                                           const ports::PortName& local_port,
+                                           const base::Closure& on_connect);
+  void AcceptEventOnIOThread(ports::Event event);
+
   // ports::NodeDelegate:
   void GenerateRandomPortName(ports::PortName* port_name) override;
   void SendEvent(const ports::NodeName& node, ports::Event event) override;
@@ -108,23 +145,62 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
                          std::shared_ptr<ports::UserData> user_data) override;
 
   // NodeChannel::Delegate:
-  void OnMessageReceived(const ports::NodeName& from_node,
-                         NodeChannel::IncomingMessagePtr message) override;
+  void OnAcceptChild(const ports::NodeName& from_node,
+                     const ports::NodeName& parent_name,
+                     const ports::NodeName& token) override;
+  void OnAcceptParent(const ports::NodeName& from_node,
+                      const ports::NodeName& token,
+                      const ports::NodeName& child_name) override;
+  void OnEvent(const ports::NodeName& from_node,
+               ports::Event event) override;
+  void OnConnectToPort(const ports::NodeName& from_node,
+                       const ports::PortName& connector_port,
+                       const std::string& token) override;
+  void OnConnectToPortAck(const ports::NodeName& from_node,
+                          const ports::PortName& connector_port,
+                          const ports::PortName& connectee_port) override;
+  void OnRequestIntroduction(const ports::NodeName& from_node,
+                             const ports::NodeName& name) override;
+  void OnIntroduce(const ports::NodeName& from_node,
+                   const ports::NodeName& name,
+                   ScopedPlatformHandle channel_handle) override;
   void OnChannelError(const ports::NodeName& from_node) override;
-
-  void AcceptEventOnIOThread(ports::Event event);
-
-  Core* core_;
 
   // These are safe to access from any thread without locking as long as the
   // Node is alive.
-  ports::NodeName name_;
-  scoped_ptr<ports::Node> node_;
+  Core* const core_;
+  const ports::NodeName name_;
+  const scoped_ptr<ports::Node> node_;
 
-  scoped_ptr<NodeController> controller_;
+  // Guards access to all of the fields below.
+  base::Lock lock_;
 
-  base::Lock peers_lock_;
-  std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>> peers_;
+  // The name of our parent node, if any.
+  ports::NodeName parent_name_;
+
+  // A channel to our parent during handshake.
+  scoped_ptr<NodeChannel> bootstrap_channel_to_parent_;
+
+  // Channels to known peers, including parent and children, if any.
+  NodeMap peers_;
+
+  // Channels to children during handshake.
+  NodeMap pending_children_;
+
+  // Named ports for establishing cross-node port pairs out-of-band. A port
+  // can be reserved by name via ReservePortForToken(), and a peer can entangle
+  // one of its owns ports to the reserved port by referencing the token in a
+  // NodeChannel::ConnectToPort request.
+  //
+  // The embedder must provide a channel to communicate the token to each node.
+  std::unordered_map<std::string, ReservedPort> reserved_ports_;
+
+  // This tracks pending outgoing connection request for named ports.
+  std::vector<PendingTokenConnection> pending_token_connections_;
+  std::unordered_map<ports::PortName, base::Closure> pending_connection_acks_;
+
+  // Outgoing event queues for peers we've heard of but can't yet talk to.
+  std::unordered_map<ports::NodeName, OutgoingEventQueue> pending_peer_events_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };

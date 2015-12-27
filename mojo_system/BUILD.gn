@@ -7,8 +7,6 @@ source_set("mojo_system") {
     "channel.cc",
     "channel.h",
     "channel_posix.cc",
-    "child_node_controller.cc",
-    "child_node_controller.h",
     "core.cc",
     "core.h",
     "dispatcher.cc",
@@ -21,9 +19,6 @@ source_set("mojo_system") {
     "node.h",
     "node_channel.cc",
     "node_channel.h",
-    "node_controller.h",
-    "parent_node_controller.cc",
-    "parent_node_controller.h",
   ]
 
   # Sources we can repurpose from the existing EDK impl

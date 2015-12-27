@@ -9,41 +9,28 @@
 namespace mojo {
 namespace edk {
 
+namespace {
+
+static_assert(sizeof(Channel::Message::Header) % kChannelMessageAlignment == 0,
+    "Invalid Header size.");
+
+}  // namespace
+
 const size_t kReadBufferSize = 4096;
 const size_t kMaxUnusedReadBufferCapacity = 256 * 1024;
 const size_t kMaxChannelMessageSize = 256 * 1024 * 1024;
 
-Channel::IncomingMessage::IncomingMessage(const void* data,
-                                          ScopedPlatformHandleVectorPtr handles)
-    : header_(static_cast<const MessageHeader*>(data)),
-      handles_(std::move(handles)) {}
-
-Channel::IncomingMessage::~IncomingMessage() {}
-
-bool Channel::IncomingMessage::IsValid() const {
-  return header_->num_bytes <= kMaxChannelMessageSize &&
-      header_->num_bytes >= sizeof(MessageHeader) &&
-      ((!header_->num_handles && !handles_) ||
-        (handles_ && handles_->size() == header_->num_handles));
-}
-
-Channel::OutgoingMessage::OutgoingMessage(const void* payload,
-                                          size_t payload_size,
-                                          ScopedPlatformHandleVectorPtr handles)
-    : data_(sizeof(MessageHeader) + payload_size),
-      header_(reinterpret_cast<MessageHeader*>(data_.data())),
+Channel::Message::Message(size_t payload_size,
+                          ScopedPlatformHandleVectorPtr handles)
+    : data_(sizeof(Header) + payload_size),
       handles_(std::move(handles)) {
-  header_->num_bytes = data_.size();
-  header_->num_handles = handles_ ? handles_->size() : 0;
-  header_->padding = 0;
-
-  if (payload)
-    memcpy(data_.data() + sizeof(MessageHeader), payload, payload_size);
-  else
-    memset(data_.data() + sizeof(MessageHeader), 0, payload_size);
+  Header* header = reinterpret_cast<Header*>(data_.data());
+  header->num_bytes = data_.size();
+  header->num_handles = handles_ ? handles_->size() : 0;
+  header->padding = 0;
 }
 
-Channel::OutgoingMessage::~OutgoingMessage() {}
+Channel::Message::~Message() {}
 
 Channel::Channel(Delegate* delegate)
     : delegate_(delegate), read_buffer_(kReadBufferSize) {}
@@ -90,11 +77,12 @@ void Channel::OnReadCompleteNoLock(size_t bytes_read) {
   read_lock().AssertAcquired();
 
   num_read_bytes_ += bytes_read;
-  while (num_read_bytes_ - read_offset_ >= sizeof(MessageHeader)) {
+  while (num_read_bytes_ - read_offset_ >= sizeof(Message::Header)) {
     // We have at least enough data available for a MessageHeader.
-    MessageHeader* header =
-        reinterpret_cast<MessageHeader*>(read_buffer_.data() + read_offset_);
-    if (header->num_bytes < sizeof(MessageHeader)) {
+    Message::Header* header =
+        reinterpret_cast<Message::Header*>(read_buffer_.data() + read_offset_);
+    if (header->num_bytes < sizeof(Message::Header) ||
+        header->num_bytes > kMaxChannelMessageSize) {
       LOG(ERROR) << "Invalid message size: " << header->num_bytes;
       OnError();
       return;
@@ -115,9 +103,10 @@ void Channel::OnReadCompleteNoLock(size_t bytes_read) {
     }
 
     // We've got a complete message! Dispatch it and try another.
-    IncomingMessage message(header, std::move(handles));
+    const size_t payload_size = header->num_bytes - sizeof(Message::Header);
+    const void* payload = payload_size ? &header[1] : nullptr;
     if (delegate_)
-      delegate_->OnChannelRead(&message);
+      delegate_->OnChannelMessage(payload, payload_size, std::move(handles));
 
     read_offset_ += header->num_bytes;
   }

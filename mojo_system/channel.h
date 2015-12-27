@@ -21,71 +21,37 @@ namespace edk {
 const size_t kChannelMessageAlignment = 8;
 
 // Channel provides a thread-safe interface to read and write arbitrary
-// delimited messages over an underlying IO channel, optionally transferring
+// delimited messages over an underlying I/O channel, optionally transferring
 // one or more platform handles in the process.
 class Channel : public base::RefCountedThreadSafe<Channel> {
  public:
-  // All messages sent over a Channel start with this header.
-  struct MessageHeader {
-    // Message size in bytes, including the header.
-    uint32_t num_bytes;
+  // A message to be written to a channel.
+  struct Message {
+    struct Header {
+      // Message size in bytes, including the header.
+      uint32_t num_bytes;
 
-    // Number of attached handles.
-    uint16_t num_handles;
+      // Number of attached handles.
+      uint16_t num_handles;
 
-    // Zero
-    uint16_t padding;
-  };
+      // Zero
+      uint16_t padding;
+    };
 
-  static_assert(sizeof(MessageHeader) % kChannelMessageAlignment == 0,
-      "MessageHeader size must be aligned to kChannelMessageAlignment bytes.");
+    // Allocates and owns a buffer for message data with enough capacity for
+    // |payload_size| bytes plus a header. Takes ownership of |handles|, which
+    // may be null.
+    Message(size_t payload_size, ScopedPlatformHandleVectorPtr handles);
+    ~Message();
 
-  // A view over some message data which was read from the channel.
-  struct IncomingMessage {
-    // Doesn't own |data|. Does own |handles| and can transfer ownership.
-    IncomingMessage(const void* data,
-                    ScopedPlatformHandleVectorPtr handles);
-    ~IncomingMessage();
-
-    bool IsValid() const;
-
-    const void* payload() const { return &header_[1]; }
-
-    size_t payload_size() const {
-      return header_->num_bytes - sizeof(MessageHeader);
-    }
-
-    size_t num_handles() const { return header_->num_handles; }
-
-    ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
-
-   private:
-    const MessageHeader* header_;
-    ScopedPlatformHandleVectorPtr handles_;
-
-    DISALLOW_COPY_AND_ASSIGN(IncomingMessage);
-  };
-
-  // A message to be written to the channel.
-  struct OutgoingMessage {
-    // Copies |payload| and takes ownership of |handles|. If |payload| is
-    // null this simply allocates and zeroes a payload of |payload_size| bytes.
-    OutgoingMessage(const void* payload,
-                    size_t payload_size,
-                    ScopedPlatformHandleVectorPtr handles);
-    ~OutgoingMessage();
-
-    const void* data() const { return header_; }
+    const void* data() const { return data_.data(); }
     size_t data_num_bytes() const { return data_.size(); }
 
-    void* mutable_payload() { return &header_[1]; }
-    const void* payload() const { return &header_[1]; }
+    void* mutable_payload() { return &(header()[1]); }
+    const void* payload() const { return &(header()[1]); }
 
-    size_t payload_size() const {
-      return data_.size() - sizeof(MessageHeader);
-    }
-
-    size_t num_handles() const { return header_->num_handles; }
+    size_t payload_size() const { return header()->num_bytes - sizeof(Header); }
+    size_t num_handles() const { return header()->num_handles; }
 
     PlatformHandle* handles() {
       DCHECK(handles_);
@@ -95,46 +61,61 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 
    private:
+    Header* header() { return reinterpret_cast<Header*>(data_.data()); }
+    const Header* header() const {
+      return reinterpret_cast<const Header*>(data_.data());
+    }
+
     std::vector<char> data_;
-    MessageHeader* const header_;
     ScopedPlatformHandleVectorPtr handles_;
 
-    DISALLOW_COPY_AND_ASSIGN(OutgoingMessage);
+    DISALLOW_COPY_AND_ASSIGN(Message);
   };
 
-  using OutgoingMessagePtr = scoped_ptr<OutgoingMessage>;
+  using MessagePtr = scoped_ptr<Message>;
 
-  // Delegate methods are called from the IO task runner with which the Channel
+  // Delegate methods are called from the I/O task runner with which the Channel
   // was created (see Channel::Create).
   class Delegate {
    public:
     virtual ~Delegate() {}
 
-    // A message has been received!
-    virtual void OnChannelRead(IncomingMessage* message) = 0;
+    // Notify of a received message. |payload| is not owned and must not be
+    // retained; it will be null if |payload_size| is 0. |handles| are
+    // transferred to the callee.
+    virtual void OnChannelMessage(const void* payload,
+                                  size_t payload_size,
+                                  ScopedPlatformHandleVectorPtr handles) = 0;
 
-    // A fatal error has occurred; the Channel has ceased to function.
+    // Notify that an error has occured and the Channel will cease operation.
     virtual void OnChannelError() = 0;
   };
 
   // Creates a new Channel around a |platform_handle|, taking ownership of the
-  // handle. All IO on the handle will be performed on |io_task_runner|.
+  // handle. All I/O on the handle will be performed on |io_task_runner|.
   static scoped_refptr<Channel> Create(
       Delegate* delegate,
       ScopedPlatformHandle platform_handle,
       scoped_refptr<base::TaskRunner> io_task_runner);
 
+  // Request that the channel be shut down. This should always be called before
+  // releasing the last reference to a Channel to ensure that it's cleaned up
+  // on its I/O task runner's thread.
+  //
+  // Delegate methods will no longer be invoked after this call.
   void ShutDown();
 
-  // Request that the Channel start processing IO events.
+  // Begin processing I/O events. Delegate methods must only be invoked after
+  // this call.
   virtual void Start() = 0;
 
-  // Request that the Channel shut itself down.
+  // Stop processing I/O events.
   virtual void ShutDownImpl() = 0;
 
   // Queues an outgoing message on the Channel. This message will either
-  // eventually be written, or will fail to write and trigger Delegate::OnError.
-  virtual void Write(OutgoingMessagePtr message) = 0;
+  // eventually be written or will fail to write and trigger
+  // Delegate::OnChannelError.
+  virtual void Write(MessagePtr message) = 0;
 
  protected:
   Channel(Delegate* delegate);

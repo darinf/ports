@@ -16,9 +16,7 @@
 #include "mojo/edk/system/waiter.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/channel.h"
-#include "ports/mojo_system/child_node_controller.h"
 #include "ports/mojo_system/message_pipe_dispatcher.h"
-#include "ports/mojo_system/parent_node_controller.h"
 
 namespace mojo {
 namespace edk {
@@ -45,15 +43,11 @@ void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
 }
 
 void Core::AddChild(ScopedPlatformHandle platform_handle) {
-  if (!node_.controller())
-    node_.set_controller(make_scoped_ptr(new ParentNodeController(&node_)));
-  node_.ConnectToPeer(ports::kInvalidNodeName, std::move(platform_handle));
+  node_.ConnectToChild(std::move(platform_handle));
 }
 
 void Core::InitChild(ScopedPlatformHandle platform_handle) {
-  CHECK(!node_.controller());
-  node_.set_controller(make_scoped_ptr(new ChildNodeController(&node_)));
-  node_.ConnectToPeer(ports::kInvalidNodeName, std::move(platform_handle));
+  node_.ConnectToParent(std::move(platform_handle));
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
@@ -86,25 +80,23 @@ bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
 void Core::CreateParentMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
-  DCHECK(node_.controller());
   ports::PortName port_name;
   node_.CreateUninitializedPort(&port_name);
-  node_.controller()->ReservePortForToken(
+  node_.ReservePortForToken(
       port_name, token,
-      base::Bind(&OnRemotePeerConnected,
-                 base::Unretained(this), port_name, callback));
+      base::Bind(&OnRemotePeerConnected, base::Unretained(this), port_name,
+                 callback));
 }
 
 void Core::CreateChildMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
-  DCHECK(node_.controller());
   ports::PortName port_name;
   node_.CreateUninitializedPort(&port_name);
-  node_.controller()->ConnectPortByToken(
-      port_name, token,
-      base::Bind(&OnRemotePeerConnected,
-                 base::Unretained(this), port_name, callback));
+  node_.ConnectToParentPortByToken(
+      token, port_name,
+      base::Bind(&OnRemotePeerConnected, base::Unretained(this), port_name,
+                 callback));
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,

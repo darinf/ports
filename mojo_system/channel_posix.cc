@@ -30,45 +30,39 @@ namespace {
 
 const size_t kMaxBatchReadCapacity = 256 * 1024;
 
-// A view over an OutgoingMessage object. The write queue uses these since
+// A view over a Channel::Message object. The write queue uses these since
 // large messages may need to be sent in chunks.
-class OutgoingMessageView {
+class MessageView {
  public:
-  OutgoingMessageView(Channel::OutgoingMessagePtr message,
-                      size_t offset)
+  // Owns |message|. |offset| indexes the first unsent byte in the message.
+  MessageView(Channel::MessagePtr message, size_t offset)
       : message_(std::move(message)),
         offset_(offset),
         handles_(message_->TakeHandles()) {
     DCHECK_GT(message_->data_num_bytes(), offset_);
   }
 
-  ~OutgoingMessageView() {}
+  ~MessageView() {}
 
   const void* data() const {
     return static_cast<const char*>(message_->data()) + offset_;
   }
 
+  size_t data_num_bytes() const { return message_->data_num_bytes() - offset_; }
   size_t data_offset() const { return offset_; }
 
-  size_t data_num_bytes() const { return message_->data_num_bytes() - offset_; }
-
-  size_t num_handles() const { return handles_ ? handles_->size() : 0; }
-
-  PlatformHandle* handles() {
-    return static_cast<PlatformHandle*>(handles_->data());
-  }
-
-  Channel::OutgoingMessagePtr TakeMessage() { return std::move(message_); }
+  ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
+  Channel::MessagePtr TakeMessage() { return std::move(message_); }
 
  private:
-  Channel::OutgoingMessagePtr message_;
+  Channel::MessagePtr message_;
   const size_t offset_;
   ScopedPlatformHandleVectorPtr handles_;
 
-  DISALLOW_COPY_AND_ASSIGN(OutgoingMessageView);
+  DISALLOW_COPY_AND_ASSIGN(MessageView);
 };
 
-using OutgoingMessageViewPtr = scoped_ptr<OutgoingMessageView>;
+using MessageViewPtr = scoped_ptr<MessageView>;
 
 class ChannelPosix : public Channel,
                      public base::MessageLoop::DestructionObserver,
@@ -93,11 +87,10 @@ class ChannelPosix : public Channel,
         FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
   }
 
-  void Write(OutgoingMessagePtr message) override {
+  void Write(MessagePtr message) override {
     base::AutoLock lock(write_lock_);
     bool wait_for_write = outgoing_messages_.empty();
-    outgoing_messages_.emplace_back(
-        new OutgoingMessageView(std::move(message), 0));
+    outgoing_messages_.emplace_back(new MessageView(std::move(message), 0));
     if (wait_for_write) {
       io_task_runner_->PostTask(
           FROM_HERE, base::Bind(&ChannelPosix::WaitForWriteOnIOThread, this));
@@ -151,15 +144,16 @@ class ChannelPosix : public Channel,
     read_watcher_.reset();
     write_watcher_.reset();
     handle_.reset();
+
+    // May destroy the |this| if it was the last reference.
+    self_ = nullptr;
   }
 
   // base::MessageLoop::DestructionObserver:
   void WillDestroyCurrentMessageLoop() override {
     DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-    if (self_) {
+    if (self_)
       ShutDownOnIOThread();
-      self_ = nullptr;
-    }
   }
 
   // base::MessagePumpLibevent::Watcher:
@@ -192,7 +186,7 @@ class ChannelPosix : public Channel,
   }
 
   void OnFileCanWriteWithoutBlocking(int fd) override {
-    std::deque<OutgoingMessageViewPtr> messages;
+    std::deque<MessageViewPtr> messages;
     {
       base::AutoLock lock(write_lock_);
       std::swap(outgoing_messages_, messages);
@@ -201,17 +195,18 @@ class ChannelPosix : public Channel,
 
     // TODO: Send a batch of iovecs when possible.
     while (!messages.empty()) {
-      OutgoingMessageViewPtr message_view = std::move(messages.front());
+      MessageViewPtr message_view = std::move(messages.front());
       iovec iov = {
         const_cast<void*>(message_view->data()),
         message_view->data_num_bytes()
       };
       ssize_t result;
-      if (message_view->num_handles()) {
+      ScopedPlatformHandleVectorPtr handles = message_view->TakeHandles();
+      if (handles && handles->size()) {
         // TODO: Handle lots of handles.
         result = PlatformChannelSendmsgWithHandles(
-            handle_.get(), &iov, 1, message_view->handles(),
-            message_view->num_handles());
+            handle_.get(), &iov, 1, handles->data(), handles->size());
+        handles->clear();
       } else {
         result = PlatformChannelWritev(handle_.get(), &iov, 1);
       }
@@ -219,7 +214,7 @@ class ChannelPosix : public Channel,
       if (result >= 0) {
         size_t bytes_written = static_cast<size_t>(result);
         if (bytes_written < message_view->data_num_bytes()) {
-          message_view.reset(new OutgoingMessageView(
+          message_view.reset(new MessageView(
               message_view->TakeMessage(),
               message_view->data_offset() + bytes_written));
           messages.front() = std::move(message_view);
@@ -261,7 +256,7 @@ class ChannelPosix : public Channel,
   // Protects |pending_write_| and |outgoing_messages_|.
   base::Lock write_lock_;
   bool pending_write_ = false;
-  std::deque<OutgoingMessageViewPtr> outgoing_messages_;
+  std::deque<MessageViewPtr> outgoing_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(ChannelPosix);
 };
