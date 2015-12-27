@@ -33,6 +33,8 @@ class MessagePipeDispatcher : public Dispatcher {
   ~MessagePipeDispatcher() override;
 
   // Dispatcher:
+  void CompleteTransit() override;
+  void CancelAllAwakablesNoLock() override;
   void CloseImplNoLock() override;
   MojoResult WriteMessageImplNoLock(const void* bytes,
                                     uint32_t num_bytes,
@@ -51,9 +53,6 @@ class MessagePipeDispatcher : public Dispatcher {
                                    HandleSignalsState* signals_state) override;
   void RemoveAwakableImplNoLock(Awakable* awakable,
                                 HandleSignalsState* signals_state) override;
-
-  bool BeginTransitImplNoLock() override;
-  void EndTransitImplNoLock(bool canceled) override;
 
   bool UpdateSignalsStateNoLock();
 

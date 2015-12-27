@@ -78,13 +78,13 @@ void Dispatcher::RemoveAwakable(Awakable* awakable,
 }
 
 bool Dispatcher::BeginTransit() {
-  lock_.Acquire();
-  return BeginTransitImplNoLock();
+  return true;
 }
 
-void Dispatcher::EndTransit(bool canceled) {
-  EndTransitImplNoLock(canceled);
-  lock_.Release();
+void Dispatcher::CompleteTransit() {
+}
+
+void Dispatcher::CancelTransit() {
 }
 
 Dispatcher::Dispatcher() : is_closed_(false) {
@@ -162,19 +162,6 @@ void Dispatcher::RemoveAwakableImplNoLock(Awakable* /*awakable*/,
   // will do something nontrivial.
   if (signals_state)
     *signals_state = HandleSignalsState();
-}
-
-bool Dispatcher::BeginTransitImplNoLock() {
-  lock_.AssertAcquired();
-  return false;
-}
-
-void Dispatcher::EndTransitImplNoLock(bool canceled) {
-  lock_.AssertAcquired();
-
-  // The default implementation doesn't allow transit to begin, so this should
-  // never be reached.
-  NOTREACHED();
 }
 
 bool Dispatcher::IsBusyNoLock() const {

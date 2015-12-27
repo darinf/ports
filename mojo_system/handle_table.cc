@@ -100,7 +100,7 @@ void HandleTable::CompleteTransit(
     auto it = handles_.find(dispatcher.local_handle);
     DCHECK(it != handles_.end() && it->second.busy);
     handles_.erase(it);
-    dispatcher.dispatcher->EndTransit(false /* canceled */);
+    dispatcher.dispatcher->CompleteTransit();
   }
 }
 
@@ -110,7 +110,7 @@ void HandleTable::CancelTransit(
     auto it = handles_.find(dispatcher.local_handle);
     DCHECK(it != handles_.end() && it->second.busy);
     it->second.busy = false;
-    dispatcher.dispatcher->EndTransit(true /* canceled */);
+    dispatcher.dispatcher->CancelTransit();
   }
 }
 

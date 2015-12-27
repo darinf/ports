@@ -108,14 +108,16 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // |*signals_state| will be set to the current handle signals state.
   void RemoveAwakable(Awakable* awakable, HandleSignalsState* signals_state);
 
-  // Does whatever is necessary to begin transit of the dispatcher. Grabs and
-  // holds the dispatcher's lock. This should return |true| if transit is OK,
-  // or false if the underlying resource is deemed busy by the implementation.
-  bool BeginTransit();
+  // Does whatever is necessary to begin transit of the dispatcher.  This
+  // should return |true| if transit is OK, or false if the underlying resource
+  // is deemed busy by the implementation.
+  virtual bool BeginTransit();
 
-  // Does whatever is necessary to end transit of the dispatched. |canceled| is
-  // true iff transit was canceled. Releases the dispatcher's lock.
-  void EndTransit(bool canceled);
+  // Does whatever is necessary to complete transit of the dispatcher.
+  virtual void CompleteTransit();
+  
+  // Does whatever is necessary to cancel transit of the dispatcher.
+  virtual void CancelTransit();
 
  protected:
   friend class base::RefCountedThreadSafe<Dispatcher>;
@@ -152,9 +154,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
                                            HandleSignalsState* signals_state);
   virtual void RemoveAwakableImplNoLock(Awakable* awakable,
                                         HandleSignalsState* signals_state);
-
-  virtual bool BeginTransitImplNoLock();
-  virtual void EndTransitImplNoLock(bool canceled);
 
   // This should be overridden to return true if/when there's an ongoing
   // operation (e.g., two-phase read/writes on data pipes) that should prevent a

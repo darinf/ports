@@ -69,8 +69,13 @@ bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
     d.dispatcher = new MessagePipeDispatcher(&node_, message.ports[i].name);
   }
 
-  base::AutoLock lock(handles_lock_);
-  if (!handles_.AddDispatchersFromTransit(dispatchers, handles)) {
+  bool failed = false;
+  {
+    base::AutoLock lock(handles_lock_);
+    if (!handles_.AddDispatchersFromTransit(dispatchers, handles))
+      failed = true;
+  }
+  if (failed) {
     for (auto d : dispatchers)
       d.dispatcher->Close();
     return false;
@@ -114,12 +119,15 @@ MojoTimeTicks Core::GetTimeTicksNow() {
 }
 
 MojoResult Core::Close(MojoHandle handle) {
-  base::AutoLock lock(handles_lock_);
   scoped_refptr<Dispatcher> dispatcher;
-  MojoResult rv = handles_.GetAndRemoveDispatcher(handle, &dispatcher);
-  if (rv == MOJO_RESULT_OK)
-    dispatcher->Close();
-  return rv;
+  {
+    base::AutoLock lock(handles_lock_);
+    MojoResult rv = handles_.GetAndRemoveDispatcher(handle, &dispatcher);
+    if (rv != MOJO_RESULT_OK)
+      return rv;
+  }
+  dispatcher->Close();
+  return MOJO_RESULT_OK;
 }
 
 MojoResult Core::Wait(MojoHandle handle,
@@ -212,25 +220,29 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
   if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  if (num_handles == 0) {
-    // Fast path: no handles.
+  if (num_handles == 0)  // Fast path: no handles.
     return dispatcher->WriteMessage(bytes, num_bytes, nullptr, 0, flags);
-  }
 
-  base::AutoLock lock(handles_lock_);
   std::vector<Dispatcher::DispatcherInTransit> dispatchers;
-  MojoResult rv = handles_.BeginTransit(handles, num_handles, &dispatchers);
-  if (rv != MOJO_RESULT_OK)
-    return rv;
-
+  {
+    base::AutoLock lock(handles_lock_);
+    MojoResult rv = handles_.BeginTransit(handles, num_handles, &dispatchers);
+    if (rv != MOJO_RESULT_OK)
+      return rv;
+  }
   DCHECK_EQ(num_handles, dispatchers.size());
 
-  rv = dispatcher->WriteMessage(
+  MojoResult rv = dispatcher->WriteMessage(
       bytes, num_bytes, dispatchers.data(), num_handles, flags);
-  if (rv == MOJO_RESULT_OK)
-    handles_.CompleteTransit(dispatchers);
-  else
-    handles_.CancelTransit(dispatchers);
+
+  {
+    base::AutoLock lock(handles_lock_);
+    if (rv == MOJO_RESULT_OK) {
+      handles_.CompleteTransit(dispatchers);
+    } else {
+      handles_.CancelTransit(dispatchers);
+    }
+  }
 
   return rv;
 }

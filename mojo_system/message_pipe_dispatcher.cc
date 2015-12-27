@@ -31,11 +31,10 @@ class MessagePipeDispatcher::PortObserverThunk : public Node::PortObserver {
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
                                              const ports::PortName& port_name)
     : node_(node), port_name_(port_name) {
-  // OnMessagesAvailable (via LocalPortObserver) may be called before this
+  // OnMessagesAvailable (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
-  base::AutoLock dispatcher_lock(lock());
-  node_->SetPortObserver(
-      port_name_, std::make_shared<PortObserverThunk>(this));
+  base::AutoLock locker(lock());
+  node_->SetPortObserver(port_name_, std::make_shared<PortObserverThunk>(this));
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
@@ -43,6 +42,20 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
+}
+
+void MessagePipeDispatcher::CompleteTransit() {
+  base::AutoLock locker(lock());
+
+  // port_name_ has been closed by virtue of having been transferred.
+  // This dispatcher needs to be closed as well.
+  port_transferred_ = true;
+  CloseNoLock();
+}
+
+void MessagePipeDispatcher::CancelAllAwakablesNoLock() {
+  lock().AssertAcquired();
+  awakables_.CancelAll();
 }
 
 void MessagePipeDispatcher::CloseImplNoLock() {
@@ -220,21 +233,6 @@ void MessagePipeDispatcher::RemoveAwakableImplNoLock(
   awakables_.Remove(awakable);
 }
 
-bool MessagePipeDispatcher::BeginTransitImplNoLock() {
-  return true;
-}
-
-void MessagePipeDispatcher::EndTransitImplNoLock(bool canceled) {
-  if (!canceled) {
-    // port_name_ has been closed by virtue of having been transferred.
-    // This dispatcher needs to be closed as well.
-    port_transferred_ = true;
-    CloseNoLock();
-
-    // TODO: Need to implement CancelAllAwakablesNoLock.
-  }
-}
-
 bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
   // Peek at the queue. If our selector function runs at all, it's not empty.
   //
@@ -269,7 +267,7 @@ bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
 }
 
 void MessagePipeDispatcher::OnMessagesAvailable() {
-  base::AutoLock dispatcher_lock(lock());
+  base::AutoLock locker(lock());
 
   if (UpdateSignalsStateNoLock())
     awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
