@@ -31,11 +31,18 @@
 
 #include <algorithm>
 
+#include "ports/src/event.h"
+#include "ports/src/logging.h"
+
 namespace ports {
+
+inline uint32_t GetSequenceNum(const ScopedMessage& message) {
+  return GetEventData<UserEventData>(message)->sequence_num;
+}
 
 // Used by std::{push,pop}_heap functions
 inline bool operator<(const ScopedMessage& a, const ScopedMessage& b) {
-  return a->sequence_num > b->sequence_num;
+  return GetSequenceNum(a) > GetSequenceNum(b);
 }
 
 MessageQueue::MessageQueue() : MessageQueue(kInitialSequenceNum) {}
@@ -51,7 +58,7 @@ MessageQueue::~MessageQueue() {
 
 void MessageQueue::GetNextMessageIf(MessageSelector* selector,
                                     ScopedMessage* message) {
-  if (heap_.empty() || heap_[0]->sequence_num != next_sequence_num_) {
+  if (heap_.empty() || GetSequenceNum(heap_[0]) != next_sequence_num_) {
     message->reset();
   } else {
     if (selector && !selector->Select(*heap_[0].get())) {
@@ -69,6 +76,8 @@ void MessageQueue::GetNextMessageIf(MessageSelector* selector,
 
 void MessageQueue::AcceptMessage(ScopedMessage message,
                                  bool* has_next_message) {
+  DCHECK(GetEventHeader(message)->type == EventType::kUser);
+
   // TODO: Handle sequence number roll-over.
 
   heap_.emplace_back(std::move(message));
@@ -77,7 +86,7 @@ void MessageQueue::AcceptMessage(ScopedMessage message,
   if (!signalable_) {
     *has_next_message = false;
   } else {
-    *has_next_message = (heap_[0]->sequence_num == next_sequence_num_);
+    *has_next_message = (GetSequenceNum(heap_[0]) == next_sequence_num_);
   }
 }
 

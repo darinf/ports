@@ -33,41 +33,61 @@
 
 #include <limits>
 
+#include "event.h"
+#include "logging.h"
+
 namespace ports {
 
-Message* AllocMessage(size_t num_bytes, size_t num_ports) {
-  // Memory layout: [Message] [dependent_ports] [bytes]
+// static
+void Message::Parse(const void* bytes,
+                    size_t num_bytes,
+                    size_t* num_header_bytes,
+                    size_t* num_payload_bytes,
+                    size_t* num_ports_bytes) {
+  const EventHeader* header = static_cast<const EventHeader*>(bytes);
+  switch (header->type) {
+    case EventType::kUser:
+      // See below.
+      break;
+    case EventType::kPortAccepted:
+      *num_header_bytes = sizeof(EventHeader);
+      break;
+    case EventType::kObserveProxy:
+      *num_header_bytes = sizeof(EventHeader) + sizeof(ObserveProxyEventData);
+      break;
+    case EventType::kObserveProxyAck:
+      *num_header_bytes =
+          sizeof(EventHeader) + sizeof(ObserveProxyAckEventData);
+      break;
+    case EventType::kObserveClosure:
+      *num_header_bytes = sizeof(EventHeader) + sizeof(ObserveClosureEventData);
+      break;
+  }
 
-  // Take care to avoid integer overflow.
-
-  if (num_ports > std::numeric_limits<size_t>::max() / sizeof(PortDescriptor))
-    return NULL;
-  size_t ports_size = num_ports * sizeof(PortDescriptor);
-
-  size_t message_size = sizeof(Message);
-
-  if (message_size + ports_size < message_size)
-    return NULL;
-  message_size += ports_size;
-
-  if (message_size + num_bytes < message_size)
-    return NULL;
-  message_size += num_bytes;
-
-  char* memory = static_cast<char*>(malloc(message_size));
-
-  Message* message = reinterpret_cast<Message*>(memory);
-  message->sequence_num = 0;
-  message->ports = reinterpret_cast<PortDescriptor*>(memory + sizeof(Message));
-  message->num_ports = num_ports;
-  message->bytes = memory + sizeof(Message) + ports_size;
-  message->num_bytes = num_bytes;
-
-  return message;
+  if (header->type == EventType::kUser) {
+    const UserEventData* event_data =
+        reinterpret_cast<const UserEventData*>(
+            reinterpret_cast<const char*>(header + 1));
+    *num_header_bytes = sizeof(EventHeader) +
+                        sizeof(UserEventData) +
+                        event_data->num_ports * sizeof(PortDescriptor);
+    *num_ports_bytes = event_data->num_ports * sizeof(PortName);
+    *num_payload_bytes = num_bytes - *num_header_bytes - *num_ports_bytes;
+  } else {
+    *num_payload_bytes = 0;
+    *num_ports_bytes = 0;
+    DCHECK_EQ(num_bytes,
+              *num_header_bytes + *num_payload_bytes + *num_ports_bytes);
+  }
 }
 
-void FreeMessage(Message* message) {
-  free(message);
+Message::Message(size_t num_header_bytes,
+                 size_t num_payload_bytes,
+                 size_t num_ports_bytes)
+    : start_(nullptr),
+      num_header_bytes_(num_header_bytes),
+      num_ports_bytes_(num_ports_bytes),
+      num_payload_bytes_(num_payload_bytes) {
 }
 
 }  // namespace ports

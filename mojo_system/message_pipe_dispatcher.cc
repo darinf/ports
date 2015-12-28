@@ -73,8 +73,12 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     MojoWriteMessageFlags flags) {
   lock().AssertAcquired();
 
-  ports::ScopedMessage message(ports::AllocMessage(num_bytes, num_dispatchers));
-  memcpy(message->bytes, bytes, num_bytes);
+  ports::ScopedMessage message;
+  int rv = node_->AllocMessage(num_bytes, num_dispatchers, &message);
+  if (rv != ports::OK)
+    return MOJO_RESULT_UNKNOWN;
+
+  memcpy(message->mutable_payload_bytes(), bytes, num_bytes);
   for (size_t i = 0; i < num_dispatchers; ++i) {
     Dispatcher* d = dispatchers[i].dispatcher.get();
 
@@ -82,10 +86,10 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     CHECK_EQ(d->GetType(), Type::MESSAGE_PIPE);
 
     MessagePipeDispatcher* mpd = static_cast<MessagePipeDispatcher*>(d);
-    message->ports[i].name = mpd->GetPortName();
+    message->mutable_ports()[i] = mpd->GetPortName();
   }
 
-  int rv = node_->SendMessage(port_name_, std::move(message));
+  rv = node_->SendMessage(port_name_, std::move(message));
 
   if (rv != ports::OK) {
     if (rv == ports::ERROR_PORT_UNKNOWN ||
@@ -127,19 +131,19 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
         size_t bytes_to_read = 0;
         if (num_bytes) {
           bytes_to_read = std::min(static_cast<size_t>(*num_bytes),
-                                   next_message.num_bytes);
-          *num_bytes = next_message.num_bytes;
+                                   next_message.num_payload_bytes());
+          *num_bytes = next_message.num_payload_bytes();
         }
 
         size_t handles_to_read = 0;
         if (num_handles) {
           handles_to_read = std::min(static_cast<size_t>(*num_handles),
-                                     next_message.num_ports);
-          *num_handles = next_message.num_ports;
+                                     next_message.num_ports());
+          *num_handles = next_message.num_ports();
         }
 
-        if (bytes_to_read < next_message.num_bytes ||
-            handles_to_read < next_message.num_ports) {
+        if (bytes_to_read < next_message.num_payload_bytes() ||
+            handles_to_read < next_message.num_ports()) {
           no_space = true;
           return false;
         }
@@ -176,7 +180,7 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     return MOJO_RESULT_UNKNOWN;  // TODO: Add a better error code here?
   }
 
-  memcpy(bytes, message->bytes, message->num_bytes);
+  memcpy(bytes, message->mutable_payload_bytes(), message->num_payload_bytes());
 
   return MOJO_RESULT_OK;
 }

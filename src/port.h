@@ -53,7 +53,7 @@ struct Port {
   uint32_t next_sequence_num_to_send;
   uint32_t last_sequence_num_to_receive;
   MessageQueue message_queue;
-  std::unique_ptr<std::pair<NodeName, Event>> send_on_proxy_removal;
+  std::unique_ptr<std::pair<NodeName, ScopedMessage>> send_on_proxy_removal;
   std::shared_ptr<UserData> user_data;
   bool remove_proxy_on_last_message;
   bool peer_closed;

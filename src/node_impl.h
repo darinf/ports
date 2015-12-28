@@ -33,7 +33,8 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "../include/ports.h"
+#include "event.h"
+#include "ports/include/ports.h"
 #include "hash_functions.h"
 #include "port.h"
 
@@ -56,16 +57,20 @@ class Node::Impl {
   int GetMessageIf(const PortName& port_name,
                    MessageSelector* selector,
                    ScopedMessage* message);
+  int AllocMessage(size_t num_payload_bytes,
+                   size_t num_ports,
+                   ScopedMessage* message);
   int SendMessage(const PortName& port_name, ScopedMessage message);
-  int AcceptEvent(Event event);
+  int AcceptMessage(ScopedMessage message);
   int LostConnectionToNode(const NodeName& node_name);
 
  private:
-  int AcceptMessage(const PortName& port_name, ScopedMessage message);
-  int PortAccepted(const PortName& port_name);
-  int ObserveProxy(Event event);
-  int ObserveProxyAck(const PortName& port_name, uint32_t last_sequence_num);
-  int ObserveClosure(Event event);
+  int OnUserMessage(ScopedMessage message);
+  int OnPortAccepted(const PortName& port_name);
+  int OnObserveProxy(const PortName& port_name,
+                     const ObserveProxyEventData& event);
+  int OnObserveProxyAck(const PortName& port_name, uint32_t last_sequence_num);
+  int OnObserveClosure(const PortName& port_name, uint32_t last_sequence_num);
 
   int AddPort(std::shared_ptr<Port> port, PortName* port_name);
   int AddPortWithName(const PortName& port_name,
@@ -75,8 +80,10 @@ class Node::Impl {
 
   void WillSendPort_Locked(Port* port,
                            const NodeName& to_node_name,
+                           PortName* port_name,
                            PortDescriptor* port_descriptor);
-  int AcceptPort(const PortDescriptor& port_descriptor);
+  int AcceptPort(const PortName& port_name,
+                 const PortDescriptor& port_descriptor);
 
   int SendMessage_Locked(Port* port,
                          const PortName& port_name,
@@ -85,6 +92,23 @@ class Node::Impl {
   void InitiateProxyRemoval_Locked(Port* port, const PortName& port_name);
   void MaybeRemoveProxy_Locked(Port* port, const PortName& port_name);
   void ClosePort_Locked(Port* port, const PortName& port_name);
+
+  ScopedMessage NewInternalMessage_Helper(const PortName& port_name,
+                                          const EventType& type,
+                                          const void* data,
+                                          size_t num_data_bytes);
+
+  ScopedMessage NewInternalMessage(const PortName& port_name,
+                                   const EventType& type) {
+    return NewInternalMessage_Helper(port_name, type, nullptr, 0);
+  }
+
+  template <typename EventData>
+  ScopedMessage NewInternalMessage(const PortName& port_name,
+                                   const EventType& type,
+                                   const EventData& data) {
+    return NewInternalMessage_Helper(port_name, type, &data, sizeof(data));
+  }
 
   NodeName name_;
   NodeDelegate* delegate_;

@@ -58,9 +58,10 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Drops the connection to peer named |name| if one exists.
   void DropPeer(const ports::NodeName& name);
 
-  // Sends a ports::Event to another node, or queues it for delivery if we
-  // don't yet know how to talk to that node.
-  void SendPeerEvent(const ports::NodeName& name, ports::Event event);
+  // Sends a ports::ScopedMessage to another node, or queues it for delivery if
+  // we don't yet know how to talk to that node.
+  void SendPeerMessage(const ports::NodeName& name,
+                       ports::ScopedMessage message);
 
   // Creates a single uninitialized port which is not ready for use.
   void CreateUninitializedPort(ports::PortName* port_name);
@@ -76,6 +77,10 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Sets a port's observer.
   void SetPortObserver(const ports::PortName& port_name,
                        std::shared_ptr<PortObserver> observer);
+
+  int AllocMessage(size_t num_payload_bytes,
+                   size_t num_ports,
+                   ports::ScopedMessage* message);
 
   // Sends a message on a port to its peer.
   int SendMessage(const ports::PortName& port_name,
@@ -110,7 +115,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
  private:
   using NodeMap = std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>>;
-  using OutgoingEventQueue = std::queue<ports::Event>;
+  using OutgoingMessageQueue = std::queue<ports::ScopedMessage>;
 
   struct PendingTokenConnection {
     PendingTokenConnection();
@@ -136,11 +141,16 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   void ConnectToParentPortByTokenNowNoLock(const std::string& token,
                                            const ports::PortName& local_port,
                                            const base::Closure& on_connect);
-  void AcceptEventOnIOThread(ports::Event event);
+  void AcceptMessageOnIOThread(ports::ScopedMessage message);
 
   // ports::NodeDelegate:
   void GenerateRandomPortName(ports::PortName* port_name) override;
-  void SendEvent(const ports::NodeName& node, ports::Event event) override;
+  void AllocMessage(size_t num_header_bytes,
+                    size_t num_payload_bytes,
+                    size_t num_ports,
+                    ports::ScopedMessage* message) override;
+  void ForwardMessage(const ports::NodeName& node,
+                      ports::ScopedMessage message) override;
   void MessagesAvailable(const ports::PortName& port,
                          std::shared_ptr<ports::UserData> user_data) override;
 
@@ -151,8 +161,9 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   void OnAcceptParent(const ports::NodeName& from_node,
                       const ports::NodeName& token,
                       const ports::NodeName& child_name) override;
-  void OnEvent(const ports::NodeName& from_node,
-               ports::Event event) override;
+  void OnPortsMessage(const ports::NodeName& from_node,
+                      const void* payload,
+                      size_t payload_size) override;
   void OnConnectToPort(const ports::NodeName& from_node,
                        const ports::PortName& connector_port,
                        const std::string& token) override;
@@ -199,8 +210,9 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   std::vector<PendingTokenConnection> pending_token_connections_;
   std::unordered_map<ports::PortName, base::Closure> pending_connection_acks_;
 
-  // Outgoing event queues for peers we've heard of but can't yet talk to.
-  std::unordered_map<ports::NodeName, OutgoingEventQueue> pending_peer_events_;
+  // Outgoing message queues for peers we've heard of but can't yet talk to.
+  std::unordered_map<ports::NodeName, OutgoingMessageQueue>
+      pending_peer_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };

@@ -46,25 +46,41 @@ namespace test {
 
 static void LogMessage(const Message* message) {
   std::stringstream ports;
-  for (size_t i = 0; i < message->num_ports; ++i) {
+  for (size_t i = 0; i < message->num_ports(); ++i) {
     if (i > 0)
       ports << ",";
-    ports << message->ports[i].name;
+    ports << message->ports()[i];
   }
-  DLOG(INFO) << "message: seq_num=" << message->sequence_num
-             << " payload=\"" << static_cast<const char*>(message->bytes)
+  DLOG(INFO) << "message: \""
+             << static_cast<const char*>(message->payload_bytes())
              << "\" ports=[" << ports.str() << "]";
 }
 
+class TestMessage : public Message {
+ public:
+  TestMessage(size_t num_header_bytes,
+              size_t num_payload_bytes,
+              size_t num_ports_bytes)
+      : Message(num_header_bytes,
+                num_payload_bytes,
+                num_ports_bytes) {
+    start_ = new char[num_header_bytes + num_payload_bytes + num_ports_bytes];
+  }
+
+  ~TestMessage() override {
+    delete[] start_;
+  }
+};
+
 struct Task {
-  Task(NodeName node_name, Event event)
+  Task(NodeName node_name, ScopedMessage message)
       : node_name(node_name),
-        event(std::move(event)),
+        message(std::move(message)),
         priority(rand()) {
   }
 
   NodeName node_name;
-  Event event;
+  ScopedMessage message;
   int32_t priority;
 };
 
@@ -92,7 +108,7 @@ static void PumpTasks() {
     task_queue.pop();
 
     Node* node = GetNode(task->node_name);
-    node->AcceptEvent(std::move(task->event));
+    node->AcceptMessage(std::move(task->message));
 
     delete task;
   }
@@ -108,30 +124,36 @@ static void DiscardPendingTasks() {
 
 static ScopedMessage NewStringMessage(const std::string& s) {
   size_t size = s.size() + 1;
-  Message* message = AllocMessage(size, 0);
-  memcpy(message->bytes, s.data(), size);
-  return ScopedMessage(message);
+  ScopedMessage message;
+  EXPECT_EQ(OK, node_map[0]->AllocMessage(size, 0, &message));
+  memcpy(message->mutable_payload_bytes(), s.data(), size);
+  return message;
 }
 
 static ScopedMessage NewStringMessageWithPort(const std::string& s,
                                               PortName port) {
   size_t size = s.size() + 1;
-  Message* message = AllocMessage(size, 1);
-  memcpy(message->bytes, s.data(), size);
-  message->ports[0].name = port;
-  return ScopedMessage(message);
+  ScopedMessage message;
+  EXPECT_EQ(OK, node_map[0]->AllocMessage(size, 1, &message));
+  memcpy(message->mutable_payload_bytes(), s.data(), size);
+  message->mutable_ports()[0] = port;
+  return message;
+}
+
+static const char* ToString(const ScopedMessage& message) {
+  return static_cast<const char*>(message->payload_bytes());
 }
 
 class TestNodeDelegate : public NodeDelegate {
  public:
   explicit TestNodeDelegate(const NodeName& node_name)
       : node_name_(node_name),
-        drop_events_(false),
+        drop_messages_(false),
         read_messages_(true),
         save_messages_(false) {
   }
 
-  void set_drop_events(bool value) { drop_events_ = value; }
+  void set_drop_messages(bool value) { drop_messages_ = value; }
   void set_read_messages(bool value) { read_messages_ = value; }
   void set_save_messages(bool value) { save_messages_ = value; }
 
@@ -151,17 +173,24 @@ class TestNodeDelegate : public NodeDelegate {
     port_name->value_minor = 0;
   }
 
-  void SendEvent(const NodeName& node_name, Event event) override {
-    if (drop_events_) {
-      DLOG(INFO) << "Dropping SendEvent(" << event.type << ") from node "
-                 << node_name_ << " to "
-                 << event.port_name << "@" << node_name;
+  void AllocMessage(size_t num_header_bytes,
+                    size_t num_payload_bytes,
+                    size_t num_ports,
+                    ScopedMessage* message) override {
+    message->reset(
+        new TestMessage(num_header_bytes, num_payload_bytes, num_ports));
+  }
+
+  void ForwardMessage(const NodeName& node_name,
+                      ScopedMessage message) override {
+    if (drop_messages_) {
+      DLOG(INFO) << "Dropping ForwardMessage from node "
+                 << node_name_ << " to " << node_name;
       return;
     }
-    DLOG(INFO) << "SendEvent(" << event.type << ") from node "
-               << node_name_ << " to "
-               << event.port_name << "@" << node_name;
-    task_queue.push(new Task(node_name, std::move(event)));
+    DLOG(INFO) << "ForwardMessage from node "
+               << node_name_ << " to " << node_name;
+    task_queue.push(new Task(node_name, std::move(message)));
   }
 
   void MessagesAvailable(const PortName& port,
@@ -180,14 +209,13 @@ class TestNodeDelegate : public NodeDelegate {
         SaveMessage(std::move(message));
       } else {
         LogMessage(message.get());
-        for (size_t i = 0; i < message->num_ports; ++i) {
+        for (size_t i = 0; i < message->num_ports(); ++i) {
           std::stringstream buf;
-          buf << "got port: " << message->ports[i].name;
-          node->SendMessage(message->ports[i].name,
-                            NewStringMessage(buf.str()));
+          buf << "got port: " << message->ports()[i];
+          node->SendMessage(message->ports()[i], NewStringMessage(buf.str()));
 
           // Avoid leaking these ports.
-          node->ClosePort(message->ports[i].name);
+          node->ClosePort(message->ports()[i]);
         }
       }
     }
@@ -200,7 +228,7 @@ class TestNodeDelegate : public NodeDelegate {
 
   std::queue<ScopedMessage> saved_messages_;
   NodeName node_name_;
-  bool drop_events_;
+  bool drop_messages_;
   bool read_messages_;
   bool save_messages_;
 };
@@ -338,7 +366,7 @@ TEST_F(PortsTest, LostConnectionToNode1) {
   // Transfer port to node1 and simulate a lost connection to node1. Dropping
   // events from node1 is how we simulate the lost connection.
 
-  node1_delegate.set_drop_events(true);
+  node1_delegate.set_drop_messages(true);
 
   PortName a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
@@ -381,7 +409,7 @@ TEST_F(PortsTest, LostConnectionToNode2) {
 
   PumpTasks();
 
-  node1_delegate.set_drop_events(true);
+  node1_delegate.set_drop_messages(true);
 
   EXPECT_EQ(OK, node0.LostConnectionToNode(node1_name));
 
@@ -439,7 +467,7 @@ TEST_F(PortsTest, GetMessage2) {
 
   EXPECT_EQ(OK, node0.GetMessage(a0, &message));
   ASSERT_TRUE(message);
-  EXPECT_EQ(0, strcmp(static_cast<char*>(message->bytes), "1"));
+  EXPECT_EQ(0, strcmp("1", ToString(message)));
 
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(a1));
@@ -474,7 +502,7 @@ TEST_F(PortsTest, GetMessage3) {
   for (size_t i = 0; i < sizeof(kStrings)/sizeof(kStrings[0]); ++i) {
     EXPECT_EQ(OK, node0.GetMessage(a0, &message));
     ASSERT_TRUE(message);
-    EXPECT_EQ(0, strcmp(static_cast<char*>(message->bytes), kStrings[i]));
+    EXPECT_EQ(0, strcmp(kStrings[i], ToString(message)));
     DLOG(INFO) << "got " << kStrings[i];
   }
 
@@ -515,10 +543,10 @@ TEST_F(PortsTest, Delegation1) {
   ScopedMessage message;
   ASSERT_TRUE(node1_delegate.GetSavedMessage(&message));
 
-  ASSERT_EQ(1u, message->num_ports);
+  ASSERT_EQ(1u, message->num_ports());
 
   // This is "a1" from the point of view of node1.
-  PortName a2 = message->ports[0].name;
+  PortName a2 = message->ports()[0];
 
   EXPECT_EQ(OK, node1.SendMessage(x1, NewStringMessageWithPort("a2", a2)));
 
@@ -530,17 +558,17 @@ TEST_F(PortsTest, Delegation1) {
 
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
 
-  ASSERT_EQ(1u, message->num_ports);
+  ASSERT_EQ(1u, message->num_ports());
 
   // This is "a2" from the point of view of node1.
-  PortName a3 = message->ports[0].name;
+  PortName a3 = message->ports()[0];
 
-  EXPECT_EQ(0, strcmp("a2", static_cast<char*>(message->bytes)));
+  EXPECT_EQ(0, strcmp("a2", ToString(message)));
 
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
 
-  EXPECT_EQ(0u, message->num_ports);
-  EXPECT_EQ(0, strcmp("hello", static_cast<char*>(message->bytes)));
+  EXPECT_EQ(0u, message->num_ports());
+  EXPECT_EQ(0, strcmp("hello", ToString(message)));
 
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(a3));
@@ -591,7 +619,7 @@ TEST_F(PortsTest, Delegation2) {
     for (;;) {
       ScopedMessage message;
       if (node1_delegate.GetSavedMessage(&message)) {
-        if (strcmp(static_cast<char*>(message->bytes), "hello") == 0)
+        if (strcmp("hello", ToString(message)) == 0)
           break;
       } else {
         ASSERT_TRUE(false);  // "hello" message not delivered!

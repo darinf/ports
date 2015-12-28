@@ -3,7 +3,6 @@
 GTEST_DIR = ../../googletest/googletest
 
 SOURCES = \
-	event.cc \
 	logging.cc \
 	message.cc \
 	message_queue.cc \

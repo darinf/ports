@@ -29,8 +29,9 @@ class NodeChannel : public Channel::Delegate {
     virtual void OnAcceptParent(const ports::NodeName& from_node,
                                 const ports::NodeName& token,
                                 const ports::NodeName& child_name) = 0;
-    virtual void OnEvent(const ports::NodeName& from_node,
-                         ports::Event event) = 0;
+    virtual void OnPortsMessage(const ports::NodeName& from_node,
+                                const void* payload,
+                                size_t payload_size) = 0;
     virtual void OnConnectToPort(const ports::NodeName& from_node,
                                  const ports::PortName& connector_port,
                                  const std::string& token) = 0;
@@ -45,6 +46,9 @@ class NodeChannel : public Channel::Delegate {
 
     virtual void OnChannelError(const ports::NodeName& node) = 0;
   };
+
+  static Channel::MessagePtr CreatePortsMessage(size_t payload_size,
+                                                void** payload);
 
   NodeChannel(Delegate* delegate,
               ScopedPlatformHandle platform_handle,
@@ -61,7 +65,7 @@ class NodeChannel : public Channel::Delegate {
                    const ports::NodeName& token);
   void AcceptParent(const ports::NodeName& token,
                     const ports::NodeName& child_name);
-  void Event(ports::Event event);
+  void PortsMessage(Channel::MessagePtr message);
   void ConnectToPort(const std::string& token,
                      const ports::PortName& connector_port);
   void ConnectToPortAck(const ports::PortName& connector_port,

@@ -25,6 +25,62 @@ ports::NodeName GetRandomNodeName() {
   return name;
 }
 
+class PortsMessage : public ports::Message {
+ public:
+  virtual Channel::MessagePtr TakeChannelMessage() = 0;
+
+ protected:
+  PortsMessage(size_t num_header_bytes, 
+               size_t num_payload_bytes,
+               size_t num_ports_bytes)
+      : ports::Message(num_header_bytes,
+                       num_payload_bytes,
+                       num_ports_bytes) {
+  }
+};
+
+class DependentPortsMessage : public PortsMessage {
+ public:
+  DependentPortsMessage(const void* start,
+                        size_t num_header_bytes,
+                        size_t num_payload_bytes,
+                        size_t num_ports_bytes)
+      : PortsMessage(num_header_bytes,
+                     num_payload_bytes,
+                     num_ports_bytes) {
+    start_ = static_cast<char*>(const_cast<void*>(start));
+  }
+
+  Channel::MessagePtr TakeChannelMessage() override {
+    CHECK(false);
+    return nullptr;
+  };
+};
+
+class ManagedPortsMessage : public PortsMessage {
+ public:
+  ManagedPortsMessage(size_t num_header_bytes, 
+                      size_t num_payload_bytes,
+                      size_t num_ports_bytes)
+      : PortsMessage(num_header_bytes,
+                     num_payload_bytes,
+                     num_ports_bytes) {
+    size_t size = num_header_bytes + num_payload_bytes + num_ports_bytes;
+
+    void* ptr;
+    channel_message_ = NodeChannel::CreatePortsMessage(size, &ptr);
+
+    start_ = static_cast<char*>(ptr);
+  }
+
+  Channel::MessagePtr TakeChannelMessage() override {
+    return std::move(channel_message_);
+  };
+
+ private:
+  Channel::MessagePtr channel_message_;
+};
+
 }  // namespace
 
 Node::PendingTokenConnection::PendingTokenConnection() {}
@@ -85,28 +141,30 @@ void Node::DropPeer(const ports::NodeName& name) {
   DropPeerNoLock(name);
 }
 
-void Node::SendPeerEvent(const ports::NodeName& name, ports::Event event) {
+void Node::SendPeerMessage(const ports::NodeName& name,
+                           ports::ScopedMessage message) {
   base::AutoLock lock(lock_);
   auto it = peers_.find(name);
   if (it != peers_.end()) {
-    it->second->Event(std::move(event));
+    it->second->PortsMessage(
+        static_cast<PortsMessage*>(message.get())->TakeChannelMessage());
     return;
   }
 
   if (parent_name_ == ports::kInvalidNodeName) {
-    DLOG(INFO) << "Dropping event for unknown peer: " << name;
+    DLOG(INFO) << "Dropping message for unknown peer: " << name;
     return;
   }
 
-  // If we don't know who the peer is, queue the event for delivery and ask our
-  // parent node to introduce us.
-  auto& queue = pending_peer_events_[name];
+  // If we don't know who the peer is, queue the message for delivery and ask
+  // our parent node to introduce us.
+  auto& queue = pending_peer_messages_[name];
   if (queue.empty()) {
     auto it = peers_.find(parent_name_);
     DCHECK(it != peers_.end());
     it->second->RequestIntroduction(name);
   }
-  queue.emplace(std::move(event));
+  queue.emplace(std::move(message));
 }
 
 void Node::CreateUninitializedPort(ports::PortName* port_name) {
@@ -129,6 +187,12 @@ void Node::SetPortObserver(const ports::PortName& port_name,
                            std::shared_ptr<PortObserver> observer) {
   DCHECK(observer);
   node_->SetUserData(port_name, std::move(observer));
+}
+
+int Node::AllocMessage(size_t num_payload_bytes,
+                       size_t num_ports,
+                       ports::ScopedMessage* message) {
+  return node_->AllocMessage(num_payload_bytes, num_ports, message);
 }
 
 int Node::SendMessage(const ports::PortName& port_name,
@@ -191,15 +255,17 @@ void Node::AddPeerNoLock(const ports::NodeName& name,
   if (start_channel)
     channel->Start();
 
-  OutgoingEventQueue pending_events;
-  auto it = pending_peer_events_.find(name);
-  if (it != pending_peer_events_.end()) {
-    auto& event_queue = it->second;
-    while (!event_queue.empty()) {
-      channel->Event(std::move(event_queue.front()));
-      event_queue.pop();
+  OutgoingMessageQueue pending_messages;
+  auto it = pending_peer_messages_.find(name);
+  if (it != pending_peer_messages_.end()) {
+    auto& message_queue = it->second;
+    while (!message_queue.empty()) {
+      ports::ScopedMessage message = std::move(message_queue.front());
+      channel->PortsMessage(
+          static_cast<PortsMessage*>(message.get())->TakeChannelMessage());
+      message_queue.pop();
     }
-    pending_peer_events_.erase(it);
+    pending_peer_messages_.erase(it);
   }
 
   auto result = peers_.insert(std::make_pair(name, std::move(channel)));
@@ -214,7 +280,7 @@ void Node::DropPeerNoLock(const ports::NodeName& name) {
     DLOG(INFO) << "Dropped peer " << peer;
   }
 
-  pending_peer_events_.erase(name);
+  pending_peer_messages_.erase(name);
   pending_children_.erase(name);
 
   {
@@ -237,26 +303,36 @@ void Node::ConnectToParentPortByTokenNowNoLock(
   it->second->ConnectToPort(token, local_port);
 }
 
-void Node::AcceptEventOnIOThread(ports::Event event) {
+void Node::AcceptMessageOnIOThread(ports::ScopedMessage message) {
   DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
-  node_->AcceptEvent(std::move(event));
+  node_->AcceptMessage(std::move(message));
 }
 
 void Node::GenerateRandomPortName(ports::PortName* port_name) {
   GenerateRandomName(port_name);
 }
 
-void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
+void Node::AllocMessage(size_t num_header_bytes,
+                        size_t num_payload_bytes,
+                        size_t num_ports_bytes,
+                        ports::ScopedMessage* message) {
+  message->reset(new ManagedPortsMessage(num_header_bytes,
+                                         num_payload_bytes,
+                                         num_ports_bytes));
+}
+
+void Node::ForwardMessage(const ports::NodeName& node,
+                          ports::ScopedMessage message) {
   if (node == name_) {
-    // NOTE: It isn't critical that we accept the event on the IO thread.
+    // NOTE: It isn't critical that we accept the message on the IO thread.
     // Rather, we just need to avoid re-entering the Node instance.
     core_->io_task_runner()->PostTask(
         FROM_HERE,
-        base::Bind(&Node::AcceptEventOnIOThread,
+        base::Bind(&Node::AcceptMessageOnIOThread,
                    base::Unretained(this),
-                   base::Passed(&event)));
+                   base::Passed(&message)));
   } else {
-    SendPeerEvent(node, std::move(event));
+    SendPeerMessage(node, std::move(message));
   }
 }
 
@@ -312,9 +388,25 @@ void Node::OnAcceptParent(const ports::NodeName& from_node,
   AddPeerNoLock(child_name, std::move(channel), false /* start_channel */);
 }
 
-void Node::OnEvent(const ports::NodeName& from_node,
-                   ports::Event event) {
-  AcceptEventOnIOThread(std::move(event));
+void Node::OnPortsMessage(const ports::NodeName& from_node,
+                          const void* payload,
+                          size_t payload_size) {
+  size_t num_header_bytes, num_payload_bytes, num_ports_bytes;
+  ports::Message::Parse(payload,
+                        payload_size,
+                        &num_header_bytes,
+                        &num_payload_bytes,
+                        &num_ports_bytes);
+
+  // TODO: Add some logic here to neuter the DependentPortsMessage before
+  // returning. Try to catch anyone trying to access |payload| afterwards.
+
+  ports::ScopedMessage message(
+      new DependentPortsMessage(payload,
+                                num_header_bytes,
+                                num_payload_bytes,
+                                num_ports_bytes));
+  AcceptMessageOnIOThread(std::move(message));
 }
 
 void Node::OnConnectToPort(const ports::NodeName& from_node,
@@ -404,7 +496,7 @@ void Node::OnIntroduce(const ports::NodeName& from_node,
 
   if (!channel_handle.is_valid()) {
     DLOG(ERROR) << "Could not be introduced to peer " << name;
-    pending_peer_events_.erase(name);
+    pending_peer_messages_.erase(name);
     return;
   }
 

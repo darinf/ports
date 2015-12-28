@@ -19,7 +19,7 @@ namespace {
 enum class MessageType : uint32_t {
   ACCEPT_CHILD,
   ACCEPT_PARENT,
-  EVENT,
+  PORTS_MESSAGE,
   CONNECT_TO_PORT,
   CONNECT_TO_PORT_ACK,
   REQUEST_INTRODUCTION,
@@ -109,6 +109,13 @@ void GetMessagePayload(const void* bytes, DataType** out_data) {
 
 }  // namespace
 
+// static
+Channel::MessagePtr NodeChannel::CreatePortsMessage(size_t payload_size,
+                                                    void** payload) {
+  return CreateMessage(
+      MessageType::PORTS_MESSAGE, payload_size, nullptr, payload);
+}
+
 NodeChannel::NodeChannel(Delegate* delegate,
                          ScopedPlatformHandle platform_handle,
                          scoped_refptr<base::TaskRunner> io_task_runner)
@@ -149,43 +156,7 @@ void NodeChannel::AcceptParent(const ports::NodeName& token,
   channel_->Write(std::move(message));
 }
 
-void NodeChannel::Event(ports::Event event) {
-  size_t event_size = sizeof(EventData);
-  size_t message_size = 0;
-  if (event.message) {
-    DCHECK(event.type == ports::Event::kAcceptMessage);
-    message_size = sizeof(ports::Message) + event.message->num_bytes +
-        event.message->num_ports * sizeof(ports::PortDescriptor);
-    event_size += message_size;
-  }
-
-  EventData* data;
-  Channel::MessagePtr message = CreateMessage(
-      MessageType::EVENT, event_size, nullptr, &data);
-  data->type = event.type;
-  data->port_name = event.port_name;
-  switch (event.type) {
-    case ports::Event::kAcceptMessage:
-      memcpy(&data[1], event.message.get(), message_size);
-      break;
-    case ports::Event::kPortAccepted:
-      break;
-    case ports::Event::kObserveProxy:
-      memcpy(&data->observe_proxy, &event.observe_proxy,
-          sizeof(event.observe_proxy));
-      break;
-    case ports::Event::kObserveProxyAck:
-      memcpy(&data->observe_proxy_ack, &event.observe_proxy_ack,
-          sizeof(event.observe_proxy_ack));
-      break;
-    case ports::Event::kObserveClosure:
-      memcpy(&data->observe_closure, &event.observe_closure,
-          sizeof(event.observe_closure));
-      break;
-    default:
-      NOTREACHED() << "Unknown event type: " << event.type;
-  }
-
+void NodeChannel::PortsMessage(Channel::MessagePtr message) {
   channel_->Write(std::move(message));
 }
 
@@ -260,28 +231,8 @@ void NodeChannel::OnChannelMessage(const void* payload,
       break;
     }
 
-    case MessageType::EVENT: {
-      // TODO: Make this less bad
-      const EventData* data;
-      GetMessagePayload(payload, &data);
-      ports::Event event(static_cast<ports::Event::Type>(data->type));
-      event.port_name = data->port_name;
-      if (event.type == ports::Event::kAcceptMessage) {
-        size_t message_size = payload_size - sizeof(Header) - sizeof(EventData);
-        const ports::Message* m =
-            reinterpret_cast<const ports::Message*>(&data[1]);
-        ports::Message* own_m = ports::AllocMessage(m->num_bytes, m->num_ports);
-        memcpy(own_m, m, message_size);
-        own_m->ports = reinterpret_cast<ports::PortDescriptor*>(
-            reinterpret_cast<char*>(own_m) + sizeof(ports::Message));
-        own_m->bytes = reinterpret_cast<char*>(own_m->ports) +
-            own_m->num_ports * sizeof(ports::PortDescriptor);
-        event.message.reset(own_m);
-      }
-      memcpy(&event.observe_proxy, &data->observe_proxy,
-          sizeof(event.observe_proxy));
-
-      delegate_->OnEvent(from_node, std::move(event));
+    case MessageType::PORTS_MESSAGE: {
+      delegate_->OnPortsMessage(from_node, payload, payload_size);
       break;
     }
 

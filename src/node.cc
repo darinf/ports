@@ -72,12 +72,18 @@ int Node::GetMessageIf(const PortName& port,
   return impl_->GetMessageIf(port, selector, message);
 }
 
+int Node::AllocMessage(size_t num_payload_bytes,
+                       size_t num_ports,
+                       ScopedMessage* message) {
+  return impl_->AllocMessage(num_payload_bytes, num_ports, message);
+}
+
 int Node::SendMessage(const PortName& port, ScopedMessage message) {
   return impl_->SendMessage(port, std::move(message));
 }
 
-int Node::AcceptEvent(Event event) {
-  return impl_->AcceptEvent(std::move(event));
+int Node::AcceptMessage(ScopedMessage message) {
+  return impl_->AcceptMessage(std::move(message));
 }
 
 int Node::LostConnectionToNode(const NodeName& node) {

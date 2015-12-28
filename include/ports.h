@@ -103,72 +103,55 @@ inline std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
   return stream;
 }
 
-struct PortDescriptor {
-  PortName name;
+// This class is designed to be subclassed by the embedder. See NodeDelegate's
+// AllocMessage method.
+class Message {
+ public:
+  virtual ~Message() {}
 
-  // The following fields should be ignored by the embedder.
-  NodeName peer_node_name;
-  PortName peer_port_name;
-  NodeName referring_node_name;
-  PortName referring_port_name;
-  uint32_t next_sequence_num_to_send;
-  uint32_t next_sequence_num_to_receive;
+  static void Parse(const void* bytes,
+                    size_t num_bytes,
+                    size_t* num_header_bytes,
+                    size_t* num_payload_bytes,
+                    size_t* num_ports_bytes);
+
+  // Header bytes are used by the Node implementation.
+  void* mutable_header_bytes() { return start_; }
+  const void* header_bytes() const { return start_; }
+  size_t num_header_bytes() const { return num_header_bytes_; }
+
+  void* mutable_payload_bytes() {
+    return start_ + num_header_bytes_ + num_ports_bytes_;
+  }
+  const void* payload_bytes() const {
+    return const_cast<Message*>(this)->mutable_payload_bytes();
+  }
+  size_t num_payload_bytes() const { return num_payload_bytes_; }
+
+  PortName* mutable_ports() {
+    return reinterpret_cast<PortName*>(start_ + num_header_bytes_);
+  }
+  const PortName* ports() const {
+    return const_cast<Message*>(this)->mutable_ports();
+  }
+  size_t num_ports_bytes() const { return num_ports_bytes_; }
+  size_t num_ports() const { return num_ports_bytes_ / sizeof(PortName); }
+
+ protected:
+  Message(size_t num_header_bytes,
+          size_t num_payload_bytes,
+          size_t num_ports_bytes);
+  Message(const Message& other) = delete;
+  void operator=(const Message& other) = delete;
+
+  // Note: storage is [header][ports][payload].
+  char* start_;
+  size_t num_header_bytes_;
+  size_t num_ports_bytes_;
+  size_t num_payload_bytes_;
 };
 
-struct Message {
-  uint32_t sequence_num;  // This field should be ignored by the embedder.
-  void* bytes;
-  size_t num_bytes;
-  PortDescriptor* ports;
-  size_t num_ports;
-};
-
-// Message objects should only be allocated using this function.
-Message* AllocMessage(size_t num_bytes, size_t num_ports);
-
-// Message objects should only be freed using this function.
-void FreeMessage(Message* message);
-
-struct MessageDeleter {
-  void operator()(Message* message) { FreeMessage(message); }
-};
-
-typedef std::unique_ptr<Message, MessageDeleter> ScopedMessage;
-
-struct Event {
-  enum Type {
-    kAcceptMessage,
-    kPortAccepted,
-    kObserveProxy,
-    kObserveProxyAck,
-    kObserveClosure,
-  } type;
-  PortName port_name;
-  ScopedMessage message;
-  union {
-    struct {
-      NodeName proxy_node_name;
-      PortName proxy_port_name;
-      NodeName proxy_to_node_name;
-      PortName proxy_to_port_name;
-    } observe_proxy;
-    struct {
-      uint32_t last_sequence_num;
-    } observe_proxy_ack;
-    struct {
-      uint32_t last_sequence_num;
-    } observe_closure;
-  };
-  explicit Event(Type type);
-  Event(Event&& other);
-  ~Event();
-
-  Event& operator=(Event&& other);
-
-  // Just to make this type compatible with chromium's Bind.
-  Event&& Pass() { return std::move(*this); }
-  typedef void MoveOnlyTypeForCPP03;
-};
+typedef std::unique_ptr<Message> ScopedMessage;
 
 class UserData {
  public:
@@ -189,9 +172,17 @@ class NodeDelegate {
   // Port names should be difficult to guess.
   virtual void GenerateRandomPortName(PortName* port_name) = 0;
 
-  // Send an event asynchronously to the specified node. This method MUST NOT
-  // synchronously call any methods on Node.
-  virtual void SendEvent(const NodeName& node, Event event) = 0;
+  // Allocate a message, including a header that can be used by the Node
+  // implementation. |num_header_bytes| will be aligned. |num_payload_bytes|
+  // may not be aligned. The newly allocated memory need not be zero-filled.
+  virtual void AllocMessage(size_t num_header_bytes,
+                            size_t num_payload_bytes,
+                            size_t num_ports_bytes,
+                            ScopedMessage* message) = 0;
+
+  // Forward a message asynchronously to the specified node. This method MUST
+  // NOT synchronously call any methods on Node.
+  virtual void ForwardMessage(const NodeName& node, ScopedMessage message) = 0;
 
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
@@ -242,11 +233,18 @@ class Node {
                    MessageSelector* selector,
                    ScopedMessage* message);
 
+  // Allocate a message that can be passed to SendMessage. The caller may
+  // mutate the payload and ports arrays before passing the message to
+  // SendMessage. The header array should not be modified by the caller.
+  int AllocMessage(size_t num_payload_bytes,
+                   size_t num_ports,
+                   ScopedMessage* message);
+
   // Sends a message from the specified port to its peer.
   int SendMessage(const PortName& port, ScopedMessage message);
 
-  // Corresponding to NodeDelegate::SendEvent.
-  int AcceptEvent(Event event);
+  // Corresponding to NodeDelegate::ForwardMessage.
+  int AcceptMessage(ScopedMessage message);
 
   // Called to inform this node that communication with another node is lost
   // indefinitely. This triggers cleanup of ports bound to this node.

@@ -5,7 +5,7 @@
 source_set("ports") {
   sources = [
     "include/ports.h",
-    "src/event.cc",
+    "src/event.h",
     "src/hash_functions.h",
     "src/logging.h",
     "src/message.cc",

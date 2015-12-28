@@ -57,10 +57,10 @@ MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
 
 bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
                                           MojoHandle* handles) {
-  std::vector<Dispatcher::DispatcherInTransit> dispatchers(message.num_ports);
-  for (size_t i = 0; i < message.num_ports; ++i) {
+  std::vector<Dispatcher::DispatcherInTransit> dispatchers(message.num_ports());
+  for (size_t i = 0; i < message.num_ports(); ++i) {
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(&node_, message.ports[i].name);
+    d.dispatcher = new MessagePipeDispatcher(&node_, message.ports()[i]);
   }
 
   bool failed = false;
