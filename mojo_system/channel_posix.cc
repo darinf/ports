@@ -113,6 +113,8 @@ class ChannelPosix : public Channel,
 
  private:
   ~ChannelPosix() override {
+    DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+    base::MessageLoop::current()->RemoveDestructionObserver(this);
     for (auto handle : incoming_platform_handles_)
       handle.CloseIfNecessary();
   }
