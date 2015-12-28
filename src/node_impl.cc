@@ -337,6 +337,7 @@ int Node::Impl::AcceptMessage(const PortName& port_name,
   }
 
   if (!message_accepted) {
+    DLOG(INFO) << "Message not accepted!\n";
     // Close all newly accepted ports as they are effectively orphaned.
     for (size_t i = 0; i < message->num_ports; ++i)
       ClosePort(message->ports[i].name);

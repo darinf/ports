@@ -548,5 +548,57 @@ TEST_F(PortsTest, Delegation1) {
   EXPECT_EQ(OK, node1.ClosePort(x1));
 }
 
+TEST_F(PortsTest, Delegation2) {
+  NodeName node0_name(0, 0);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  SetNode(node0_name, &node0);
+
+  NodeName node1_name(1, 0);
+  TestNodeDelegate node1_delegate(node1_name);
+  Node node1(node1_name, &node1_delegate);
+  node_map[1] = &node1;
+
+  node0_delegate.set_save_messages(true);
+  node1_delegate.set_save_messages(true);
+
+  for (int i = 0; i < 10; ++i) {
+    // Setup pipe a<->b between node0 and node1.
+    PortName A, B;
+    EXPECT_EQ(OK, node0.CreatePort(&A));
+    EXPECT_EQ(OK, node1.CreatePort(&B));
+    EXPECT_EQ(OK, node0.InitializePort(A, node1_name, B));
+    EXPECT_EQ(OK, node1.InitializePort(B, node0_name, A));
+
+    PortName C, D;
+    EXPECT_EQ(OK, node0.CreatePortPair(&C, &D));
+
+    PortName E, F;
+    EXPECT_EQ(OK, node0.CreatePortPair(&E, &F));
+
+    // Pass F over C to D.
+    EXPECT_EQ(OK, node0.SendMessage(C, NewStringMessageWithPort("1", F)));
+
+    // Pass D over A to B.
+    EXPECT_EQ(OK, node0.SendMessage(A, NewStringMessageWithPort("1", D)));
+
+    // This message should find its way to node1.
+    EXPECT_EQ(OK, node0.SendMessage(E, NewStringMessage("hello")));
+
+    PumpTasks();
+
+    for (;;) {
+      ScopedMessage message;
+      if (node1_delegate.GetSavedMessage(&message)) {
+        if (strcmp(static_cast<char*>(message->bytes), "hello") == 0)
+          break;
+      } else {
+        EXPECT_TRUE(false);  // "hello" message not found!
+        break;
+      }
+    }
+  }
+}
+
 }  // namespace test
 }  // namespace ports
