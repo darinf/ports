@@ -52,11 +52,12 @@ void Node::ConnectToChild(ScopedPlatformHandle platform_handle) {
   ports::NodeName token;
   GenerateRandomName(&token);
 
+  base::AutoLock lock(lock_);
+
   channel->SetRemoteNodeName(token);
   channel->Start();
   channel->AcceptChild(name_, token);
 
-  base::AutoLock lock(lock_);
   pending_children_.insert(std::make_pair(token, std::move(channel)));
 }
 
@@ -186,6 +187,9 @@ void Node::AddPeerNoLock(const ports::NodeName& name,
   }
 
   DLOG(INFO) << "Accepting new peer " << name << " on node " << name_;
+
+  if (start_channel)
+    channel->Start();
 
   OutgoingEventQueue pending_events;
   auto it = pending_peer_events_.find(name);
