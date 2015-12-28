@@ -71,14 +71,10 @@ void MessageQueue::AcceptMessage(ScopedMessage message,
                                  bool* has_next_message) {
   // TODO: Handle sequence number roll-over.
 
-  bool did_signal =
-      !heap_.empty() && heap_[0]->sequence_num == next_sequence_num_;
-
   heap_.emplace_back(std::move(message));
   std::push_heap(heap_.begin(), heap_.end());
 
-  // Only signal on transition to having the next message.
-  if (did_signal || !signalable_) {
+  if (!signalable_) {
     *has_next_message = false;
   } else {
     *has_next_message = (heap_[0]->sequence_num == next_sequence_num_);
