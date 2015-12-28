@@ -214,7 +214,8 @@ class TestNodeDelegate : public NodeDelegate {
     PutEvent(kNodeData[node_name.value_major], std::move(event));
   }
 
-  void MessagesAvailable(const PortName& port) override {
+  void MessagesAvailable(const PortName& port,
+                         std::shared_ptr<UserData> user_data) override {
     Node* node = kNodeData[node_name_.value_major]->node.get();
     for (;;) {
       ScopedMessage message;

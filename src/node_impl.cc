@@ -162,13 +162,26 @@ int Node::Impl::GetMessageIf(const PortName& port_name,
     // embedder should no longer be referring to a port that has been sent.
     if (port->state != Port::kReceiving)
       return ERROR_PORT_STATE_UNEXPECTED;
-
+  
     // Let the embedder get messages until there are no more before reporting
     // that the peer closed its end.
     if (!CanAcceptMoreMessages(port.get()))
       return ERROR_PORT_PEER_CLOSED;
 
     port->message_queue.GetNextMessageIf(selector, message);
+  }
+
+  // Allow referenced ports to trigger MessagesAvailable calls.
+  if (*message) {
+    for (size_t i = 0; i < (*message)->num_ports; ++i) {
+      std::shared_ptr<Port> new_port = GetPort((*message)->ports[i].name);
+      assert(new_port);
+
+      std::lock_guard<std::mutex> guard(new_port->lock);
+
+      assert(new_port->state == Port::kReceiving);
+      new_port->message_queue.set_signalable(true);
+    }
   }
   return OK;
 }
@@ -481,7 +494,6 @@ int Node::Impl::ObserveClosure(Event event) {
 
     if (port->state == Port::kReceiving) {
       if (!CanAcceptMoreMessages(port.get())) {
-        assert(port->message_queue.may_signal());
         notify_delegate = true;
         associated_user_data = port->user_data;
       }
@@ -573,6 +585,10 @@ int Node::Impl::AcceptPort(const PortDescriptor& port_descriptor) {
                              port_descriptor.next_sequence_num_to_receive);
   port->peer_node_name = port_descriptor.peer_node_name;
   port->peer_port_name = port_descriptor.peer_port_name;
+
+  // A newly accepted port is not signalable until the message referencing the
+  // new port finds its way to the consumer (see GetMessageIf).
+  port->message_queue.set_signalable(false);
 
   int rv = AddPortWithName(port_descriptor.name, std::move(port));
   if (rv != OK)

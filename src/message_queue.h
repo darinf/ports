@@ -46,8 +46,9 @@ class MessageQueue {
   explicit MessageQueue(uint32_t next_sequence_num);
   ~MessageQueue();
 
+  void set_signalable(bool value) { signalable_ = value; }
+
   uint32_t next_sequence_num() const { return next_sequence_num_; }
-  bool may_signal() const { return may_signal_; }
 
   // Gives ownership of the message. The selector may be null.
   void GetNextMessageIf(MessageSelector* selector, ScopedMessage* message);
@@ -66,7 +67,7 @@ class MessageQueue {
  private:
   std::vector<ScopedMessage> heap_;
   uint32_t next_sequence_num_;
-  bool may_signal_;
+  bool signalable_ = true;
 };
 
 }  // namespace ports

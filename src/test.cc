@@ -593,7 +593,7 @@ TEST_F(PortsTest, Delegation2) {
         if (strcmp(static_cast<char*>(message->bytes), "hello") == 0)
           break;
       } else {
-        EXPECT_TRUE(false);  // "hello" message not found!
+        ASSERT_TRUE(false);  // "hello" message not found!
         break;
       }
     }

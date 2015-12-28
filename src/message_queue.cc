@@ -41,8 +41,7 @@ inline bool operator<(const ScopedMessage& a, const ScopedMessage& b) {
 MessageQueue::MessageQueue() : MessageQueue(kInitialSequenceNum) {}
 
 MessageQueue::MessageQueue(uint32_t next_sequence_num)
-    : next_sequence_num_(next_sequence_num),
-      may_signal_(true) {
+    : next_sequence_num_(next_sequence_num) {
   // The message queue is blocked waiting for a message with sequence number
   // equal to |next_sequence_num|.
 }
@@ -54,7 +53,6 @@ void MessageQueue::GetNextMessageIf(MessageSelector* selector,
                                     ScopedMessage* message) {
   if (heap_.empty() || heap_[0]->sequence_num != next_sequence_num_) {
     message->reset();
-    may_signal_ = true;
   } else {
     if (selector && !selector->Select(*heap_[0].get())) {
       message->reset();
@@ -73,11 +71,18 @@ void MessageQueue::AcceptMessage(ScopedMessage message,
                                  bool* has_next_message) {
   // TODO: Handle sequence number roll-over.
 
+  bool did_signal =
+      !heap_.empty() && heap_[0]->sequence_num == next_sequence_num_;
+
   heap_.emplace_back(std::move(message));
   std::push_heap(heap_.begin(), heap_.end());
 
-  *has_next_message =
-      may_signal_ && (heap_[0]->sequence_num == next_sequence_num_);
+  // Only signal on transition to having the next message.
+  if (did_signal || !signalable_) {
+    *has_next_message = false;
+  } else {
+    *has_next_message = (heap_[0]->sequence_num == next_sequence_num_);
+  }
 }
 
 }  // namespace ports
