@@ -31,6 +31,7 @@
 #define PORTS_SRC_PORT_H_
 
 #include <mutex>
+#include <queue>
 #include <vector>
 
 #include "ports/src/message_queue.h"
@@ -51,6 +52,7 @@ struct Port {
   uint32_t next_sequence_num_to_send;
   uint32_t last_sequence_num_to_receive;
   MessageQueue message_queue;
+  std::queue<std::pair<NodeName, Event>> send_on_proxy_removal;
   std::shared_ptr<UserData> user_data;
   bool remove_proxy_on_last_message;
   bool peer_closed;

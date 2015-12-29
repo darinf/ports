@@ -79,8 +79,8 @@ int Node::Impl::InitializePort(const PortName& port_name,
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
-    if (port->peer_node_name != NodeName() ||
-        port->peer_port_name != PortName())
+    if (port->peer_node_name != kInvalidNodeName ||
+        port->peer_port_name != kInvalidPortName)
       return ERROR_PORT_ALREADY_INITIALIZED;
 
     port->peer_node_name = peer_node_name;
@@ -422,16 +422,28 @@ int Node::Impl::ObserveProxy(Event event) {
       port->peer_node_name = event.observe_proxy.proxy_to_node_name;
       port->peer_port_name = event.observe_proxy.proxy_to_port_name;
 
+      Event ack(Event::kObserveProxyAck);
+      ack.port_name = event.observe_proxy.proxy_port_name;
+
       if (port->state == Port::kReceiving) {
-        Event ack(Event::kObserveProxyAck);
-        ack.port_name = event.observe_proxy.proxy_port_name;
         ack.observe_proxy_ack.last_sequence_num =
             port->next_sequence_num_to_send - 1;
 
         delegate_->SendEvent(event.observe_proxy.proxy_node_name,
                              std::move(ack));
       } else {
-        // TODO: Implement me.
+        // As a proxy ourselves, we don't know how to populate the last
+        // sequence num field. Another port could be sending messages to the
+        // proxy. Instead, we will send an ObserveProxyAck indicating that the
+        // ObserveProxy event should be re-sent. However, this has to be done
+        // after we are removed as a proxy. Otherwise, we might just find
+        // ourselves back here again, and we don't want to be busy loop.
+
+        ack.observe_proxy_ack.last_sequence_num = kInvalidSequenceNum;
+
+        port->send_on_proxy_removal.emplace(
+            std::make_pair(event.observe_proxy.proxy_node_name,
+                           std::move(ack)));
       }
     } else {
       // Forward this event along to our peer. Eventually, it should find the
@@ -459,6 +471,12 @@ int Node::Impl::ObserveProxyAck(const PortName& port_name,
 
     if (port->state != Port::kProxying)
       return Oops(ERROR_PORT_STATE_UNEXPECTED);
+
+    if (last_sequence_num == kInvalidSequenceNum) {
+      // Send again.
+      InitiateProxyRemoval_Locked(port.get(), port_name);
+      return OK;
+    }
 
     // We can now remove this port once we have received and forwarded the last
     // message addressed to this port.
@@ -711,6 +729,12 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
   if (!CanAcceptMoreMessages(port)) {
     // This proxy port is done. We can now remove it!
     ErasePort(port_name);
+
+    while (!port->send_on_proxy_removal.empty()) {
+      std::pair<NodeName, Event>& next = port->send_on_proxy_removal.front();
+      delegate_->SendEvent(next.first, std::move(next.second));
+      port->send_on_proxy_removal.pop();
+    }
   } else {
     DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
                << " now; waiting for more messages";

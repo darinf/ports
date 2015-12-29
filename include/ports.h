@@ -30,8 +30,9 @@
 #ifndef PORTS_INCLUDE_PORTS_H_
 #define PORTS_INCLUDE_PORTS_H_
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <memory>
 #include <ostream>
 

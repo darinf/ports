@@ -39,6 +39,7 @@
 namespace ports {
 
 const uint32_t kInitialSequenceNum = 1;
+const uint32_t kInvalidSequenceNum = 0xFFFFFFFF;
 
 class MessageQueue {
  public:
