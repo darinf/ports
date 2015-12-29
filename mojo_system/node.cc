@@ -248,6 +248,8 @@ void Node::GenerateRandomPortName(ports::PortName* port_name) {
 
 void Node::SendEvent(const ports::NodeName& node, ports::Event event) {
   if (node == name_) {
+    // NOTE: It isn't critical that we accept the event on the IO thread.
+    // Rather, we just need to avoid re-entering the Node instance.
     core_->io_task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&Node::AcceptEventOnIOThread,
