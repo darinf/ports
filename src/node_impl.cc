@@ -29,16 +29,12 @@
 
 #include "ports/src/node_impl.h"
 
-#include <cassert>
-#include <cstdio>
-
 #include "ports/src/logging.h"
 
 namespace ports {
 
 static int DebugError(const char* message, int error_code, const char* func) {
-  DLOG(ERROR) << "Oops: " << message << " @ " << func;
-  abort();
+  CHECK(false) << "Oops: " << message << " @ " << func;
   return error_code;
 }
 #define Oops(x) DebugError(#x, x, __func__)
@@ -175,11 +171,11 @@ int Node::Impl::GetMessageIf(const PortName& port_name,
   if (*message) {
     for (size_t i = 0; i < (*message)->num_ports; ++i) {
       std::shared_ptr<Port> new_port = GetPort((*message)->ports[i].name);
-      assert(new_port);
+      DCHECK(new_port);
 
       std::lock_guard<std::mutex> guard(new_port->lock);
 
-      assert(new_port->state == Port::kReceiving);
+      DCHECK(new_port->state == Port::kReceiving);
       new_port->message_queue.set_signalable(true);
     }
   }
@@ -585,7 +581,7 @@ void Node::Impl::WillSendPort_Locked(Port* port,
 
   // Make sure we don't send messages to the new peer until after we know it
   // exists. In the meantime, just buffer messages locally.
-  assert(port->state == Port::kReceiving);
+  DCHECK(port->state == Port::kReceiving);
   port->state = Port::kBuffering;
 
   port_descriptor->name = new_port_name;
@@ -720,7 +716,7 @@ void Node::Impl::InitiateProxyRemoval_Locked(Port* port,
 
 void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
                                          const PortName& port_name) {
-  assert(port->state == Port::kProxying);
+  DCHECK(port->state == Port::kProxying);
 
   // Make sure we have seen ObserveProxyAck before removing the port.
   if (!port->remove_proxy_on_last_message)

@@ -38,12 +38,20 @@
 
 namespace ports {
 
+enum LogSeverity {
+  INFO,
+  WARNING,
+  ERROR,
+  FATAL
+};
+
 class Logger {
  public:
-  Logger();
+  Logger(LogSeverity severity);
   ~Logger();
   std::ostream& stream() { return stream_; }
  private:
+  LogSeverity severity_;
   std::ostringstream stream_;
 };
 
@@ -54,9 +62,11 @@ class Voidify {
 
 }  // namespace ports
 
-#define PORTS_LOG(severity) ::ports::Logger().stream()
+#define PORTS_LOG(severity) ::ports::Logger(severity).stream()
+#define PORTS_EAT_STREAM_PARAMS \
+    ::ports::Voidify() & ::ports::Logger(::ports::INFO).stream()
 #define PORTS_LOG_NONE(severity) \
-    true ? (void) 0 : ::ports::Voidify() & ::ports::Logger().stream()
+    true ? (void) 0 : PORTS_EAT_STREAM_PARAMS
 
 #define PORTS_LOGGING_ENABLED 1
 
@@ -70,6 +80,13 @@ class Voidify {
 #else
 #define LOG PORTS_LOG_NONE
 #define DLOG PORTS_LOG_NONE
+#endif
+
+#define CHECK(test) (test) ? (void) 0 : LOG(FATAL)
+#ifndef NDEBUG
+#define DCHECK(test) true ? (void) 0 : PORTS_EAT_STREAM_PARAMS
+#else
+#define DCHECK(test) CHECK(test)
 #endif
 
 #else  // if defined(INSIDE_CHROMIUM)

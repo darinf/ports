@@ -29,18 +29,22 @@
 
 #include "ports/src/logging.h"
 
+#include <stdlib.h>
+
 #include <iostream>
 #include <thread>
 
 namespace ports {
 
-Logger::Logger() {
+Logger::Logger(LogSeverity severity) : severity_(severity) {
   stream_ << std::this_thread::get_id() << ": ";
 }
 
 Logger::~Logger() {
   stream_ << std::endl;
   std::cout << stream_.str();
+  if (severity == FATAL)
+    abort();
 }
 
 }  // namespace ports
