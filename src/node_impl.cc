@@ -422,12 +422,17 @@ int Node::Impl::ObserveProxy(Event event) {
       port->peer_node_name = event.observe_proxy.proxy_to_node_name;
       port->peer_port_name = event.observe_proxy.proxy_to_port_name;
 
-      Event ack(Event::kObserveProxyAck);
-      ack.port_name = event.observe_proxy.proxy_port_name;
-      ack.observe_proxy_ack.last_sequence_num =
-          port->next_sequence_num_to_send - 1;
+      if (port->state == Port::kReceiving) {
+        Event ack(Event::kObserveProxyAck);
+        ack.port_name = event.observe_proxy.proxy_port_name;
+        ack.observe_proxy_ack.last_sequence_num =
+            port->next_sequence_num_to_send - 1;
 
-      delegate_->SendEvent(event.observe_proxy.proxy_node_name, std::move(ack));
+        delegate_->SendEvent(event.observe_proxy.proxy_node_name,
+                             std::move(ack));
+      } else {
+        // TODO: Implement me.
+      }
     } else {
       // Forward this event along to our peer. Eventually, it should find the
       // port referring to the proxy.
