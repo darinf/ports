@@ -415,31 +415,39 @@ int Node::Impl::ObserveProxy(Event event) {
 
     if (port->peer_node_name == event.observe_proxy.proxy_node_name &&
         port->peer_port_name == event.observe_proxy.proxy_port_name) {
-      port->peer_node_name = event.observe_proxy.proxy_to_node_name;
-      port->peer_port_name = event.observe_proxy.proxy_to_port_name;
-
-      Event ack(Event::kObserveProxyAck);
-      ack.port_name = event.observe_proxy.proxy_port_name;
-
       if (port->state == Port::kReceiving) {
+        port->peer_node_name = event.observe_proxy.proxy_to_node_name;
+        port->peer_port_name = event.observe_proxy.proxy_to_port_name;
+
+        Event ack(Event::kObserveProxyAck);
+        ack.port_name = event.observe_proxy.proxy_port_name;
         ack.observe_proxy_ack.last_sequence_num =
             port->next_sequence_num_to_send - 1;
 
         delegate_->SendEvent(event.observe_proxy.proxy_node_name,
                              std::move(ack));
       } else {
-        // As a proxy ourselves, we don't know how to populate the last
-        // sequence num field. Another port could be sending messages to the
-        // proxy. Instead, we will send an ObserveProxyAck indicating that the
-        // ObserveProxy event should be re-sent. However, this has to be done
-        // after we are removed as a proxy. Otherwise, we might just find
-        // ourselves back here again, and we don't want to be busy loop.
+        // As a proxy ourselves, we don't know how to honor the ObserveProxy
+        // event or to populate the last_sequence_num field of ObserveProxyAck.
+        // Afterall, another port could be sending messages to our peer now
+        // that we've sent out our own ObserveProxy event.  Instead, we will
+        // send an ObserveProxyAck indicating that the ObserveProxy event
+        // should be re-sent (last_sequence_num set to kInvalidSequenceNum).
+        // However, this has to be done after we are removed as a proxy.
+        // Otherwise, we might just find ourselves back here again, which
+        // would be akin to a busy loop.
 
+        DLOG(INFO) << "Delaying ObserveProxyAck to "
+                   << event.observe_proxy.proxy_port_name << "@"
+                   << event.observe_proxy.proxy_node_name;
+
+        Event ack(Event::kObserveProxyAck);
+        ack.port_name = event.observe_proxy.proxy_port_name;
         ack.observe_proxy_ack.last_sequence_num = kInvalidSequenceNum;
 
-        port->send_on_proxy_removal.emplace(
-            std::make_pair(event.observe_proxy.proxy_node_name,
-                           std::move(ack)));
+        port->send_on_proxy_removal.reset(
+            new std::pair<NodeName, Event>(event.observe_proxy.proxy_node_name,
+                                           std::move(ack)));
       }
     } else {
       // Forward this event along to our peer. Eventually, it should find the
@@ -726,10 +734,15 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
     // This proxy port is done. We can now remove it!
     ErasePort(port_name);
 
-    while (!port->send_on_proxy_removal.empty()) {
-      std::pair<NodeName, Event>& next = port->send_on_proxy_removal.front();
-      delegate_->SendEvent(next.first, std::move(next.second));
-      port->send_on_proxy_removal.pop();
+    if (port->send_on_proxy_removal) {
+      NodeName to_node = port->send_on_proxy_removal->first;
+      Event& event = port->send_on_proxy_removal->second;
+
+      DLOG(INFO) << "Sending delayed ObserveProxyAck event from "
+                 << port_name << "@" << name_ << " to "
+                 << event.port_name << "@" << to_node;
+
+      delegate_->SendEvent(to_node, std::move(event));
     }
   } else {
     DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
