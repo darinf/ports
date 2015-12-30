@@ -14,6 +14,7 @@
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/handle_signals_state.h"
+#include "mojo/edk/system/mapping_table.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/data_pipe.h"
@@ -189,6 +190,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
 
   base::Lock handles_lock_;
   HandleTable handles_;
+
+  base::Lock mapping_table_lock_;  // Protects |mapping_table_|.
+  MappingTable mapping_table_;
 
   DISALLOW_COPY_AND_ASSIGN(Core);
 };

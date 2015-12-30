@@ -12,9 +12,12 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/system_impl_export.h"
+#include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/public/cpp/system/macros.h"
@@ -80,6 +83,18 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
                          MojoHandle* handles,
                          uint32_t* num_handles,
                          MojoReadMessageFlags flags);
+
+  // |options| may be null. |new_dispatcher| must not be null, but
+  // |*new_dispatcher| should be null (and will contain the dispatcher for the
+  // new handle on success).
+  MojoResult DuplicateBufferHandle(
+      const MojoDuplicateBufferHandleOptions* options,
+      scoped_refptr<Dispatcher>* new_dispatcher);
+  MojoResult MapBuffer(
+      uint64_t offset,
+      uint64_t num_bytes,
+      MojoMapBufferFlags flags,
+      scoped_ptr<PlatformSharedBufferMapping>* mapping);
 
   // Gets the current handle signals state. (The default implementation simply
   // returns a default-constructed |HandleSignalsState|, i.e., no signals
@@ -169,6 +184,14 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
                                            MojoHandle* handles,
                                            uint32_t* num_handles,
                                            MojoReadMessageFlags flags);
+  virtual MojoResult DuplicateBufferHandleImplNoLock(
+      const MojoDuplicateBufferHandleOptions* options,
+      scoped_refptr<Dispatcher>* new_dispatcher);
+  virtual MojoResult MapBufferImplNoLock(
+      uint64_t offset,
+      uint64_t num_bytes,
+      MojoMapBufferFlags flags,
+      scoped_ptr<PlatformSharedBufferMapping>* mapping);
   virtual MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                            MojoHandleSignals signals,
                                            uintptr_t context,

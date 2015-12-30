@@ -46,6 +46,28 @@ MojoResult Dispatcher::ReadMessage(void* bytes,
   return ReadMessageImplNoLock(bytes, num_bytes, handles, num_handles, flags);
 }
 
+MojoResult Dispatcher::DuplicateBufferHandle(
+    const MojoDuplicateBufferHandleOptions* options,
+    scoped_refptr<Dispatcher>* new_dispatcher) {
+  base::AutoLock locker(lock_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return DuplicateBufferHandleImplNoLock(options, new_dispatcher);
+}
+
+MojoResult Dispatcher::MapBuffer(
+    uint64_t offset,
+    uint64_t num_bytes,
+    MojoMapBufferFlags flags,
+    scoped_ptr<PlatformSharedBufferMapping>* mapping) {
+  base::AutoLock locker(lock_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return MapBufferImplNoLock(offset, num_bytes, flags, mapping);
+}
+
 HandleSignalsState Dispatcher::GetHandleSignalsState() const {
   base::AutoLock locker(lock_);
   if (is_closed_)
@@ -160,6 +182,24 @@ MojoResult Dispatcher::ReadMessageImplNoLock(void* bytes,
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
   // By default, not supported. Only needed for message pipe dispatchers.
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::DuplicateBufferHandleImplNoLock(
+    const MojoDuplicateBufferHandleOptions* options,
+    scoped_refptr<Dispatcher>* new_dispatcher) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::MapBufferImplNoLock(
+    uint64_t offset,
+    uint64_t num_bytes,
+    MojoMapBufferFlags flags,
+    scoped_ptr<PlatformSharedBufferMapping>* mapping) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 

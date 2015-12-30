@@ -12,12 +12,14 @@
 #include "base/macros.h"
 #include "base/time/time.h"
 #include "crypto/random.h"
+#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/waiter.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/channel.h"
 #include "ports/mojo_system/message_pipe_dispatcher.h"
+#include "ports/mojo_system/shared_buffer_dispatcher.h"
 #include "ports/mojo_system/wait_set_dispatcher.h"
 
 namespace mojo {
@@ -355,16 +357,53 @@ MojoResult Core::CreateSharedBuffer(
     const MojoCreateSharedBufferOptions* options,
     uint64_t num_bytes,
     MojoHandle* shared_buffer_handle) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  MojoCreateSharedBufferOptions validated_options = {};
+  MojoResult result = SharedBufferDispatcher::ValidateCreateOptions(
+      options, &validated_options);
+  if (result != MOJO_RESULT_OK)
+    return result;
+
+  scoped_refptr<SharedBufferDispatcher> dispatcher;
+  result = SharedBufferDispatcher::Create(
+      internal::g_platform_support, validated_options, num_bytes, &dispatcher);
+  if (result != MOJO_RESULT_OK) {
+    DCHECK(!dispatcher);
+    return result;
+  }
+
+  *shared_buffer_handle = AddDispatcher(dispatcher);
+  if (*shared_buffer_handle == MOJO_HANDLE_INVALID) {
+    LOG(ERROR) << "Handle table full";
+    dispatcher->Close();
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+
+  return MOJO_RESULT_OK;
 }
 
 MojoResult Core::DuplicateBufferHandle(
     MojoHandle buffer_handle,
     const MojoDuplicateBufferHandleOptions* options,
     MojoHandle* new_buffer_handle) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  scoped_refptr<Dispatcher> dispatcher(GetDispatcher(buffer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  // Don't verify |options| here; that's the dispatcher's job.
+  scoped_refptr<Dispatcher> new_dispatcher;
+  MojoResult result =
+      dispatcher->DuplicateBufferHandle(options, &new_dispatcher);
+  if (result != MOJO_RESULT_OK)
+    return result;
+
+  *new_buffer_handle = AddDispatcher(new_dispatcher);
+  if (*new_buffer_handle == MOJO_HANDLE_INVALID) {
+    LOG(ERROR) << "Handle table full";
+    dispatcher->Close();
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+
+  return MOJO_RESULT_OK;
 }
 
 MojoResult Core::MapBuffer(MojoHandle buffer_handle,
@@ -372,13 +411,31 @@ MojoResult Core::MapBuffer(MojoHandle buffer_handle,
                            uint64_t num_bytes,
                            void** buffer,
                            MojoMapBufferFlags flags) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  scoped_refptr<Dispatcher> dispatcher(GetDispatcher(buffer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_ptr<PlatformSharedBufferMapping> mapping;
+  MojoResult result = dispatcher->MapBuffer(offset, num_bytes, flags, &mapping);
+  if (result != MOJO_RESULT_OK)
+    return result;
+
+  DCHECK(mapping);
+  void* address = mapping->GetBase();
+  {
+    base::AutoLock locker(mapping_table_lock_);
+    result = mapping_table_.AddMapping(std::move(mapping));
+  }
+  if (result != MOJO_RESULT_OK)
+    return result;
+
+  *buffer = address;
+  return MOJO_RESULT_OK;
 }
 
 MojoResult Core::UnmapBuffer(void* buffer) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  base::AutoLock lock(mapping_table_lock_);
+  return mapping_table_.RemoveMapping(buffer);
 }
 
 scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {

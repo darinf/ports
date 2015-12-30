@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "mojo/edk/embedder/simple_platform_support.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/core.h"
 
@@ -20,7 +21,6 @@ namespace internal {
 Core* g_core;
 scoped_refptr<base::TaskRunner> g_io_thread_task_runner;
 
-// Only here to satisfy some messy link dependency in old EDK test code
 PlatformSupport* g_platform_support;
 
 }  // namespace internal
@@ -52,6 +52,7 @@ void SetParentPipeHandle(ScopedPlatformHandle pipe) {
 
 void Init() {
   internal::g_core = new Core();
+  internal::g_platform_support = new SimplePlatformSupport();
 }
 
 MojoResult AsyncWait(MojoHandle handle,

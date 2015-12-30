@@ -19,6 +19,8 @@ source_set("mojo_system") {
     "node.h",
     "node_channel.cc",
     "node_channel.h",
+    "shared_buffer_dispatcher.cc",
+    "shared_buffer_dispatcher.h",
     "wait_set_dispatcher.cc",
     "wait_set_dispatcher.h",
   ]
@@ -31,6 +33,9 @@ source_set("mojo_system") {
     "//mojo/edk/system/configuration.cc",
     "//mojo/edk/system/configuration.h",
     "//mojo/edk/system/handle_signals_state.h",
+    "//mojo/edk/system/mapping_table.cc",
+    "//mojo/edk/system/mapping_table.h",
+    "//mojo/edk/system/options_validation.h",
     "//mojo/edk/system/system_impl_export.h",
     "//mojo/edk/system/waiter.cc",
     "//mojo/edk/system/waiter.h",
