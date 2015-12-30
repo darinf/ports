@@ -19,6 +19,8 @@ source_set("mojo_system") {
     "node.h",
     "node_channel.cc",
     "node_channel.h",
+    "wait_set_dispatcher.cc",
+    "wait_set_dispatcher.h",
   ]
 
   # Sources we can repurpose from the existing EDK impl

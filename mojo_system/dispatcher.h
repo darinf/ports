@@ -24,6 +24,9 @@ namespace mojo {
 namespace edk {
 
 class Awakable;
+class Dispatcher;
+
+using DispatcherVector = std::vector<scoped_refptr<Dispatcher>>;
 
 // A |Dispatcher| implements Mojo primitives that are "attached" to a particular
 // handle. This includes most (all?) primitives except for |MojoWait...()|. This
@@ -108,6 +111,25 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // |*signals_state| will be set to the current handle signals state.
   void RemoveAwakable(Awakable* awakable, HandleSignalsState* signals_state);
 
+  // Adds a dispatcher to wait on. When the dispatcher satisfies |signals|, it
+  // will be returned in the next call to |GetReadyDispatchers()|. If
+  // |dispatcher| has been added, it must be removed before adding again,
+  // otherwise |MOJO_RESULT_ALREADY_EXISTS| will be returned.
+  MojoResult AddWaitingDispatcher(const scoped_refptr<Dispatcher>& dispatcher,
+                                  MojoHandleSignals signals,
+                                  uintptr_t context);
+  // Removes a dispatcher to wait on. If |dispatcher| has not been added,
+  // |MOJO_RESULT_NOT_FOUND| will be returned.
+  MojoResult RemoveWaitingDispatcher(
+      const scoped_refptr<Dispatcher>& dispatcher);
+  // Returns a set of ready dispatchers. |*count| is the maximum number of
+  // dispatchers to return, and will contain the number of dispatchers returned
+  // in |dispatchers| on completion.
+  MojoResult GetReadyDispatchers(uint32_t* count,
+                                 DispatcherVector* dispatchers,
+                                 MojoResult* results,
+                                 uintptr_t* contexts);
+
   // Does whatever is necessary to begin transit of the dispatcher.  This
   // should return |true| if transit is OK, or false if the underlying resource
   // is deemed busy by the implementation.
@@ -115,7 +137,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
 
   // Does whatever is necessary to complete transit of the dispatcher.
   virtual void CompleteTransit();
-  
+
   // Does whatever is necessary to cancel transit of the dispatcher.
   virtual void CancelTransit();
 
@@ -147,13 +169,24 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
                                            MojoHandle* handles,
                                            uint32_t* num_handles,
                                            MojoReadMessageFlags flags);
-  virtual HandleSignalsState GetHandleSignalsStateImplNoLock() const;
   virtual MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                            MojoHandleSignals signals,
                                            uintptr_t context,
                                            HandleSignalsState* signals_state);
   virtual void RemoveAwakableImplNoLock(Awakable* awakable,
                                         HandleSignalsState* signals_state);
+  virtual MojoResult AddWaitingDispatcherImplNoLock(
+      const scoped_refptr<Dispatcher>& dispatcher,
+      MojoHandleSignals signals,
+      uintptr_t context);
+  virtual MojoResult RemoveWaitingDispatcherImplNoLock(
+      const scoped_refptr<Dispatcher>& dispatcher);
+  virtual MojoResult GetReadyDispatchersImplNoLock(
+      uint32_t* count,
+      DispatcherVector* dispatchers,
+      MojoResult* results,
+      uintptr_t* contexts);
+  virtual HandleSignalsState GetHandleSignalsStateImplNoLock() const;
 
   // This should be overridden to return true if/when there's an ongoing
   // operation (e.g., two-phase read/writes on data pipes) that should prevent a
@@ -185,8 +218,6 @@ MOJO_SYSTEM_IMPL_EXPORT inline std::ostream& operator<<(std::ostream& out,
                                                         Dispatcher::Type type) {
   return out << static_cast<int>(type);
 }
-
-using DispatcherVector = std::vector<scoped_refptr<Dispatcher>>;
 
 }  // namespace edk
 }  // namespace mojo

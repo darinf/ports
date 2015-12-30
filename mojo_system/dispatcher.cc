@@ -77,6 +77,37 @@ void Dispatcher::RemoveAwakable(Awakable* awakable,
   RemoveAwakableImplNoLock(awakable, handle_signals_state);
 }
 
+MojoResult Dispatcher::AddWaitingDispatcher(
+    const scoped_refptr<Dispatcher>& dispatcher,
+    MojoHandleSignals signals,
+    uintptr_t context) {
+  base::AutoLock locker(lock_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return AddWaitingDispatcherImplNoLock(dispatcher, signals, context);
+}
+
+MojoResult Dispatcher::RemoveWaitingDispatcher(
+    const scoped_refptr<Dispatcher>& dispatcher) {
+  base::AutoLock locker(lock_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return RemoveWaitingDispatcherImplNoLock(dispatcher);
+}
+
+MojoResult Dispatcher::GetReadyDispatchers(uint32_t* count,
+                                           DispatcherVector* dispatchers,
+                                           MojoResult* results,
+                                           uintptr_t* contexts) {
+  base::AutoLock locker(lock_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return GetReadyDispatchersImplNoLock(count, dispatchers, results, contexts);
+}
+
 bool Dispatcher::BeginTransit() {
   return true;
 }
@@ -132,14 +163,6 @@ MojoResult Dispatcher::ReadMessageImplNoLock(void* bytes,
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
-HandleSignalsState Dispatcher::GetHandleSignalsStateImplNoLock() const {
-  lock_.AssertAcquired();
-  DCHECK(!is_closed_);
-  // By default, waiting isn't supported. Only dispatchers that can be waited on
-  // will do something nontrivial.
-  return HandleSignalsState();
-}
-
 MojoResult Dispatcher::AddAwakableImplNoLock(
     Awakable* /*awakable*/,
     MojoHandleSignals /*signals*/,
@@ -162,6 +185,40 @@ void Dispatcher::RemoveAwakableImplNoLock(Awakable* /*awakable*/,
   // will do something nontrivial.
   if (signals_state)
     *signals_state = HandleSignalsState();
+}
+
+MojoResult Dispatcher::AddWaitingDispatcherImplNoLock(
+    const scoped_refptr<Dispatcher>& dispatcher,
+    MojoHandleSignals signals,
+    uintptr_t context) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::RemoveWaitingDispatcherImplNoLock(
+    const scoped_refptr<Dispatcher>& dispatcher) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::GetReadyDispatchersImplNoLock(
+    uint32_t* count,
+    DispatcherVector* dispatchers,
+    MojoResult* results,
+    uintptr_t* contexts) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+HandleSignalsState Dispatcher::GetHandleSignalsStateImplNoLock() const {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  // By default, waiting isn't supported. Only dispatchers that can be waited on
+  // will do something nontrivial.
+  return HandleSignalsState();
 }
 
 bool Dispatcher::IsBusyNoLock() const {
