@@ -121,6 +121,10 @@ class MultiprocessTestBase : public testing::Test {
   // Returns the string.
   static std::string ReadString(MojoHandle mp);
 
+  // Reads a string from the pipe, expecting to read no handles and exactly
+  // |num_bytes| bytes, which are read into |data|.
+  static void ReadString(MojoHandle mp, char* data, size_t num_bytes);
+
   // Writes |message| to |in| and expects to read it back from |out|.
   static void VerifyTransmission(MojoHandle in,
                                  MojoHandle out,
@@ -137,7 +141,7 @@ class MultiprocessTestBase : public testing::Test {
 
 #define RUN_WITH_CHILD(client_name) RunChild(#client_name,
 
-#define ON_PIPE(handlevar) [](MojoHandle handlevar) {
+#define ON_PIPE(handlevar) [&](MojoHandle handlevar) {
 
 #define END_CHILD() });
 
@@ -149,7 +153,7 @@ class MultiprocessTestBase : public testing::Test {
             EXPAND_CLIENT_NAMES(client_names) };                 \
        RunChildren(client_names_,
 
-#define ON_PIPES(handlearray) [](const MojoHandle* handlearray) {
+#define ON_PIPES(handlearray) [&](const MojoHandle* handlearray) {
 
 #define END_CHILDREN() });}
 

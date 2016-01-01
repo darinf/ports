@@ -189,6 +189,29 @@ std::string MultiprocessTestBase::ReadString(MojoHandle mp) {
 }
 
 // static
+void MultiprocessTestBase::ReadString(MojoHandle mp,
+                                      char* data,
+                                      size_t num_bytes) {
+  CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
+                    nullptr),
+           MOJO_RESULT_OK);
+
+  uint32_t message_size = 0;
+  uint32_t num_handles = 0;
+  CHECK_EQ(MojoReadMessage(mp, nullptr, &message_size, nullptr, &num_handles,
+                           MOJO_READ_MESSAGE_FLAG_NONE),
+           MOJO_RESULT_RESOURCE_EXHAUSTED);
+  CHECK_EQ(num_handles, 0u);
+  CHECK_EQ(message_size, num_bytes);
+
+  CHECK_EQ(MojoReadMessage(mp, data, &message_size, nullptr, &num_handles,
+                           MOJO_READ_MESSAGE_FLAG_NONE),
+           MOJO_RESULT_OK);
+  CHECK_EQ(num_handles, 0u);
+  CHECK_EQ(message_size, num_bytes);
+}
+
+// static
 void MultiprocessTestBase::VerifyTransmission(MojoHandle source,
                                               MojoHandle dest,
                                               const std::string& message) {

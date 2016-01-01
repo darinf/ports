@@ -45,7 +45,7 @@ executable("ports_unittests") {
   include_dirs = [ ".." ]
 }
 
-executable("ports_edk_unittests") {
+source_set("ports_edk_test_support") {
   testonly = true
 
   sources = [
@@ -53,14 +53,11 @@ executable("ports_edk_unittests") {
     "mojo_system/multiprocess_test_base.h",
     "mojo_system/multiprocess_test_helper.cc",
     "mojo_system/multiprocess_test_helper.h",
-    "mojo_system/pipes_unittest.cc",
-
-    "//mojo/edk/test/run_all_unittests.cc",
     "//mojo/edk/test/scoped_ipc_support.cc",
     "//mojo/edk/test/scoped_ipc_support.h",
   ]
 
-  deps = [
+  public_deps = [
     ":ports",
     "//base",
     "//base/test:test_support",
@@ -69,6 +66,46 @@ executable("ports_edk_unittests") {
     "//mojo/public/cpp/environment:standalone",
     "//testing/gtest",
     "//third_party/mojo/src/mojo/edk/system",
+  ]
+
+  defines = [ "INSIDE_CHROMIUM" ]
+
+  include_dirs = [ ".." ]
+}
+
+executable("ports_edk_unittests") {
+  testonly = true
+
+  sources = [
+    "mojo_system/pipes_unittest.cc",
+
+    "//mojo/edk/test/run_all_unittests.cc",
+  ]
+
+  deps = [
+    ":ports",
+    ":ports_edk_test_support",
+    "//testing/gtest",
+  ]
+
+  defines = [ "INSIDE_CHROMIUM" ]
+
+  include_dirs = [ ".." ]
+}
+
+executable("ports_edk_perftests") {
+  testonly = true
+
+  sources = [
+    "mojo_system/pipes_perftest.cc",
+
+    "//mojo/edk/test/run_all_perftests.cc",
+  ]
+
+  deps = [
+    ":ports",
+    ":ports_edk_test_support",
+    "//testing/gtest",
   ]
 
   defines = [ "INSIDE_CHROMIUM" ]
