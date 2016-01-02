@@ -165,8 +165,8 @@ class MultiprocessTestBase : public testing::Test {
 // The function is defined as a static member of a subclass of
 // MultiprocessTestBase so code within it has access to that class's static
 // static helpers.
-#define DEFINE_TEST_CLIENT_WITH_PIPE(test_child_name, pipe_name)            \
-  class test_child_name##_MainFixture : public test::MultiprocessTestBase { \
+#define DEFINE_TEST_CLIENT_WITH_PIPE(test_child_name, test_base, pipe_name) \
+  class test_child_name##_MainFixture : public test_base {                  \
    public:                                                                  \
     static int AsyncMain(MojoHandle);                                       \
     static int AsyncMainScoped(ScopedMessagePipeHandle mp) {                \

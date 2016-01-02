@@ -54,16 +54,10 @@ class BuffersTest : public test::MultiprocessTestBase {
 
 // Reads a single message with a shared buffer handle, maps the buffer, copies
 // the message contents into it, then exits.
-DEFINE_TEST_CLIENT_WITH_PIPE(MultiprocessSharedBufferClient, h) {
+DEFINE_TEST_CLIENT_WITH_PIPE(MultiprocessSharedBufferClient, BuffersTest, h) {
   MojoHandle buffer_handle;
   std::string message = ReadStringWithHandles(h, &buffer_handle, 1);
-  char* data;
-  EXPECT_EQ(MOJO_RESULT_OK,
-            MojoMapBuffer(buffer_handle, 0, message.size(),
-                          reinterpret_cast<void**>(&data),
-                          MOJO_MAP_BUFFER_FLAG_NONE));
-  memcpy(data, message.data(), message.size());
-  EXPECT_EQ(MOJO_RESULT_OK, MojoUnmapBuffer(static_cast<void*>(data)));
+  WriteToBuffer(buffer_handle, message);
   return 0;
 }
 

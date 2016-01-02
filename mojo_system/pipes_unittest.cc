@@ -50,7 +50,7 @@ class PipesTest : public test::MultiprocessTestBase {
 };
 
 // Echos the primordial channel until "exit".
-DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, h) {
+DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, PipesTest, h) {
   for (;;) {
     std::string message = ReadString(h);
     if (message == "exit")
@@ -62,7 +62,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, h) {
 
 // Receives a pipe handle from the primordial channel and echos on it until
 // "exit". Used to test simple pipe transfer across processes via channels.
-DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceClient, h) {
+DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceClient, PipesTest, h) {
   MojoHandle p;
   ReadStringWithHandles(h, &p, 1);
   for (;;) {
@@ -76,7 +76,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceClient, h) {
 
 // Receives a pipe handle from the primordial channel and reads new handles
 // from it. Each read handle establishes a new echo channel.
-DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient, h) {
+DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient, PipesTest, h) {
   MojoHandle p;
   ReadStringWithHandles(h, &p, 1);
 
@@ -109,7 +109,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient, h) {
 }
 
 // Parses commands from the parent pipe and does whatever it's asked to do.
-DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, h) {
+DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, PipesTest, h) {
   std::unordered_map<std::string, MojoHandle> named_pipes;
   for (;;) {
     MojoHandle p;
