@@ -5,8 +5,10 @@
 #include "ports/mojo_system/message_pipe_dispatcher.h"
 
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "ports/mojo_system/core.h"
 #include "ports/mojo_system/node.h"
+#include "ports/mojo_system/ports_message.h"
 
 namespace mojo {
 namespace edk {
@@ -73,10 +75,9 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     MojoWriteMessageFlags flags) {
   lock().AssertAcquired();
 
-  ports::ScopedMessage message;
-  int rv = node_->AllocMessage(num_bytes, num_dispatchers, nullptr, &message);
-  if (rv != ports::OK)
-    return MOJO_RESULT_UNKNOWN;
+  scoped_ptr<PortsMessage> message =
+      node_->AllocMessage(num_bytes, num_dispatchers);
+  DCHECK(message);
 
   memcpy(message->mutable_payload_bytes(), bytes, num_bytes);
   for (size_t i = 0; i < num_dispatchers; ++i) {
@@ -89,7 +90,7 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
     message->mutable_ports()[i] = mpd->GetPortName();
   }
 
-  rv = node_->SendMessage(port_name_, std::move(message));
+  int rv = node_->SendMessage(port_name_, std::move(message));
 
   if (rv != ports::OK) {
     if (rv == ports::ERROR_PORT_UNKNOWN ||

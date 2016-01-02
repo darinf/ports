@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
@@ -22,6 +23,7 @@ namespace mojo {
 namespace edk {
 
 class Core;
+class PortsMessage;
 
 class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
  public:
@@ -79,14 +81,12 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   void SetPortObserver(const ports::PortName& port_name,
                        std::shared_ptr<PortObserver> observer);
 
-  int AllocMessage(size_t num_payload_bytes,
-                   size_t num_ports,
-                   ScopedPlatformHandleVectorPtr platform_handles,
-                   ports::ScopedMessage* message);
+  scoped_ptr<PortsMessage> AllocMessage(size_t num_payload_bytes,
+                                        size_t num_ports);
 
   // Sends a message on a port to its peer.
   int SendMessage(const ports::PortName& port_name,
-                  ports::ScopedMessage message);
+                  scoped_ptr<PortsMessage> message);
 
   // Enable use of lambda functions for selecting messages.
   template <typename Predicate>

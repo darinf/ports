@@ -10,6 +10,7 @@
 #include "crypto/random.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
 #include "ports/mojo_system/core.h"
+#include "ports/mojo_system/ports_message.h"
 
 namespace mojo {
 namespace edk {
@@ -24,43 +25,6 @@ ports::NodeName GetRandomNodeName() {
   GenerateRandomName(&name);
   return name;
 }
-
-class PortsMessage : public ports::Message {
- public:
-  PortsMessage(size_t num_header_bytes,
-               size_t num_payload_bytes,
-               size_t num_ports_bytes,
-               const void* bytes = nullptr,
-               size_t num_bytes = 0,
-               ScopedPlatformHandleVectorPtr platform_handles = nullptr)
-      : ports::Message(num_header_bytes,
-                       num_payload_bytes,
-                       num_ports_bytes) {
-    size_t size = num_header_bytes + num_payload_bytes + num_ports_bytes;
-
-    void* ptr;
-    channel_message_ = NodeChannel::CreatePortsMessage(
-        size, &ptr, std::move(platform_handles));
-
-    start_ = static_cast<char*>(ptr);
-    if (bytes) {
-      DCHECK_EQ(num_bytes,
-                num_header_bytes + num_payload_bytes + num_ports_bytes);
-      memcpy(start_, bytes, num_bytes);
-    }
-  }
-
-  void SetHandles(ScopedPlatformHandleVectorPtr handles) {
-    channel_message_->SetHandles(std::move(handles));
-  }
-
-  Channel::MessagePtr TakeChannelMessage() {
-    return std::move(channel_message_);
-  }
-
- private:
-  Channel::MessagePtr channel_message_;
-};
 
 }  // namespace
 
@@ -170,21 +134,21 @@ void Node::SetPortObserver(const ports::PortName& port_name,
   node_->SetUserData(port_name, std::move(observer));
 }
 
-int Node::AllocMessage(size_t num_payload_bytes,
-                       size_t num_ports,
-                       ScopedPlatformHandleVectorPtr platform_handles,
-                       ports::ScopedMessage* message) {
-  int rv = node_->AllocMessage(num_payload_bytes, num_ports, message);
+scoped_ptr<PortsMessage> Node::AllocMessage(size_t num_payload_bytes,
+                                            size_t num_ports) {
+  ports::ScopedMessage m;
+  int rv = node_->AllocMessage(num_payload_bytes, num_ports, &m);
   if (rv != ports::OK)
-    return rv;
-  PortsMessage* ports_message = static_cast<PortsMessage*>(message->get());
-  ports_message->SetHandles(std::move(platform_handles));
-  return rv;
+    return nullptr;
+  DCHECK(m);
+
+  return make_scoped_ptr(static_cast<PortsMessage*>(m.release()));
 }
 
 int Node::SendMessage(const ports::PortName& port_name,
-                      ports::ScopedMessage message) {
-  return node_->SendMessage(port_name, std::move(message));
+                      scoped_ptr<PortsMessage> message) {
+  ports::ScopedMessage ports_message(message.release());
+  return node_->SendMessage(port_name, std::move(ports_message));
 }
 
 void Node::ClosePort(const ports::PortName& port_name) {
@@ -303,8 +267,8 @@ void Node::AllocMessage(size_t num_header_bytes,
                         size_t num_payload_bytes,
                         size_t num_ports_bytes,
                         ports::ScopedMessage* message) {
-  message->reset(
-      new PortsMessage(num_header_bytes, num_payload_bytes, num_ports_bytes));
+  message->reset(new PortsMessage(num_header_bytes, num_payload_bytes,
+                                  num_ports_bytes, nullptr, 0, nullptr));
 }
 
 void Node::ForwardMessage(const ports::NodeName& node,
