@@ -76,8 +76,7 @@ void Message::Parse(const void* bytes,
   } else {
     *num_payload_bytes = 0;
     *num_ports_bytes = 0;
-    DCHECK_EQ(num_bytes,
-              *num_header_bytes + *num_payload_bytes + *num_ports_bytes);
+    DCHECK_EQ(num_bytes, *num_header_bytes);
   }
 }
 

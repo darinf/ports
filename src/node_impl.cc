@@ -172,8 +172,11 @@ int Node::Impl::GetMessageIf(const PortName& port_name,
   // Allow referenced ports to trigger MessagesAvailable calls.
   if (*message) {
     for (size_t i = 0; i < (*message)->num_ports(); ++i) {
-      std::shared_ptr<Port> new_port = GetPort((*message)->ports()[i]);
-      DCHECK(new_port);
+      const PortName& new_port_name = (*message)->ports()[i];
+      std::shared_ptr<Port> new_port = GetPort(new_port_name);
+
+      DCHECK(new_port) << "Port " << new_port_name << "@" << name_
+                       << " does not exist!";
 
       std::lock_guard<std::mutex> guard(new_port->lock);
 

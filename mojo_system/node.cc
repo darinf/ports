@@ -27,55 +27,30 @@ ports::NodeName GetRandomNodeName() {
 
 class PortsMessage : public ports::Message {
  public:
-  virtual Channel::MessagePtr TakeChannelMessage() = 0;
-
- protected:
-  PortsMessage(size_t num_header_bytes, 
+  PortsMessage(size_t num_header_bytes,
                size_t num_payload_bytes,
-               size_t num_ports_bytes)
+               size_t num_ports_bytes,
+               const void* bytes = nullptr,
+               size_t num_bytes = 0)
       : ports::Message(num_header_bytes,
                        num_payload_bytes,
                        num_ports_bytes) {
-  }
-};
-
-class DependentPortsMessage : public PortsMessage {
- public:
-  DependentPortsMessage(const void* start,
-                        size_t num_header_bytes,
-                        size_t num_payload_bytes,
-                        size_t num_ports_bytes)
-      : PortsMessage(num_header_bytes,
-                     num_payload_bytes,
-                     num_ports_bytes) {
-    start_ = static_cast<char*>(const_cast<void*>(start));
-  }
-
-  Channel::MessagePtr TakeChannelMessage() override {
-    CHECK(false);
-    return nullptr;
-  };
-};
-
-class ManagedPortsMessage : public PortsMessage {
- public:
-  ManagedPortsMessage(size_t num_header_bytes, 
-                      size_t num_payload_bytes,
-                      size_t num_ports_bytes)
-      : PortsMessage(num_header_bytes,
-                     num_payload_bytes,
-                     num_ports_bytes) {
     size_t size = num_header_bytes + num_payload_bytes + num_ports_bytes;
 
     void* ptr;
     channel_message_ = NodeChannel::CreatePortsMessage(size, &ptr);
 
     start_ = static_cast<char*>(ptr);
+    if (bytes) {
+      DCHECK_EQ(num_bytes,
+                num_header_bytes + num_payload_bytes + num_ports_bytes);
+      memcpy(start_, bytes, num_bytes);
+    }
   }
 
-  Channel::MessagePtr TakeChannelMessage() override {
+  Channel::MessagePtr TakeChannelMessage() {
     return std::move(channel_message_);
-  };
+  }
 
  private:
   Channel::MessagePtr channel_message_;
@@ -316,9 +291,8 @@ void Node::AllocMessage(size_t num_header_bytes,
                         size_t num_payload_bytes,
                         size_t num_ports_bytes,
                         ports::ScopedMessage* message) {
-  message->reset(new ManagedPortsMessage(num_header_bytes,
-                                         num_payload_bytes,
-                                         num_ports_bytes));
+  message->reset(
+      new PortsMessage(num_header_bytes, num_payload_bytes, num_ports_bytes));
 }
 
 void Node::ForwardMessage(const ports::NodeName& node,
@@ -389,23 +363,21 @@ void Node::OnAcceptParent(const ports::NodeName& from_node,
 }
 
 void Node::OnPortsMessage(const ports::NodeName& from_node,
-                          const void* payload,
-                          size_t payload_size) {
+                          const void* bytes,
+                          size_t num_bytes) {
   size_t num_header_bytes, num_payload_bytes, num_ports_bytes;
-  ports::Message::Parse(payload,
-                        payload_size,
+  ports::Message::Parse(bytes,
+                        num_bytes,
                         &num_header_bytes,
                         &num_payload_bytes,
                         &num_ports_bytes);
 
-  // TODO: Add some logic here to neuter the DependentPortsMessage before
-  // returning. Try to catch anyone trying to access |payload| afterwards.
-
   ports::ScopedMessage message(
-      new DependentPortsMessage(payload,
-                                num_header_bytes,
-                                num_payload_bytes,
-                                num_ports_bytes));
+      new PortsMessage(num_header_bytes,
+                       num_payload_bytes,
+                       num_ports_bytes,
+                       bytes,
+                       num_bytes));
   AcceptMessageOnIOThread(std::move(message));
 }
 

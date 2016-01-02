@@ -44,26 +44,6 @@ struct AcceptParentData {
   ports::NodeName child_name;
 };
 
-// This data is followed by a serialized ports::Message in the payload.
-struct EventData {
-  uint32_t type;
-  ports::PortName port_name;
-  union {
-    struct {
-      ports::NodeName proxy_node_name;
-      ports::PortName proxy_peer_name;
-      ports::NodeName proxy_to_node_name;
-      ports::PortName proxy_to_peer_name;
-    } observe_proxy;
-    struct {
-      uint32_t last_sequence_num;
-    } observe_proxy_ack;
-    struct {
-      uint32_t last_sequence_num;
-    } observe_closure;
-  };
-};
-
 // This data is followed by arbitrary string contents in the payload, which
 // are used as a token to identify the target port.
 struct ConnectToPortData {
@@ -232,7 +212,9 @@ void NodeChannel::OnChannelMessage(const void* payload,
     }
 
     case MessageType::PORTS_MESSAGE: {
-      delegate_->OnPortsMessage(from_node, payload, payload_size);
+      const void* data;
+      GetMessagePayload(payload, &data);
+      delegate_->OnPortsMessage(from_node, data, payload_size - sizeof(Header));
       break;
     }
 
