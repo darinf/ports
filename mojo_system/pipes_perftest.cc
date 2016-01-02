@@ -51,7 +51,7 @@ class PipesPerfTest : public test::MultiprocessTestBase {
 // For each message received, sends a reply message with the same contents
 // repeated twice, until the other end is closed or it receives a "!"
 // (which it doesn't reply to.)
-DEFINE_TEST_CLIENT_WITH_PIPE(PingPongClient, h) {
+DEFINE_TEST_CLIENT_WITH_PIPE(PingPongClient, PipesPerfTest, h) {
   std::vector<char> read_buffer(1000000);
   for (;;) {
     CHECK_EQ(MojoWait(h, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
