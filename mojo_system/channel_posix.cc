@@ -88,13 +88,20 @@ class ChannelPosix : public Channel,
   }
 
   void Write(MessagePtr message) override {
-    base::AutoLock lock(write_lock_);
-    bool wait_for_write = outgoing_messages_.empty();
-    outgoing_messages_.emplace_back(new MessageView(std::move(message), 0));
-    if (wait_for_write) {
-      io_task_runner_->PostTask(
-          FROM_HERE, base::Bind(&ChannelPosix::WaitForWriteOnIOThread, this));
+    bool write_error = false;
+    {
+      base::AutoLock lock(write_lock_);
+      if (reject_writes_)
+        return;
+      bool queue_was_empty = outgoing_messages_.empty();
+      outgoing_messages_.emplace_back(new MessageView(std::move(message), 0));
+      if (queue_was_empty) {
+        if (!WriteNoLock())
+          reject_writes_ = write_error = true;
+      }
     }
+    if (write_error)
+      OnError();
   }
 
   ScopedPlatformHandleVectorPtr GetReadPlatformHandlesNoLock(
@@ -132,14 +139,24 @@ class ChannelPosix : public Channel,
 
   void WaitForWriteOnIOThread() {
     base::AutoLock lock(write_lock_);
+    WaitForWriteOnIOThreadNoLock();
+  }
+
+  void WaitForWriteOnIOThreadNoLock() {
     if (pending_write_)
       return;
     if (!write_watcher_)
       return;
-    pending_write_ = true;
-    base::MessageLoopForIO::current()->WatchFileDescriptor(
-        handle_.get().handle, false /* persistent */,
-        base::MessageLoopForIO::WATCH_WRITE, write_watcher_.get(), this);
+    if (base::MessageLoop::current() &&
+        base::MessageLoop::current()->type() == base::MessageLoop::TYPE_IO) {
+      pending_write_ = true;
+      base::MessageLoopForIO::current()->WatchFileDescriptor(
+          handle_.get().handle, false /* persistent */,
+          base::MessageLoopForIO::WATCH_WRITE, write_watcher_.get(), this);
+    } else {
+      io_task_runner_->PostTask(
+          FROM_HERE, base::Bind(&ChannelPosix::WaitForWriteOnIOThread, this));
+    }
   }
 
   void ShutDownOnIOThread() {
@@ -188,12 +205,20 @@ class ChannelPosix : public Channel,
   }
 
   void OnFileCanWriteWithoutBlocking(int fd) override {
-    std::deque<MessageViewPtr> messages;
+    bool write_error = false;
     {
       base::AutoLock lock(write_lock_);
-      std::swap(outgoing_messages_, messages);
       pending_write_ = false;
+      if (!WriteNoLock())
+        reject_writes_ = write_error = true;
     }
+    if (write_error)
+      OnError();
+  }
+
+  bool WriteNoLock() {
+    std::deque<MessageViewPtr> messages;
+    std::swap(outgoing_messages_, messages);
 
     // TODO: Send a batch of iovecs when possible.
     while (!messages.empty()) {
@@ -224,23 +249,24 @@ class ChannelPosix : public Channel,
           messages.pop_front();
         }
       } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-        ShutDownOnIOThread();
-        OnError();
-        return;
+        return false;
       } else {
         // Need to try again!
         messages.front() = std::move(message_view);
-        WaitForWriteOnIOThread();
         break;
       }
     }
 
     if (!messages.empty()) {
       // Put back any remaining messages if necessary, preserving order.
-      base::AutoLock lock(write_lock_);
       std::move(messages.begin(), messages.end(),
           std::front_inserter(outgoing_messages_));
+
+      // Wait to write again.
+      WaitForWriteOnIOThreadNoLock();
     }
+
+    return true;
   }
 
   // Keeps the Channel alive at least until explicit shutdown on the IO thread.
@@ -258,6 +284,7 @@ class ChannelPosix : public Channel,
   // Protects |pending_write_| and |outgoing_messages_|.
   base::Lock write_lock_;
   bool pending_write_ = false;
+  bool reject_writes_ = false;
   std::deque<MessageViewPtr> outgoing_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(ChannelPosix);
