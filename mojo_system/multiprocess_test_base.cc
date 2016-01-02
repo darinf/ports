@@ -109,10 +109,6 @@ void MultiprocessTestBase::WriteStringWithHandles(
     const std::string& message,
     const MojoHandle *handles,
     uint32_t num_handles) {
-  CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_WRITABLE, MOJO_DEADLINE_INDEFINITE,
-                    nullptr),
-           MOJO_RESULT_OK);
-
   CHECK_EQ(MojoWriteMessage(mp, message.data(),
                             static_cast<uint32_t>(message.size()),
                             handles, num_handles, MOJO_WRITE_MESSAGE_FLAG_NONE),
