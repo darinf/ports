@@ -50,12 +50,12 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
   // |Dispatcher| public methods:
   Type GetType() const override;
 
-  // The "opposite" of |SerializeAndClose()|. (Typically this is called by
-  // |Dispatcher::Deserialize()|.)
+  // The "opposite" of SerializeAndClose(). Called by Dispatcher::Deserialize().
   static scoped_refptr<SharedBufferDispatcher> Deserialize(
-      const void* source,
-      size_t size,
-      PlatformHandleVector* platform_handles);
+      const void* bytes,
+      size_t num_bytes,
+      PlatformHandle* platform_handles,
+      size_t num_platform_handles);
 
  private:
   static scoped_refptr<SharedBufferDispatcher> CreateInternal(
@@ -87,6 +87,10 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
       uint64_t num_bytes,
       MojoMapBufferFlags flags,
       scoped_ptr<PlatformSharedBufferMapping>* mapping) override;
+  void GetSerializedSizeImplNoLock(uint32_t* num_bytes,
+                                   uint32_t* num_platform_handles) override;
+  bool SerializeAndCloseImplNoLock(void* destination,
+                                   PlatformHandleVector* handles) override;
 
   scoped_refptr<PlatformSharedBuffer> shared_buffer_;
 

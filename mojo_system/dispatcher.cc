@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "mojo/edk/system/configuration.h"
+#include "ports/mojo_system/shared_buffer_dispatcher.h"
 
 namespace mojo {
 namespace edk {
@@ -130,6 +131,18 @@ MojoResult Dispatcher::GetReadyDispatchers(uint32_t* count,
   return GetReadyDispatchersImplNoLock(count, dispatchers, results, contexts);
 }
 
+void Dispatcher::GetSerializedSize(uint32_t* num_bytes,
+                                   uint32_t* num_platform_handles) {
+  base::AutoLock locker(lock_);
+  GetSerializedSizeImplNoLock(num_bytes, num_platform_handles);
+}
+
+bool Dispatcher::SerializeAndClose(void* destination,
+                                   PlatformHandleVector* handles) {
+  base::AutoLock locker(lock_);
+  return SerializeAndCloseImplNoLock(destination, handles);
+}
+
 bool Dispatcher::BeginTransit() {
   return true;
 }
@@ -138,6 +151,23 @@ void Dispatcher::CompleteTransit() {
 }
 
 void Dispatcher::CancelTransit() {
+}
+
+// static
+scoped_refptr<Dispatcher> Dispatcher::Deserialize(
+    Type type,
+    const void* bytes,
+    size_t num_bytes,
+    PlatformHandle* platform_handles,
+    size_t num_platform_handles) {
+  switch (type) {
+    case Type::SHARED_BUFFER:
+      return SharedBufferDispatcher::Deserialize(
+          bytes, num_bytes, platform_handles, num_platform_handles);
+    default:
+      LOG(ERROR) << "Deserializing invalid dispatcher type.";
+      return nullptr;
+  }
 }
 
 Dispatcher::Dispatcher() : is_closed_(false) {
@@ -259,6 +289,22 @@ HandleSignalsState Dispatcher::GetHandleSignalsStateImplNoLock() const {
   // By default, waiting isn't supported. Only dispatchers that can be waited on
   // will do something nontrivial.
   return HandleSignalsState();
+}
+
+void Dispatcher::GetSerializedSizeImplNoLock(uint32_t* num_bytes,
+                                             uint32_t* num_platform_handles) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  LOG(ERROR) << "Attempting to serialize invalid handle type.";
+  *num_bytes = 0;
+  *num_platform_handles = 0;
+}
+
+bool Dispatcher::SerializeAndCloseImplNoLock(void* destination,
+                                             PlatformHandleVector* handles) {
+  lock_.AssertAcquired();
+  CloseNoLock();
+  return false;
 }
 
 bool Dispatcher::IsBusyNoLock() const {

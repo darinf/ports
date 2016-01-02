@@ -58,9 +58,7 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
       return static_cast<PlatformHandle*>(handles_->data());
     }
 
-    void SetHandles(ScopedPlatformHandleVectorPtr handles) {
-      std::swap(handles, handles_);
-    }
+    void SetHandles(ScopedPlatformHandleVectorPtr handles);
 
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 

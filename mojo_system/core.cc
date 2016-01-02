@@ -66,7 +66,12 @@ bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
     d.dispatcher = new MessagePipeDispatcher(&node_, message.ports()[i]);
   }
+  return AddDispatchersFromTransit(dispatchers, handles);
+}
 
+bool Core::AddDispatchersFromTransit(
+    const std::vector<Dispatcher::DispatcherInTransit>& dispatchers,
+    MojoHandle* handles) {
   bool failed = false;
   {
     base::AutoLock lock(handles_lock_);

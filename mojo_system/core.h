@@ -65,6 +65,12 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   bool AddDispatchersForReceivedPorts(const ports::Message& message,
                                       MojoHandle* handles);
 
+  // Adds new dispatchers for non-message-pipe handles received in a message.
+  // |dispatchers| and |handles| should be the same size.
+  bool AddDispatchersFromTransit(
+      const std::vector<Dispatcher::DispatcherInTransit>& dispatchers,
+      MojoHandle* handles);
+
   // Watches on the given handle for the given signals, calling |callback| when
   // a signal is satisfied or when all signals become unsatisfiable. |callback|
   // must satisfy stringent requirements -- see |Awakable::Awake()| in

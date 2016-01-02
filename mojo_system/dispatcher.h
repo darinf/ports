@@ -14,6 +14,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/system_impl_export.h"
@@ -145,6 +146,15 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
                                  MojoResult* results,
                                  uintptr_t* contexts);
 
+  // Informs the caller of the total serialized size (in bytes) and the total
+  // number of platform handles needed to transfer this dispatcher across
+  // a message pipe.
+  void GetSerializedSize(uint32_t* num_bytes, uint32_t* num_platform_handles);
+
+  // Serializes this dispatcher into |destination| and |handles|. Returns true
+  // iff successful, false otherwise. In either case the dispatcher will close.
+  bool SerializeAndClose(void* destination, PlatformHandleVector* handles);
+
   // Does whatever is necessary to begin transit of the dispatcher.  This
   // should return |true| if transit is OK, or false if the underlying resource
   // is deemed busy by the implementation.
@@ -155,6 +165,14 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
 
   // Does whatever is necessary to cancel transit of the dispatcher.
   virtual void CancelTransit();
+
+  // Deserializes a specific dispatcher type from an incoming message.
+  static scoped_refptr<Dispatcher> Deserialize(
+      Type type,
+      const void* bytes,
+      size_t num_bytes,
+      PlatformHandle* platform_handles,
+      size_t num_platform_handles);
 
  protected:
   friend class base::RefCountedThreadSafe<Dispatcher>;
@@ -210,6 +228,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
       MojoResult* results,
       uintptr_t* contexts);
   virtual HandleSignalsState GetHandleSignalsStateImplNoLock() const;
+  virtual void GetSerializedSizeImplNoLock(uint32_t* num_bytes,
+                                           uint32_t* num_platform_handles);
+  virtual bool SerializeAndCloseImplNoLock(void* destination,
+                                           PlatformHandleVector* handles);
 
   // This should be overridden to return true if/when there's an ongoing
   // operation (e.g., two-phase read/writes on data pipes) that should prevent a
@@ -222,9 +244,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   bool is_closed() const { return is_closed_; }
 
   // Closes the dispatcher. This must be done under lock, and unlike |Close()|,
-  // the dispatcher must not be closed already. (This is the "equivalent" of
-  // |CreateEquivalentDispatcherAndCloseNoLock()|, for situations where the
-  // dispatcher must be disposed of instead of "transferred".)
+  // the dispatcher must not be closed already.
   void CloseNoLock();
 
  private:

@@ -25,7 +25,6 @@ namespace {
 
 struct MOJO_ALIGNAS(8) SerializedSharedBufferDispatcher {
   size_t num_bytes;
-  size_t platform_handle_index;
 };
 
 }  // namespace
@@ -90,27 +89,24 @@ Dispatcher::Type SharedBufferDispatcher::GetType() const {
 
 // static
 scoped_refptr<SharedBufferDispatcher> SharedBufferDispatcher::Deserialize(
-    const void* source,
-    size_t size,
-    PlatformHandleVector* platform_handles) {
-
-  if (size != sizeof(SerializedSharedBufferDispatcher)) {
+    const void* bytes,
+    size_t num_bytes,
+    PlatformHandle* platform_handles,
+    size_t num_platform_handles) {
+  if (num_bytes != sizeof(SerializedSharedBufferDispatcher)) {
     LOG(ERROR) << "Invalid serialized shared buffer dispatcher (bad size)";
     return nullptr;
   }
 
   const SerializedSharedBufferDispatcher* serialization =
-      static_cast<const SerializedSharedBufferDispatcher*>(source);
-  size_t num_bytes = serialization->num_bytes;
-  size_t platform_handle_index = serialization->platform_handle_index;
-
-  if (!num_bytes) {
+      static_cast<const SerializedSharedBufferDispatcher*>(bytes);
+  if (!serialization->num_bytes) {
     LOG(ERROR)
         << "Invalid serialized shared buffer dispatcher (invalid num_bytes)";
     return nullptr;
   }
 
-  if (!platform_handles || platform_handle_index >= platform_handles->size()) {
+  if (!platform_handles || num_platform_handles != 1) {
     LOG(ERROR)
         << "Invalid serialized shared buffer dispatcher (missing handles)";
     return nullptr;
@@ -120,13 +116,13 @@ scoped_refptr<SharedBufferDispatcher> SharedBufferDispatcher::Deserialize(
   PlatformHandle platform_handle;
   // We take ownership of the handle, so we have to invalidate the one in
   // |platform_handles|.
-  std::swap(platform_handle, (*platform_handles)[platform_handle_index]);
+  std::swap(platform_handle, *platform_handles);
 
   // Wrapping |platform_handle| in a |ScopedPlatformHandle| means that it'll be
   // closed even if creation fails.
   scoped_refptr<PlatformSharedBuffer> shared_buffer(
       internal::g_platform_support->CreateSharedBufferFromHandle(
-          num_bytes, ScopedPlatformHandle(platform_handle)));
+          serialization->num_bytes, ScopedPlatformHandle(platform_handle)));
   if (!shared_buffer) {
     LOG(ERROR)
         << "Invalid serialized shared buffer dispatcher (invalid num_bytes?)";
@@ -222,6 +218,33 @@ MojoResult SharedBufferDispatcher::MapBufferImplNoLock(
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   return MOJO_RESULT_OK;
+}
+
+void SharedBufferDispatcher::GetSerializedSizeImplNoLock(
+    uint32_t* num_bytes,
+    uint32_t* num_platform_handles) {
+  *num_bytes = sizeof(SerializedSharedBufferDispatcher);
+  *num_platform_handles = 1;
+}
+
+bool SharedBufferDispatcher::SerializeAndCloseImplNoLock(
+    void* destination,
+    PlatformHandleVector* handles) {
+  SerializedSharedBufferDispatcher* serialization =
+      static_cast<SerializedSharedBufferDispatcher*>(destination);
+  serialization->num_bytes = shared_buffer_->GetNumBytes();
+  ScopedPlatformHandle handle(
+      shared_buffer_->HasOneRef() ? shared_buffer_->PassPlatformHandle()
+                                  : shared_buffer_->DuplicatePlatformHandle());
+  if (!handle.is_valid()) {
+    shared_buffer_ = nullptr;
+    return false;
+  }
+
+  handles->push_back(handle.release());
+
+  CloseNoLock();
+  return true;
 }
 
 }  // namespace edk

@@ -53,6 +53,10 @@ class MessagePipeDispatcher : public Dispatcher {
                                    HandleSignalsState* signals_state) override;
   void RemoveAwakableImplNoLock(Awakable* awakable,
                                 HandleSignalsState* signals_state) override;
+  void GetSerializedSizeImplNoLock(uint32_t* num_bytes,
+                                   uint32_t* num_handles) override;
+  bool SerializeAndCloseImplNoLock(void* destination,
+                                   PlatformHandleVector* handles) override;
 
   bool UpdateSignalsStateNoLock();
 

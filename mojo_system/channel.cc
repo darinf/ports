@@ -32,6 +32,11 @@ Channel::Message::Message(size_t payload_size,
 
 Channel::Message::~Message() {}
 
+void Channel::Message::SetHandles(ScopedPlatformHandleVectorPtr handles) {
+  header()->num_handles = handles ? handles->size() : 0;
+  std::swap(handles, handles_);
+}
+
 Channel::Channel(Delegate* delegate)
     : delegate_(delegate), read_buffer_(kReadBufferSize) {}
 
