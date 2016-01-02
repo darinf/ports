@@ -12,6 +12,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
+#include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "ports/include/ports.h"
 #include "ports/mojo_system/node_channel.h"
@@ -80,6 +81,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   int AllocMessage(size_t num_payload_bytes,
                    size_t num_ports,
+                   ScopedPlatformHandleVectorPtr platform_handles,
                    ports::ScopedMessage* message);
 
   // Sends a message on a port to its peer.
@@ -163,7 +165,8 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
                       const ports::NodeName& child_name) override;
   void OnPortsMessage(const ports::NodeName& from_node,
                       const void* payload,
-                      size_t payload_size) override;
+                      size_t payload_size,
+                      ScopedPlatformHandleVectorPtr platform_handles) override;
   void OnConnectToPort(const ports::NodeName& from_node,
                        const ports::PortName& connector_port,
                        const std::string& token) override;

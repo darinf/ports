@@ -90,10 +90,12 @@ void GetMessagePayload(const void* bytes, DataType** out_data) {
 }  // namespace
 
 // static
-Channel::MessagePtr NodeChannel::CreatePortsMessage(size_t payload_size,
-                                                    void** payload) {
-  return CreateMessage(
-      MessageType::PORTS_MESSAGE, payload_size, nullptr, payload);
+Channel::MessagePtr NodeChannel::CreatePortsMessage(
+    size_t payload_size,
+    void** payload,
+    ScopedPlatformHandleVectorPtr platform_handles) {
+  return CreateMessage(MessageType::PORTS_MESSAGE, payload_size,
+                       std::move(platform_handles), payload);
 }
 
 NodeChannel::NodeChannel(Delegate* delegate,
@@ -214,7 +216,8 @@ void NodeChannel::OnChannelMessage(const void* payload,
     case MessageType::PORTS_MESSAGE: {
       const void* data;
       GetMessagePayload(payload, &data);
-      delegate_->OnPortsMessage(from_node, data, payload_size - sizeof(Header));
+      delegate_->OnPortsMessage(
+          from_node, data, payload_size - sizeof(Header), std::move(handles));
       break;
     }
 

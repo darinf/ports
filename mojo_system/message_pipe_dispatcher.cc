@@ -74,7 +74,7 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
   lock().AssertAcquired();
 
   ports::ScopedMessage message;
-  int rv = node_->AllocMessage(num_bytes, num_dispatchers, &message);
+  int rv = node_->AllocMessage(num_bytes, num_dispatchers, nullptr, &message);
   if (rv != ports::OK)
     return MOJO_RESULT_UNKNOWN;
 

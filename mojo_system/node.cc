@@ -31,14 +31,16 @@ class PortsMessage : public ports::Message {
                size_t num_payload_bytes,
                size_t num_ports_bytes,
                const void* bytes = nullptr,
-               size_t num_bytes = 0)
+               size_t num_bytes = 0,
+               ScopedPlatformHandleVectorPtr platform_handles = nullptr)
       : ports::Message(num_header_bytes,
                        num_payload_bytes,
                        num_ports_bytes) {
     size_t size = num_header_bytes + num_payload_bytes + num_ports_bytes;
 
     void* ptr;
-    channel_message_ = NodeChannel::CreatePortsMessage(size, &ptr);
+    channel_message_ = NodeChannel::CreatePortsMessage(
+        size, &ptr, std::move(platform_handles));
 
     start_ = static_cast<char*>(ptr);
     if (bytes) {
@@ -46,6 +48,10 @@ class PortsMessage : public ports::Message {
                 num_header_bytes + num_payload_bytes + num_ports_bytes);
       memcpy(start_, bytes, num_bytes);
     }
+  }
+
+  void SetHandles(ScopedPlatformHandleVectorPtr handles) {
+    channel_message_->SetHandles(std::move(handles));
   }
 
   Channel::MessagePtr TakeChannelMessage() {
@@ -166,8 +172,14 @@ void Node::SetPortObserver(const ports::PortName& port_name,
 
 int Node::AllocMessage(size_t num_payload_bytes,
                        size_t num_ports,
+                       ScopedPlatformHandleVectorPtr platform_handles,
                        ports::ScopedMessage* message) {
-  return node_->AllocMessage(num_payload_bytes, num_ports, message);
+  int rv = node_->AllocMessage(num_payload_bytes, num_ports, message);
+  if (rv != ports::OK)
+    return rv;
+  PortsMessage* ports_message = static_cast<PortsMessage*>(message->get());
+  ports_message->SetHandles(std::move(platform_handles));
+  return rv;
 }
 
 int Node::SendMessage(const ports::PortName& port_name,
@@ -364,7 +376,8 @@ void Node::OnAcceptParent(const ports::NodeName& from_node,
 
 void Node::OnPortsMessage(const ports::NodeName& from_node,
                           const void* bytes,
-                          size_t num_bytes) {
+                          size_t num_bytes,
+                          ScopedPlatformHandleVectorPtr platform_handles) {
   size_t num_header_bytes, num_payload_bytes, num_ports_bytes;
   ports::Message::Parse(bytes,
                         num_bytes,
@@ -377,7 +390,8 @@ void Node::OnPortsMessage(const ports::NodeName& from_node,
                        num_payload_bytes,
                        num_ports_bytes,
                        bytes,
-                       num_bytes));
+                       num_bytes,
+                       std::move(platform_handles)));
   AcceptMessageOnIOThread(std::move(message));
 }
 

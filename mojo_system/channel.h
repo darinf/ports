@@ -58,6 +58,10 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
       return static_cast<PlatformHandle*>(handles_->data());
     }
 
+    void SetHandles(ScopedPlatformHandleVectorPtr handles) {
+      std::swap(handles, handles_);
+    }
+
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 
    private:
