@@ -222,6 +222,7 @@ class ChannelPosix : public Channel,
     std::deque<MessageViewPtr> messages;
     std::swap(outgoing_messages_, messages);
 
+    // TODO: Send a batch of iovecs when possible.
     while (!messages.empty()) {
       MessageViewPtr message_view = std::move(messages.front());
       iovec iov[kMaxWriteBuffers];
