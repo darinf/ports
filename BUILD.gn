@@ -49,7 +49,6 @@ source_set("ports_edk_test_support") {
   testonly = true
 
   sources = [
-    "mojo_system/buffers_unittest.cc",
     "mojo_system/multiprocess_test_base.cc",
     "mojo_system/multiprocess_test_base.h",
     "mojo_system/multiprocess_test_helper.cc",
@@ -78,6 +77,7 @@ executable("ports_edk_unittests") {
   testonly = true
 
   sources = [
+    "mojo_system/buffers_unittest.cc",
     "mojo_system/pipes_unittest.cc",
 
     "//mojo/edk/test/run_all_unittests.cc",
