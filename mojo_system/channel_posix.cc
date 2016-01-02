@@ -29,6 +29,8 @@ namespace edk {
 namespace {
 
 const size_t kMaxBatchReadCapacity = 256 * 1024;
+const size_t kWriteBufferSize = 4096;
+const size_t kMaxWriteBuffers = 16;
 
 // A view over a Channel::Message object. The write queue uses these since
 // large messages may need to be sent in chunks.
@@ -223,19 +225,35 @@ class ChannelPosix : public Channel,
     // TODO: Send a batch of iovecs when possible.
     while (!messages.empty()) {
       MessageViewPtr message_view = std::move(messages.front());
-      iovec iov = {
-        const_cast<void*>(message_view->data()),
-        message_view->data_num_bytes()
+      iovec iov[kMaxWriteBuffers];
+      size_t bytes_to_write = std::min(
+          message_view->data_num_bytes(),
+          kWriteBufferSize * kMaxWriteBuffers);
+      size_t num_buffers =
+          (bytes_to_write + kWriteBufferSize - 1) / kWriteBufferSize;
+      for (size_t i = 0; i < num_buffers; ++i) {
+        iov[i].iov_base =
+            static_cast<char*>(const_cast<void*>(message_view->data())) +
+                kWriteBufferSize * i;
+        iov[i].iov_len = std::min(bytes_to_write, kWriteBufferSize);
+
+        DCHECK(bytes_to_write >= kWriteBufferSize ||
+               i == num_buffers - 1);
+
+        // The last buffer might underflow |bytes_to_write|, but we don't care.
+        bytes_to_write -= kWriteBufferSize;
       };
+
       ssize_t result;
       ScopedPlatformHandleVectorPtr handles = message_view->TakeHandles();
       if (handles && handles->size()) {
         // TODO: Handle lots of handles.
         result = PlatformChannelSendmsgWithHandles(
-            handle_.get(), &iov, 1, handles->data(), handles->size());
+            handle_.get(), &iov[0], num_buffers, handles->data(),
+            handles->size());
         handles->clear();
       } else {
-        result = PlatformChannelWritev(handle_.get(), &iov, 1);
+        result = PlatformChannelWritev(handle_.get(), &iov[0], num_buffers);
       }
 
       if (result >= 0) {
