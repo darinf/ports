@@ -78,7 +78,7 @@ char* Channel::GetReadBuffer(size_t *buffer_capacity) {
   return read_buffer_.data() + num_read_bytes_;
 }
 
-void Channel::OnReadCompleteNoLock(size_t bytes_read) {
+bool Channel::OnReadCompleteNoLock(size_t bytes_read) {
   read_lock().AssertAcquired();
 
   num_read_bytes_ += bytes_read;
@@ -89,8 +89,7 @@ void Channel::OnReadCompleteNoLock(size_t bytes_read) {
     if (header->num_bytes < sizeof(Message::Header) ||
         header->num_bytes > kMaxChannelMessageSize) {
       LOG(ERROR) << "Invalid message size: " << header->num_bytes;
-      OnError();
-      return;
+      return false;
     }
 
     if (num_read_bytes_ - read_offset_ < header->num_bytes) {
@@ -115,6 +114,8 @@ void Channel::OnReadCompleteNoLock(size_t bytes_read) {
 
     read_offset_ += header->num_bytes;
   }
+
+  return true;
 }
 
 void Channel::OnError() {

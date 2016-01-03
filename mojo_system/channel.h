@@ -130,8 +130,9 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   // capacity in |*buffer_capacity|.
   char* GetReadBuffer(size_t* buffer_capacity);
 
-  // Called by the implementation when new data is available in the read buffer.
-  void OnReadCompleteNoLock(size_t bytes_read);
+  // Called by the implementation when new data is available in the read
+  // buffer. Returns false to indicate an error.
+  bool OnReadCompleteNoLock(size_t bytes_read);
 
   // Called by the implementation when something goes horribly wrong.
   void OnError();

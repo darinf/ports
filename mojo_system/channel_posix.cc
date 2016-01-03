@@ -83,8 +83,12 @@ class ChannelPosix : public Channel,
   }
 
   void ShutDownImpl() override {
-    io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
+    if (io_task_runner_->RunsTasksOnCurrentThread()) {
+      ShutDownOnIOThread();
+    } else {
+      io_task_runner_->PostTask(
+          FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
+    }
   }
 
   void Write(MessagePtr message) override {
@@ -177,33 +181,46 @@ class ChannelPosix : public Channel,
   // base::MessagePumpLibevent::Watcher:
   void OnFileCanReadWithoutBlocking(int fd) override {
     CHECK_EQ(fd, handle_.get().handle);
-    base::AutoLock lock(read_lock());
 
-    size_t buffer_capacity = 0;
-    size_t total_bytes_read = 0;
-    size_t bytes_read = 0;
-    do {
-      char* buffer = GetReadBuffer(&buffer_capacity);
-      DCHECK_GT(buffer_capacity, 0u);
+    scoped_refptr<Channel> keep_alive(this);
+    bool read_error = false;
+    {
+      base::AutoLock lock(read_lock());
 
-      ssize_t read_result = PlatformChannelRecvmsg(
-          handle_.get(), buffer, buffer_capacity, &incoming_platform_handles_);
+      size_t buffer_capacity = 0;
+      size_t total_bytes_read = 0;
+      size_t bytes_read = 0;
+      do {
+        char* buffer = GetReadBuffer(&buffer_capacity);
+        DCHECK_GT(buffer_capacity, 0u);
 
-      if (read_result > 0) {
-        bytes_read = static_cast<size_t>(read_result);
-        total_bytes_read += bytes_read;
-        OnReadCompleteNoLock(bytes_read);
-      } else if (read_result == 0 ||
-                 (errno != EAGAIN && errno != EWOULDBLOCK)) {
-        ShutDownOnIOThread();
-        OnError();
-        return;
-      }
-    } while (bytes_read == buffer_capacity &&
-             total_bytes_read < kMaxBatchReadCapacity);
+        ssize_t read_result = PlatformChannelRecvmsg(
+            handle_.get(),
+            buffer,
+            buffer_capacity,
+            &incoming_platform_handles_);
+
+        if (read_result > 0) {
+          bytes_read = static_cast<size_t>(read_result);
+          total_bytes_read += bytes_read;
+          if (!OnReadCompleteNoLock(bytes_read)) {
+            read_error = true;
+            break;
+          }
+        } else if (read_result == 0 ||
+                   (errno != EAGAIN && errno != EWOULDBLOCK)) {
+          read_error = true;
+          break;
+        }
+      } while (bytes_read == buffer_capacity &&
+               total_bytes_read < kMaxBatchReadCapacity);
+    }
+    if (read_error)
+      OnError();
   }
 
   void OnFileCanWriteWithoutBlocking(int fd) override {
+    scoped_refptr<Channel> keep_alive(this);
     bool write_error = false;
     {
       base::AutoLock lock(write_lock_);
