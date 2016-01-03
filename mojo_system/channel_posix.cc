@@ -147,8 +147,7 @@ class ChannelPosix : public Channel,
       return;
     if (!write_watcher_)
       return;
-    if (base::MessageLoop::current() &&
-        base::MessageLoop::current()->type() == base::MessageLoop::TYPE_IO) {
+    if (io_task_runner_->RunsTasksOnCurrentThread()) {
       pending_write_ = true;
       base::MessageLoopForIO::current()->WatchFileDescriptor(
           handle_.get().handle, false /* persistent */,
