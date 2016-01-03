@@ -44,8 +44,8 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     Message(size_t payload_size, ScopedPlatformHandleVectorPtr handles);
     ~Message();
 
-    const void* data() const { return data_.data(); }
-    size_t data_num_bytes() const { return data_.size(); }
+    const void* data() const { return data_; }
+    size_t data_num_bytes() const { return size_; }
 
     void* mutable_payload() { return &(header()[1]); }
     const void* payload() const { return &(header()[1]); }
@@ -63,12 +63,13 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
 
    private:
-    Header* header() { return reinterpret_cast<Header*>(data_.data()); }
+    Header* header() { return reinterpret_cast<Header*>(data_); }
     const Header* header() const {
-      return reinterpret_cast<const Header*>(data_.data());
+      return reinterpret_cast<const Header*>(data_);
     }
 
-    std::vector<char> data_;
+    char* data_;
+    size_t size_;
     ScopedPlatformHandleVectorPtr handles_;
 
     DISALLOW_COPY_AND_ASSIGN(Message);
@@ -148,7 +149,8 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   // Guards |read_buffer_| et al, as well as the implementation's read platform
   // handles if applicable.
   base::Lock read_lock_;
-  std::vector<char> read_buffer_;
+  char* read_buffer_;
+  size_t read_buffer_size_;
 
   // The index into |read_buffer_| where the next Message must start.
   size_t read_offset_ = 0;

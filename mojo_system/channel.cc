@@ -22,15 +22,18 @@ const size_t kMaxChannelMessageSize = 256 * 1024 * 1024;
 
 Channel::Message::Message(size_t payload_size,
                           ScopedPlatformHandleVectorPtr handles)
-    : data_(sizeof(Header) + payload_size),
-      handles_(std::move(handles)) {
-  Header* header = reinterpret_cast<Header*>(data_.data());
-  header->num_bytes = data_.size();
+    : handles_(std::move(handles)) {
+  size_ = payload_size + sizeof(Header);
+  data_ = static_cast<char*>(malloc(size_));
+  Header* header = reinterpret_cast<Header*>(data_);
+  header->num_bytes = size_;
   header->num_handles = handles_ ? handles_->size() : 0;
   header->padding = 0;
 }
 
-Channel::Message::~Message() {}
+Channel::Message::~Message() {
+  free(data_);
+}
 
 void Channel::Message::SetHandles(ScopedPlatformHandleVectorPtr handles) {
   header()->num_handles = handles ? handles->size() : 0;
@@ -38,9 +41,14 @@ void Channel::Message::SetHandles(ScopedPlatformHandleVectorPtr handles) {
 }
 
 Channel::Channel(Delegate* delegate)
-    : delegate_(delegate), read_buffer_(kReadBufferSize) {}
+    : delegate_(delegate) {
+  read_buffer_size_ = kReadBufferSize;
+  read_buffer_ = static_cast<char*>(malloc(read_buffer_size_));
+}
 
-Channel::~Channel() {}
+Channel::~Channel() {
+  free(read_buffer_);
+}
 
 void Channel::ShutDown() {
   delegate_ = nullptr;
@@ -50,32 +58,34 @@ void Channel::ShutDown() {
 char* Channel::GetReadBuffer(size_t *buffer_capacity) {
   const size_t required_capacity = kReadBufferSize;
 
-  DCHECK_GE(read_buffer_.size(), num_read_bytes_);
+  DCHECK_GE(read_buffer_size_, num_read_bytes_);
   DCHECK_GE(num_read_bytes_, read_offset_);
 
   if (read_offset_ > kMaxUnusedReadBufferCapacity) {
     // Shift outstanding data to the front of the buffer and shrink to a
     // reasonable size, leaving enough space for another read. This will slow
     // down very large reads, but we shouldn't do very large reads.
-    std::move(read_buffer_.begin() + read_offset_,
-              read_buffer_.begin() + num_read_bytes_,
-              read_buffer_.begin());
-    read_buffer_.resize(num_read_bytes_ - read_offset_ + required_capacity);
+    std::move(read_buffer_ + read_offset_, read_buffer_ + num_read_bytes_,
+              read_buffer_);
+    read_buffer_size_ = num_read_bytes_ - read_offset_ + required_capacity;
+    read_buffer_ = static_cast<char*>(realloc(read_buffer_, read_buffer_size_));
     num_read_bytes_ -= read_offset_;
     read_offset_ = 0;
   } else {
-    if (read_buffer_.size() - num_read_bytes_ < required_capacity) {
+    if (read_buffer_size_ - num_read_bytes_ < required_capacity) {
       // Grow the buffer as needed. This resizes it to either twice its previous
       // size, or just enough to hold the new capacity; whichever is larger.
-      read_buffer_.resize(std::max(read_buffer_.size() * 2,
-                                   num_read_bytes_ + required_capacity));
+      read_buffer_size_ = std::max(read_buffer_size_ * 2,
+                                   num_read_bytes_ + required_capacity);
+      read_buffer_ = static_cast<char*>(realloc(read_buffer_,
+                                                read_buffer_size_));
     }
   }
 
-  DCHECK_GE(read_buffer_.size(), num_read_bytes_ + required_capacity);
+  DCHECK_GE(read_buffer_size_, num_read_bytes_ + required_capacity);
 
   *buffer_capacity = required_capacity;
-  return read_buffer_.data() + num_read_bytes_;
+  return read_buffer_ + num_read_bytes_;
 }
 
 bool Channel::OnReadCompleteNoLock(size_t bytes_read) {
@@ -85,7 +95,7 @@ bool Channel::OnReadCompleteNoLock(size_t bytes_read) {
   while (num_read_bytes_ - read_offset_ >= sizeof(Message::Header)) {
     // We have at least enough data available for a MessageHeader.
     Message::Header* header =
-        reinterpret_cast<Message::Header*>(read_buffer_.data() + read_offset_);
+        reinterpret_cast<Message::Header*>(read_buffer_ + read_offset_);
     if (header->num_bytes < sizeof(Message::Header) ||
         header->num_bytes > kMaxChannelMessageSize) {
       LOG(ERROR) << "Invalid message size: " << header->num_bytes;
