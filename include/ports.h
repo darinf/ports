@@ -139,6 +139,26 @@ class Message {
 
 typedef std::unique_ptr<Message> ScopedMessage;
 
+class Port;  // Private to the implementation.
+
+class PortRef {
+ public:
+  ~PortRef();
+  PortRef();
+  PortRef(const PortName& name, std::shared_ptr<Port> port);
+
+  PortRef(const PortRef& other);
+  PortRef& operator=(const PortRef& other);
+
+  const PortName& name() const { return name_; }
+
+  Port* port() const { return port_.get(); }
+
+ private:
+  PortName name_;
+  std::shared_ptr<Port> port_;
+};
+
 class UserData {
  public:
   virtual ~UserData() {}
@@ -172,7 +192,7 @@ class NodeDelegate {
 
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
-  virtual void MessagesAvailable(const PortName& port,
+  virtual void MessagesAvailable(const PortRef& port_ref,
                                  std::shared_ptr<UserData> user_data) = 0;
 };
 
@@ -182,40 +202,43 @@ class Node {
   Node(const NodeName& name, NodeDelegate* delegate);
   ~Node();
 
+  // Lookup the named port.
+  int GetPort(const PortName& port_name, PortRef* port_ref);
+
   // Creates a port on this node. Before the port can be used, it must be
   // initialized using InitializePort. This method is useful for bootstrapping
   // a connection between two nodes. Generally, ports are created using
   // CreatePortPair instead.
-  int CreatePort(PortName* port);
+  int CreatePort(PortRef* port_ref);
 
   // Initializes a newly created port.
-  int InitializePort(const PortName& port,
-                     const NodeName& peer_node,
-                     const PortName& peer_port);
+  int InitializePort(const PortRef& port_ref,
+                     const NodeName& peer_node_name,
+                     const PortName& peer_port_name);
 
   // Generates a new connected pair of ports bound to this node. These ports
   // are initialized and ready to go.
-  int CreatePortPair(PortName* port0, PortName* port1);
+  int CreatePortPair(PortRef* port0_ref, PortRef* port1_ref);
 
   // User data associated with the port. Passed to MessagesAvailable.
-  int SetUserData(const PortName& port, std::shared_ptr<UserData> user_data);
+  int SetUserData(const PortRef& port_ref, std::shared_ptr<UserData> user_data);
 
   // Prevents further messages from being sent from this port or delivered to
   // this port. The port is removed, and the port's peer is notified of the
   // closure after it has consumed all pending messages.
-  int ClosePort(const PortName& port);
+  int ClosePort(const PortRef& port_ref);
 
   // Returns the next available message on the specified port or returns a null
   // message if there are none available. Returns ERROR_PORT_PEER_CLOSED to
   // indicate that this port's peer has closed, meaning that no further
   // messages will be readable from this port.
-  int GetMessage(const PortName& port, ScopedMessage* message);
+  int GetMessage(const PortRef& port_ref, ScopedMessage* message);
 
   // Like GetMessage, but the caller may optionally supply a MessageSelector
   // that decides whether or not to return the message. If |selector| is null,
   // then GetMessageIf acts just like GetMessage. The |selector| may not call
   // any Node methods.
-  int GetMessageIf(const PortName& port,
+  int GetMessageIf(const PortRef& port_ref,
                    MessageSelector* selector,
                    ScopedMessage* message);
 
@@ -227,7 +250,7 @@ class Node {
                    ScopedMessage* message);
 
   // Sends a message from the specified port to its peer.
-  int SendMessage(const PortName& port, ScopedMessage message);
+  int SendMessage(const PortRef& port_ref, ScopedMessage message);
 
   // Corresponding to NodeDelegate::ForwardMessage.
   int AcceptMessage(ScopedMessage message);

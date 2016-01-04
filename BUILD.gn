@@ -17,6 +17,7 @@ source_set("ports") {
     "src/node_impl.h",
     "src/port.cc",
     "src/port.h",
+    "src/port_ref.cc",
   ]
 
   include_dirs = [ ".." ]

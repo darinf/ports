@@ -39,7 +39,8 @@
 
 namespace ports {
 
-struct Port {
+class Port {
+ public:
   enum State {
     kReceiving,
     kBuffering,

@@ -45,22 +45,23 @@ class Node::Impl {
   Impl(const NodeName& name, NodeDelegate* delegate);
   ~Impl();
 
-  int CreatePort(PortName* port_name);
-  int InitializePort(const PortName& port_name,
+  int GetPort(const PortName& port_name, PortRef* port_ref);
+  int CreatePort(PortRef* port_ref);
+  int InitializePort(const PortRef& port_ref,
                      const NodeName& peer_node_name,
                      const PortName& peer_port_name);
-  int CreatePortPair(PortName* port_name_0, PortName* port_name_1);
-  int SetUserData(const PortName& port_name,
+  int CreatePortPair(PortRef* port0_ref, PortRef* port1_ref);
+  int SetUserData(const PortRef& port_ref,
                   std::shared_ptr<UserData> user_data);
-  int ClosePort(const PortName& port_name);
-  int GetMessage(const PortName& port_name, ScopedMessage* message);
-  int GetMessageIf(const PortName& port_name,
+  int ClosePort(const PortRef& port_ref);
+  int GetMessage(const PortRef& port_ref, ScopedMessage* message);
+  int GetMessageIf(const PortRef& port_ref,
                    MessageSelector* selector,
                    ScopedMessage* message);
   int AllocMessage(size_t num_payload_bytes,
                    size_t num_ports,
                    ScopedMessage* message);
-  int SendMessage(const PortName& port_name, ScopedMessage message);
+  int SendMessage(const PortRef& port_ref, ScopedMessage message);
   int AcceptMessage(ScopedMessage message);
   int LostConnectionToNode(const NodeName& node_name);
 
@@ -72,9 +73,8 @@ class Node::Impl {
   int OnObserveProxyAck(const PortName& port_name, uint32_t last_sequence_num);
   int OnObserveClosure(const PortName& port_name, uint32_t last_sequence_num);
 
-  int AddPort(std::shared_ptr<Port> port, PortName* port_name);
   int AddPortWithName(const PortName& port_name,
-                      std::shared_ptr<Port> port);
+                      const std::shared_ptr<Port>& port);
   void ErasePort(const PortName& port_name);
   std::shared_ptr<Port> GetPort(const PortName& port_name);
 

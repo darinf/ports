@@ -9,6 +9,7 @@ SOURCES = \
 	node_impl.cc \
 	node.cc \
 	port.cc \
+	port_ref.cc \
 	$(GTEST_DIR)/src/gtest_main.cc \
 	$(NULL)
 

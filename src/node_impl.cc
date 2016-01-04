@@ -62,97 +62,102 @@ Node::Impl::~Impl() {
     DLOG(WARNING) << "Unclean shutdown for node " << name_;
 }
 
-int Node::Impl::CreatePort(PortName* port_name) {
+int Node::Impl::GetPort(const PortName& port_name, PortRef* port_ref) {
+  std::shared_ptr<Port> port = GetPort(port_name);
+  if (!port)
+    return ERROR_PORT_UNKNOWN;
+
+  *port_ref = PortRef(port_name, std::move(port));
+  return OK;
+}
+
+int Node::Impl::CreatePort(PortRef* port_ref) {
+  PortName port_name;
+  delegate_->GenerateRandomPortName(&port_name);
+
   std::shared_ptr<Port> port = std::make_shared<Port>(kInitialSequenceNum,
                                                       kInitialSequenceNum);
-  return AddPort(std::move(port), port_name);
+  int rv = AddPortWithName(port_name, port);
+  if (rv != OK)
+    return rv;
+
+  *port_ref = PortRef(port_name, std::move(port));
+  return OK;
 }
 
-int Node::Impl::InitializePort(const PortName& port_name,
+int Node::Impl::InitializePort(const PortRef& port_ref,
                                const NodeName& peer_node_name,
                                const PortName& peer_port_name) {
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return ERROR_PORT_UNKNOWN;
+  Port* port = port_ref.port();
 
-  {
-    std::lock_guard<std::mutex> guard(port->lock);
-    if (port->peer_node_name != kInvalidNodeName ||
-        port->peer_port_name != kInvalidPortName)
-      return ERROR_PORT_ALREADY_INITIALIZED;
+  std::lock_guard<std::mutex> guard(port->lock);
 
-    port->peer_node_name = peer_node_name;
-    port->peer_port_name = peer_port_name;
-  }
+  if (port->peer_node_name != kInvalidNodeName ||
+      port->peer_port_name != kInvalidPortName)
+    return ERROR_PORT_ALREADY_INITIALIZED;
+
+  port->peer_node_name = peer_node_name;
+  port->peer_port_name = peer_port_name;
   return OK;
 }
 
-int Node::Impl::CreatePortPair(PortName* port_name_0, PortName* port_name_1) {
+int Node::Impl::CreatePortPair(PortRef* port0_ref, PortRef* port1_ref) {
   int rv;
 
-  rv = CreatePort(port_name_0);
+  rv = CreatePort(port0_ref);
   if (rv != OK)
     return rv;
 
-  rv = CreatePort(port_name_1);
+  rv = CreatePort(port1_ref);
   if (rv != OK)
     return rv;
 
-  rv = InitializePort(*port_name_0, name_, *port_name_1);
+  rv = InitializePort(*port0_ref, name_, port1_ref->name());
   if (rv != OK)
     return rv;
 
-  rv = InitializePort(*port_name_1, name_, *port_name_0);
+  rv = InitializePort(*port1_ref, name_, port0_ref->name());
   if (rv != OK)
     return rv;
 
   return OK;
 }
 
-int Node::Impl::SetUserData(const PortName& port_name,
+int Node::Impl::SetUserData(const PortRef& port_ref,
                             std::shared_ptr<UserData> user_data) {
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return ERROR_PORT_UNKNOWN;
-  
+  Port* port = port_ref.port();
+
   std::lock_guard<std::mutex> guard(port->lock);
   port->user_data = std::move(user_data);
 
   return OK;
 }
 
-int Node::Impl::ClosePort(const PortName& port_name) {
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return ERROR_PORT_UNKNOWN;
-
+int Node::Impl::ClosePort(const PortRef& port_ref) {
+  Port* port = port_ref.port();
   {
     std::lock_guard<std::mutex> guard(port->lock);
     if (port->state != Port::kReceiving)
       return ERROR_PORT_STATE_UNEXPECTED;
 
-    ClosePort_Locked(port.get(), port_name);
+    ClosePort_Locked(port, port_ref.name());
   }
-  ErasePort(port_name);
-
+  ErasePort(port_ref.name());
   return OK;
 }
 
-int Node::Impl::GetMessage(const PortName& port_name, ScopedMessage* message) {
-  return GetMessageIf(port_name, nullptr, message);
+int Node::Impl::GetMessage(const PortRef& port_ref, ScopedMessage* message) {
+  return GetMessageIf(port_ref, nullptr, message);
 }
 
-int Node::Impl::GetMessageIf(const PortName& port_name,
+int Node::Impl::GetMessageIf(const PortRef& port_ref,
                              MessageSelector* selector,
                              ScopedMessage* message) {
   *message = nullptr;
 
-  DLOG(INFO) << "GetMessageIf for " << port_name << "@" << name_;
+  DLOG(INFO) << "GetMessageIf for " << port_ref.name() << "@" << name_;
 
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return ERROR_PORT_UNKNOWN;
-
+  Port* port = port_ref.port();
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
@@ -163,7 +168,7 @@ int Node::Impl::GetMessageIf(const PortName& port_name,
   
     // Let the embedder get messages until there are no more before reporting
     // that the peer closed its end.
-    if (!CanAcceptMoreMessages(port.get()))
+    if (!CanAcceptMoreMessages(port))
       return ERROR_PORT_PEER_CLOSED;
 
     port->message_queue.GetNextMessageIf(selector, message);
@@ -206,30 +211,23 @@ int Node::Impl::AllocMessage(size_t num_payload_bytes,
   return OK;
 }
 
-int Node::Impl::SendMessage(const PortName& port_name, ScopedMessage message) {
+int Node::Impl::SendMessage(const PortRef& port_ref, ScopedMessage message) {
   for (size_t i = 0; i < message->num_ports(); ++i) {
-    if (message->ports()[i] == port_name)
+    if (message->ports()[i] == port_ref.name())
       return ERROR_PORT_CANNOT_SEND_SELF;
   }
 
-  std::shared_ptr<Port> port = GetPort(port_name);
-  if (!port)
-    return ERROR_PORT_UNKNOWN;
+  Port* port = port_ref.port();
 
-  {
-    std::lock_guard<std::mutex> guard(port->lock);
+  std::lock_guard<std::mutex> guard(port->lock);
 
-    if (port->state != Port::kReceiving)
-      return ERROR_PORT_STATE_UNEXPECTED;
+  if (port->state != Port::kReceiving)
+    return ERROR_PORT_STATE_UNEXPECTED;
 
-    if (port->peer_closed)
-      return ERROR_PORT_PEER_CLOSED;
+  if (port->peer_closed)
+    return ERROR_PORT_PEER_CLOSED;
 
-    int rv = SendMessage_Locked(port.get(), port_name, std::move(message));
-    if (rv != OK)
-      return rv;
-  }
-  return OK;
+  return SendMessage_Locked(port, port_ref.name(), std::move(message));
 }
 
 int Node::Impl::AcceptMessage(ScopedMessage message) {
@@ -262,7 +260,7 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
   DLOG(INFO) << "Observing lost connection from node " << name_
              << " to node " << node_name;
 
-  std::vector<PortName> ports_to_notify;
+  std::vector<PortRef> ports_to_notify;
   std::vector<std::shared_ptr<UserData>> associated_user_data;
 
   {
@@ -284,7 +282,7 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
                 port->message_queue.next_sequence_num() - 1;
 
             if (port->state == Port::kReceiving) {
-              ports_to_notify.push_back(iter->first);
+              ports_to_notify.push_back(PortRef(iter->first, port));
               associated_user_data.push_back(port->user_data);
             }
           }
@@ -380,10 +378,17 @@ int Node::Impl::OnUserMessage(ScopedMessage message) {
   if (!message_accepted) {
     DLOG(INFO) << "Message not accepted!\n";
     // Close all newly accepted ports as they are effectively orphaned.
-    for (size_t i = 0; i < message->num_ports(); ++i)
-      ClosePort(message->ports()[i]);
+    for (size_t i = 0; i < message->num_ports(); ++i) {
+      PortRef port_ref;
+      if (GetPort(message->ports()[i], &port_ref) == OK) {
+        ClosePort(port_ref);
+      } else {
+        DLOG(WARNING) << "Cannot close non-existent port!\n";
+      }
+    }
   } else if (has_next_message) {
-    delegate_->MessagesAvailable(port_name, std::move(associated_user_data));
+    PortRef port_ref(port_name, port);
+    delegate_->MessagesAvailable(port_ref, std::move(associated_user_data));
   }
 
   return OK;
@@ -582,18 +587,15 @@ int Node::Impl::OnObserveClosure(const PortName& port_name,
       }
     }
   }
-  if (notify_delegate)
-    delegate_->MessagesAvailable(port_name, std::move(associated_user_data));
+  if (notify_delegate) {
+    PortRef port_ref(port_name, port);
+    delegate_->MessagesAvailable(port_ref, std::move(associated_user_data));
+  }
   return OK;
 }
 
-int Node::Impl::AddPort(std::shared_ptr<Port> port, PortName* port_name) {
-  delegate_->GenerateRandomPortName(port_name);
-  return AddPortWithName(*port_name, std::move(port));
-}
-
 int Node::Impl::AddPortWithName(const PortName& port_name,
-                                std::shared_ptr<Port> port) {
+                                const std::shared_ptr<Port>& port) {
   std::lock_guard<std::mutex> guard(ports_lock_);
 
   if (!ports_.insert(std::make_pair(port_name, port)).second)
@@ -661,7 +663,7 @@ int Node::Impl::AcceptPort(const PortName& port_name,
   // new port finds its way to the consumer (see GetMessageIf).
   port->message_queue.set_signalable(false);
 
-  int rv = AddPortWithName(port_name, std::move(port));
+  int rv = AddPortWithName(port_name, port);
   if (rv != OK)
     return rv;
 

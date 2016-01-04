@@ -131,13 +131,18 @@ static ScopedMessage NewStringMessage(const std::string& s) {
 }
 
 static ScopedMessage NewStringMessageWithPort(const std::string& s,
-                                              PortName port) {
+                                              const PortName& port_name) {
   size_t size = s.size() + 1;
   ScopedMessage message;
   EXPECT_EQ(OK, node_map[0]->AllocMessage(size, 1, &message));
   memcpy(message->mutable_payload_bytes(), s.data(), size);
-  message->mutable_ports()[0] = port;
+  message->mutable_ports()[0] = port_name;
   return message;
+}
+
+static ScopedMessage NewStringMessageWithPort(const std::string& s,
+                                              const PortRef& port) {
+  return NewStringMessageWithPort(s, port.name());
 }
 
 static const char* ToString(const ScopedMessage& message) {
@@ -193,9 +198,9 @@ class TestNodeDelegate : public NodeDelegate {
     task_queue.push(new Task(node_name, std::move(message)));
   }
 
-  void MessagesAvailable(const PortName& port,
+  void MessagesAvailable(const PortRef& port,
                          std::shared_ptr<UserData> user_data) override {
-    DLOG(INFO) << "MessagesAvailable for " << port << "@" << node_name_;
+    DLOG(INFO) << "MessagesAvailable for " << port.name() << "@" << node_name_;
     if (!read_messages_)
       return;
     Node* node = GetNode(node_name_);
@@ -212,10 +217,14 @@ class TestNodeDelegate : public NodeDelegate {
         for (size_t i = 0; i < message->num_ports(); ++i) {
           std::stringstream buf;
           buf << "got port: " << message->ports()[i];
-          node->SendMessage(message->ports()[i], NewStringMessage(buf.str()));
+
+          PortRef received_port;
+          node->GetPort(message->ports()[i], &received_port);
+
+          node->SendMessage(received_port, NewStringMessage(buf.str()));
 
           // Avoid leaking these ports.
-          node->ClosePort(message->ports()[i]);
+          node->ClosePort(received_port);
         }
       }
     }
@@ -259,14 +268,14 @@ TEST_F(PortsTest, Basic1) {
   SetNode(node1_name, &node1);
 
   // Setup pipe between node0 and node1.
-  PortName x0, x1;
+  PortRef x0, x1;
   EXPECT_EQ(OK, node0.CreatePort(&x0));
   EXPECT_EQ(OK, node1.CreatePort(&x1));
-  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
-  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
   // Transfer a port from node0 to node1.
-  PortName a0, a1;
+  PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
   EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", a1)));
 
@@ -288,13 +297,13 @@ TEST_F(PortsTest, Basic2) {
   SetNode(node1_name, &node1);
 
   // Setup pipe between node0 and node1.
-  PortName x0, x1;
+  PortRef x0, x1;
   EXPECT_EQ(OK, node0.CreatePort(&x0));
   EXPECT_EQ(OK, node1.CreatePort(&x1));
-  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
-  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
-  PortName b0, b1;
+  PortRef b0, b1;
   EXPECT_EQ(OK, node0.CreatePortPair(&b0, &b1));
   EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", b1)));
   EXPECT_EQ(OK, node0.SendMessage(b0, NewStringMessage("hello again")));
@@ -318,14 +327,14 @@ TEST_F(PortsTest, Basic3) {
   SetNode(node1_name, &node1);
 
   // Setup pipe between node0 and node1.
-  PortName x0, x1;
+  PortRef x0, x1;
   EXPECT_EQ(OK, node0.CreatePort(&x0));
   EXPECT_EQ(OK, node1.CreatePort(&x1));
-  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
-  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
   // Transfer a port from node0 to node1.
-  PortName a0, a1;
+  PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
   EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", a1)));
   EXPECT_EQ(OK, node0.SendMessage(a0, NewStringMessage("hello again")));
@@ -333,7 +342,7 @@ TEST_F(PortsTest, Basic3) {
   // Transfer a0 as well.
   EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("foo", a0)));
 
-  PortName b0, b1;
+  PortRef b0, b1;
   EXPECT_EQ(OK, node0.CreatePortPair(&b0, &b1));
   EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("bar", b1)));
   EXPECT_EQ(OK, node0.SendMessage(b0, NewStringMessage("baz")));
@@ -357,18 +366,18 @@ TEST_F(PortsTest, LostConnectionToNode1) {
   SetNode(node1_name, &node1);
 
   // Setup pipe between node0 and node1.
-  PortName x0, x1;
+  PortRef x0, x1;
   EXPECT_EQ(OK, node0.CreatePort(&x0));
   EXPECT_EQ(OK, node1.CreatePort(&x1));
-  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
-  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
   // Transfer port to node1 and simulate a lost connection to node1. Dropping
   // events from node1 is how we simulate the lost connection.
 
   node1_delegate.set_drop_messages(true);
 
-  PortName a0, a1;
+  PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
   EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("foo", a1)));
 
@@ -395,15 +404,15 @@ TEST_F(PortsTest, LostConnectionToNode2) {
   node_map[1] = &node1;
 
   // Setup pipe between node0 and node1.
-  PortName x0, x1;
+  PortRef x0, x1;
   EXPECT_EQ(OK, node0.CreatePort(&x0));
   EXPECT_EQ(OK, node1.CreatePort(&x1));
-  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
-  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
   node1_delegate.set_read_messages(false);
 
-  PortName a0, a1;
+  PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
   EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("take a1", a1)));
 
@@ -426,7 +435,7 @@ TEST_F(PortsTest, GetMessage1) {
   Node node0(node0_name, &node0_delegate);
   node_map[0] = &node0;
 
-  PortName a0, a1;
+  PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
   ScopedMessage message;
@@ -454,7 +463,7 @@ TEST_F(PortsTest, GetMessage2) {
 
   node0_delegate.set_read_messages(false);
 
-  PortName a0, a1;
+  PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
   EXPECT_EQ(OK, node0.SendMessage(a1, NewStringMessage("1")));
@@ -481,7 +490,7 @@ TEST_F(PortsTest, GetMessage3) {
 
   node0_delegate.set_read_messages(false);
 
-  PortName a0, a1;
+  PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
   const char* kStrings[] = {
@@ -525,15 +534,15 @@ TEST_F(PortsTest, Delegation1) {
   node1_delegate.set_save_messages(true);
 
   // Setup pipe between node0 and node1.
-  PortName x0, x1;
+  PortRef x0, x1;
   EXPECT_EQ(OK, node0.CreatePort(&x0));
   EXPECT_EQ(OK, node1.CreatePort(&x1));
-  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1));
-  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0));
+  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
+  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
   // In this test, we send a message to a port that has been moved.
 
-  PortName a0, a1;
+  PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
   EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("a1", a1)));
@@ -546,9 +555,9 @@ TEST_F(PortsTest, Delegation1) {
   ASSERT_EQ(1u, message->num_ports());
 
   // This is "a1" from the point of view of node1.
-  PortName a2 = message->ports()[0];
+  PortName a2_name = message->ports()[0];
 
-  EXPECT_EQ(OK, node1.SendMessage(x1, NewStringMessageWithPort("a2", a2)));
+  EXPECT_EQ(OK, node1.SendMessage(x1, NewStringMessageWithPort("a2", a2_name)));
 
   PumpTasks();
 
@@ -561,7 +570,10 @@ TEST_F(PortsTest, Delegation1) {
   ASSERT_EQ(1u, message->num_ports());
 
   // This is "a2" from the point of view of node1.
-  PortName a3 = message->ports()[0];
+  PortName a3_name = message->ports()[0];
+
+  PortRef a3;
+  EXPECT_EQ(OK, node0.GetPort(a3_name, &a3));
 
   EXPECT_EQ(0, strcmp("a2", ToString(message)));
 
@@ -593,16 +605,16 @@ TEST_F(PortsTest, Delegation2) {
 
   for (int i = 0; i < 10; ++i) {
     // Setup pipe a<->b between node0 and node1.
-    PortName A, B;
+    PortRef A, B;
     EXPECT_EQ(OK, node0.CreatePort(&A));
     EXPECT_EQ(OK, node1.CreatePort(&B));
-    EXPECT_EQ(OK, node0.InitializePort(A, node1_name, B));
-    EXPECT_EQ(OK, node1.InitializePort(B, node0_name, A));
+    EXPECT_EQ(OK, node0.InitializePort(A, node1_name, B.name()));
+    EXPECT_EQ(OK, node1.InitializePort(B, node0_name, A.name()));
 
-    PortName C, D;
+    PortRef C, D;
     EXPECT_EQ(OK, node0.CreatePortPair(&C, &D));
 
-    PortName E, F;
+    PortRef E, F;
     EXPECT_EQ(OK, node0.CreatePortPair(&E, &F));
 
     // Pass F over C to D.
