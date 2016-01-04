@@ -187,10 +187,12 @@ class ChannelPosix : public Channel,
     {
       base::AutoLock lock(read_lock());
 
+      size_t next_read_size = 0;
       size_t buffer_capacity = 0;
       size_t total_bytes_read = 0;
       size_t bytes_read = 0;
       do {
+        buffer_capacity = next_read_size;
         char* buffer = GetReadBuffer(&buffer_capacity);
         DCHECK_GT(buffer_capacity, 0u);
 
@@ -203,7 +205,7 @@ class ChannelPosix : public Channel,
         if (read_result > 0) {
           bytes_read = static_cast<size_t>(read_result);
           total_bytes_read += bytes_read;
-          if (!OnReadCompleteNoLock(bytes_read)) {
+          if (!OnReadCompleteNoLock(bytes_read, &next_read_size)) {
             read_error = true;
             break;
           }

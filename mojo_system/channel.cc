@@ -4,7 +4,9 @@
 
 #include "ports/mojo_system/channel.h"
 
-#include <cstring>
+#include <string.h>
+
+#include "base/macros.h"
 
 namespace mojo {
 namespace edk {
@@ -40,15 +42,109 @@ void Channel::Message::SetHandles(ScopedPlatformHandleVectorPtr handles) {
   std::swap(handles, handles_);
 }
 
+// Helper class for managing a Channel's read buffer allocations. This maintains
+// a single contiguous buffer with the layout:
+//
+//   [discarded bytes][occupied bytes][unoccupied bytes]
+//
+// The Reserve() method ensures that a certain capacity of unoccupied bytes are
+// available. It does not claim that capacity and only allocates new capacity
+// when strictly necessary.
+//
+// Claim() marks unoccupied bytes as occupied.
+//
+// Discard() marks occupied bytes as discarded, signifying that their contents
+// can be forgotten or overwritten.
+//
+// The most common Channel behavior in practice should result in very few
+// allocations and copies, as memory is claimed and discarded shortly after
+// being reserved, and future reservations will immediately reuse discarded
+// memory.
+class Channel::ReadBuffer {
+ public:
+  ReadBuffer() {
+    size_ = kReadBufferSize;
+    data_ = static_cast<char*>(malloc(size_));
+  }
+
+  ~ReadBuffer() {
+    DCHECK(data_);
+    free(data_);
+  }
+
+  const char* occupied_bytes() const { return data_ + num_discarded_bytes_; }
+
+  size_t num_occupied_bytes() const {
+    return num_occupied_bytes_ - num_discarded_bytes_;
+  }
+
+  // Ensures the ReadBuffer has enough contiguous space allocated to hold
+  // |num_bytes| more bytes; returns the address of the first available byte.
+  char* Reserve(size_t num_bytes) {
+    if (num_occupied_bytes_ + num_bytes > size_) {
+      size_ = std::max(size_ * 2, num_occupied_bytes_ + num_bytes);
+      data_ = static_cast<char*>(realloc(data_, size_));
+    }
+
+    return data_ + num_occupied_bytes_;
+  }
+
+  // Marks the first |num_bytes| unoccupied bytes as occupied.
+  void Claim(size_t num_bytes) {
+    DCHECK_LE(num_occupied_bytes_ + num_bytes, size_);
+    num_occupied_bytes_ += num_bytes;
+  }
+
+  // Marks the first |num_bytes| occupied bytes as discarded. This may result in
+  // shrinkage of the internal buffer, and it is not safe to assume the result
+  // of a previous Reserve() call is still valid after this.
+  void Discard(size_t num_bytes) {
+    DCHECK_LE(num_discarded_bytes_ + num_bytes, num_occupied_bytes_);
+    num_discarded_bytes_ += num_bytes;
+
+    if (num_discarded_bytes_ == num_occupied_bytes_) {
+      // We can just reuse the buffer from the beginning in this common case.
+      num_discarded_bytes_ = 0;
+      num_occupied_bytes_ = 0;
+    }
+
+    if (num_discarded_bytes_ > kMaxUnusedReadBufferCapacity) {
+      // In the uncommon case that we have a lot of discarded data at the
+      // front of the buffer, simply move remaining data to a smaller buffer.
+      size_t num_preserved_bytes = num_occupied_bytes_ - num_discarded_bytes_;
+      size_ = std::max(num_preserved_bytes, kReadBufferSize);
+      char* new_data = static_cast<char*>(malloc(size_));
+      memcpy(new_data, data_ + num_discarded_bytes_, num_preserved_bytes);
+      free(data_);
+      data_ = new_data;
+      num_discarded_bytes_ = 0;
+      num_occupied_bytes_ = num_preserved_bytes;
+    }
+
+    // TODO: we should also adaptively shrink the buffer in case of the
+    // occasional abnormally large read.
+  }
+
+ private:
+  char* data_ = nullptr;
+
+  // The total size of the allocated buffer.
+  size_t size_ = 0;
+
+  // The number of discarded bytes at the beginning of the allocated buffer.
+  size_t num_discarded_bytes_ = 0;
+
+  // The total number of occupied bytes, including discarded bytes.
+  size_t num_occupied_bytes_ = 0;
+
+  DISALLOW_COPY_AND_ASSIGN(ReadBuffer);
+};
+
 Channel::Channel(Delegate* delegate)
-    : delegate_(delegate) {
-  read_buffer_size_ = kReadBufferSize;
-  read_buffer_ = static_cast<char*>(malloc(read_buffer_size_));
+    : delegate_(delegate), read_buffer_(new ReadBuffer) {
 }
 
-Channel::~Channel() {
-  free(read_buffer_);
-}
+Channel::~Channel() {}
 
 void Channel::ShutDown() {
   delegate_ = nullptr;
@@ -56,55 +152,36 @@ void Channel::ShutDown() {
 }
 
 char* Channel::GetReadBuffer(size_t *buffer_capacity) {
-  const size_t required_capacity = kReadBufferSize;
-
-  DCHECK_GE(read_buffer_size_, num_read_bytes_);
-  DCHECK_GE(num_read_bytes_, read_offset_);
-
-  if (read_offset_ > kMaxUnusedReadBufferCapacity) {
-    // Shift outstanding data to the front of the buffer and shrink to a
-    // reasonable size, leaving enough space for another read. This will slow
-    // down very large reads, but we shouldn't do very large reads.
-    std::move(read_buffer_ + read_offset_, read_buffer_ + num_read_bytes_,
-              read_buffer_);
-    read_buffer_size_ = num_read_bytes_ - read_offset_ + required_capacity;
-    read_buffer_ = static_cast<char*>(realloc(read_buffer_, read_buffer_size_));
-    num_read_bytes_ -= read_offset_;
-    read_offset_ = 0;
-  } else {
-    if (read_buffer_size_ - num_read_bytes_ < required_capacity) {
-      // Grow the buffer as needed. This resizes it to either twice its previous
-      // size, or just enough to hold the new capacity; whichever is larger.
-      read_buffer_size_ = std::max(read_buffer_size_ * 2,
-                                   num_read_bytes_ + required_capacity);
-      read_buffer_ = static_cast<char*>(realloc(read_buffer_,
-                                                read_buffer_size_));
-    }
-  }
-
-  DCHECK_GE(read_buffer_size_, num_read_bytes_ + required_capacity);
+  DCHECK(read_buffer_);
+  size_t required_capacity = *buffer_capacity;
+  if (!required_capacity)
+    required_capacity = kReadBufferSize;
 
   *buffer_capacity = required_capacity;
-  return read_buffer_ + num_read_bytes_;
+  return read_buffer_->Reserve(required_capacity);
 }
 
-bool Channel::OnReadCompleteNoLock(size_t bytes_read) {
+bool Channel::OnReadCompleteNoLock(size_t bytes_read,
+                                   size_t *next_read_size_hint) {
   read_lock().AssertAcquired();
 
-  num_read_bytes_ += bytes_read;
-  while (num_read_bytes_ - read_offset_ >= sizeof(Message::Header)) {
+  read_buffer_->Claim(bytes_read);
+  while (read_buffer_->num_occupied_bytes() >= sizeof(Message::Header)) {
     // We have at least enough data available for a MessageHeader.
-    Message::Header* header =
-        reinterpret_cast<Message::Header*>(read_buffer_ + read_offset_);
+    const Message::Header* header = reinterpret_cast<const Message::Header*>(
+        read_buffer_->occupied_bytes());
     if (header->num_bytes < sizeof(Message::Header) ||
         header->num_bytes > kMaxChannelMessageSize) {
       LOG(ERROR) << "Invalid message size: " << header->num_bytes;
       return false;
     }
 
-    if (num_read_bytes_ - read_offset_ < header->num_bytes) {
-      // Not enough data available to read the full message.
-      break;
+    if (read_buffer_->num_occupied_bytes() < header->num_bytes) {
+      // Not enough data available to read the full message. Hint to the
+      // implementation that it should try reading the full size of the message.
+      *next_read_size_hint =
+          header->num_bytes - read_buffer_->num_occupied_bytes();
+      return true;
     }
 
     ScopedPlatformHandleVectorPtr handles;
@@ -122,9 +199,10 @@ bool Channel::OnReadCompleteNoLock(size_t bytes_read) {
     if (delegate_)
       delegate_->OnChannelMessage(payload, payload_size, std::move(handles));
 
-    read_offset_ += header->num_bytes;
+    read_buffer_->Discard(header->num_bytes);
   }
 
+  *next_read_size_hint = kReadBufferSize;
   return true;
 }
 

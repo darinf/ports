@@ -127,13 +127,18 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   base::Lock& read_lock() { return read_lock_; }
 
   // Called by the implementation when it wants somewhere to stick data.
+  // |*buffer_capacity| may be set by the caller to indicate the desired buffer
+  // size. If 0, a sane default size will be used instead.
+  //
   // Returns the address of a buffer which can be written to, and indicates its
-  // capacity in |*buffer_capacity|.
+  // actual capacity in |*buffer_capacity|.
   char* GetReadBuffer(size_t* buffer_capacity);
 
   // Called by the implementation when new data is available in the read
-  // buffer. Returns false to indicate an error.
-  bool OnReadCompleteNoLock(size_t bytes_read);
+  // buffer. Returns false to indicate an error. Upon success,
+  // |*next_read_size_hint| will be set to a recommended size for the next
+  // read done by the implementation.
+  bool OnReadCompleteNoLock(size_t bytes_read, size_t* next_read_size_hint);
 
   // Called by the implementation when something goes horribly wrong.
   void OnError();
@@ -144,19 +149,14 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
  private:
   friend class base::RefCountedThreadSafe<Channel>;
 
+  class ReadBuffer;
+
   Delegate* delegate_;
 
-  // Guards |read_buffer_| et al, as well as the implementation's read platform
+  // Guards |read_buffer_| as well as the implementation's read platform
   // handles if applicable.
   base::Lock read_lock_;
-  char* read_buffer_;
-  size_t read_buffer_size_;
-
-  // The index into |read_buffer_| where the next Message must start.
-  size_t read_offset_ = 0;
-
-  // The number of bytes in |read_buffer_| which are occupied with read data.
-  size_t num_read_bytes_ = 0;
+  scoped_ptr<ReadBuffer> read_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(Channel);
 };
