@@ -67,14 +67,7 @@ inline bool operator!=(const PortName& a, const PortName& b) {
   return !(a == b);
 }
 
-inline std::ostream& operator<<(std::ostream& stream, const PortName& name) {
-  std::ios::fmtflags flags(stream.flags());
-  stream << std::hex << std::uppercase << name.value_major;
-  if (name.value_minor != 0)
-    stream << '.' << name.value_minor;
-  stream.flags(flags);
-  return stream;
-}
+std::ostream& operator<<(std::ostream& stream, const PortName& name);
 
 // Node names are globally unique.
 struct NodeName {
@@ -94,14 +87,7 @@ inline bool operator!=(const NodeName& a, const NodeName& b) {
   return !(a == b);
 }
 
-inline std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
-  std::ios::fmtflags flags(stream.flags());
-  stream << std::hex << std::uppercase << name.value_major;
-  if (name.value_minor != 0)
-    stream << '.' << name.value_minor;
-  stream.flags(flags);
-  return stream;
-}
+std::ostream& operator<<(std::ostream& stream, const NodeName& name);
 
 // This class is designed to be subclassed by the embedder. See NodeDelegate's
 // AllocMessage method.

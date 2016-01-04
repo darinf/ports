@@ -30,11 +30,11 @@
 #ifndef PORTS_SRC_LOGGING_H_
 #define PORTS_SRC_LOGGING_H_
 
+#include "ports/include/ports.h"
+
 #if !defined(INSIDE_CHROMIUM)
 
 #include <sstream>
-
-#include "ports/include/ports.h"
 
 namespace ports {
 

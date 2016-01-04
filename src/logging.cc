@@ -29,12 +29,34 @@
 
 #include "ports/src/logging.h"
 
+#if !defined(INSIDE_CHROMIUM)
 #include <stdlib.h>
 
 #include <iostream>
 #include <thread>
+#endif  // INSIDE_CHROMIUM
 
 namespace ports {
+
+std::ostream& operator<<(std::ostream& stream, const PortName& name) {
+  std::ios::fmtflags flags(stream.flags());
+  stream << std::hex << std::uppercase << name.value_major;
+  if (name.value_minor != 0)
+    stream << '.' << name.value_minor;
+  stream.flags(flags);
+  return stream;
+}
+
+std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
+  std::ios::fmtflags flags(stream.flags());
+  stream << std::hex << std::uppercase << name.value_major;
+  if (name.value_minor != 0)
+    stream << '.' << name.value_minor;
+  stream.flags(flags);
+  return stream;
+}
+
+#if !defined(INSIDE_CHROMIUM)
 
 Logger::Logger(LogSeverity severity) : severity_(severity) {
   stream_ << std::this_thread::get_id() << ": ";
@@ -46,5 +68,7 @@ Logger::~Logger() {
   if (severity == FATAL)
     abort();
 }
+
+#endif  // INSIDE_CHROMIUM
 
 }  // namespace ports
