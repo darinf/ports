@@ -170,7 +170,7 @@ void MultiprocessTestHelper::ChildSetup() {
   ScopedPlatformHandle broker_handle =
       PlatformChannelPair::PassClientHandleFromParentProcessFromString(
           broker_handle_str);
-  SetParentPipeHandle(broker_handle.Pass());
+  SetParentPipeHandle(std::move(broker_handle));
 }
 
 // static
