@@ -5,8 +5,6 @@
 #ifndef PORTS_MOJO_SYSTEM_CHANNEL_H_
 #define PORTS_MOJO_SYSTEM_CHANNEL_H_
 
-#include <vector>
-
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -156,7 +154,7 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   // Guards |read_buffer_| as well as the implementation's read platform
   // handles if applicable.
   base::Lock read_lock_;
-  scoped_ptr<ReadBuffer> read_buffer_;
+  const scoped_ptr<ReadBuffer> read_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(Channel);
 };
