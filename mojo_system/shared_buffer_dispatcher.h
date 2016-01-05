@@ -10,10 +10,10 @@
 
 #include <utility>
 
+#include "base/macros.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/system/system_impl_export.h"
-#include "mojo/public/cpp/system/macros.h"
 #include "ports/mojo_system/dispatcher.h"
 
 namespace mojo {
@@ -47,15 +47,28 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
       uint64_t num_bytes,
       scoped_refptr<SharedBufferDispatcher>* result);
 
-  // |Dispatcher| public methods:
-  Type GetType() const override;
-
   // The "opposite" of SerializeAndClose(). Called by Dispatcher::Deserialize().
   static scoped_refptr<SharedBufferDispatcher> Deserialize(
       const void* bytes,
       size_t num_bytes,
       PlatformHandle* platform_handles,
       size_t num_platform_handles);
+
+  // Dispatcher:
+  Type GetType() const override;
+  void Close() override;
+  MojoResult DuplicateBufferHandle(
+      const MojoDuplicateBufferHandleOptions* options,
+      scoped_refptr<Dispatcher>* new_dispatcher) override;
+  MojoResult MapBuffer(
+      uint64_t offset,
+      uint64_t num_bytes,
+      MojoMapBufferFlags flags,
+      scoped_ptr<PlatformSharedBufferMapping>* mapping) override;
+  void GetSerializedSize(uint32_t* num_bytes,
+                         uint32_t* num_platform_handles) override;
+  bool SerializeAndClose(void* destination,
+                         PlatformHandleVector* handles) override;
 
  private:
   static scoped_refptr<SharedBufferDispatcher> CreateInternal(
@@ -77,24 +90,12 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
       const MojoDuplicateBufferHandleOptions* in_options,
       MojoDuplicateBufferHandleOptions* out_options);
 
-  // |Dispatcher| protected methods:
-  void CloseImplNoLock() override;
-  MojoResult DuplicateBufferHandleImplNoLock(
-      const MojoDuplicateBufferHandleOptions* options,
-      scoped_refptr<Dispatcher>* new_dispatcher) override;
-  MojoResult MapBufferImplNoLock(
-      uint64_t offset,
-      uint64_t num_bytes,
-      MojoMapBufferFlags flags,
-      scoped_ptr<PlatformSharedBufferMapping>* mapping) override;
-  void GetSerializedSizeImplNoLock(uint32_t* num_bytes,
-                                   uint32_t* num_platform_handles) override;
-  bool SerializeAndCloseImplNoLock(void* destination,
-                                   PlatformHandleVector* handles) override;
+  // Guards access to |shared_buffer_|.
+  base::Lock lock_;
 
   scoped_refptr<PlatformSharedBuffer> shared_buffer_;
 
-  MOJO_DISALLOW_COPY_AND_ASSIGN(SharedBufferDispatcher);
+  DISALLOW_COPY_AND_ASSIGN(SharedBufferDispatcher);
 };
 
 }  // namespace edk

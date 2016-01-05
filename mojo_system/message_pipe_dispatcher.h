@@ -22,9 +22,32 @@ class MessagePipeDispatcher : public Dispatcher {
   // Create a MessagePipeDispatcher for port |port_name| on |node|.
   MessagePipeDispatcher(Node* node, const ports::PortRef& port);
 
-  Type GetType() const override;
-
   const ports::PortName& GetPortName() const { return port_.name(); }
+
+  // Dispatcher:
+  Type GetType() const override;
+  void Close() override;
+  MojoResult WriteMessage(const void* bytes,
+                          uint32_t num_bytes,
+                          const DispatcherInTransit* dispatchers,
+                          uint32_t num_dispatchers,
+                          MojoWriteMessageFlags flags) override;
+  MojoResult ReadMessage(void* bytes,
+                         uint32_t* num_bytes,
+                         MojoHandle* handles,
+                         uint32_t* num_handles,
+                         MojoReadMessageFlags flags) override;
+  HandleSignalsState GetHandleSignalsState() const override;
+  MojoResult AddAwakable(Awakable* awakable,
+                         MojoHandleSignals signals,
+                         uintptr_t context,
+                         HandleSignalsState* signals_state) override;
+  void RemoveAwakable(Awakable* awakable,
+                      HandleSignalsState* signals_state) override;
+  void GetSerializedSize(uint32_t* num_bytes, uint32_t* num_handles) override;
+  bool SerializeAndClose(void* destination,
+                         PlatformHandleVector* handles) override;
+  void CompleteTransit() override;
 
  private:
   class PortObserverThunk;
@@ -32,43 +55,27 @@ class MessagePipeDispatcher : public Dispatcher {
 
   ~MessagePipeDispatcher() override;
 
-  // Dispatcher:
-  void CompleteTransit() override;
-  void CancelAllAwakablesNoLock() override;
-  void CloseImplNoLock() override;
-  MojoResult WriteMessageImplNoLock(const void* bytes,
-                                    uint32_t num_bytes,
-                                    const DispatcherInTransit* dispatchers,
-                                    uint32_t num_dispatchers,
-                                    MojoWriteMessageFlags flags) override;
-  MojoResult ReadMessageImplNoLock(void* bytes,
-                                   uint32_t* num_bytes,
-                                   MojoHandle* handles,
-                                   uint32_t* num_handles,
-                                   MojoReadMessageFlags flags) override;
-  HandleSignalsState GetHandleSignalsStateImplNoLock() const override;
-  MojoResult AddAwakableImplNoLock(Awakable* awakable,
-                                   MojoHandleSignals signals,
-                                   uintptr_t context,
-                                   HandleSignalsState* signals_state) override;
-  void RemoveAwakableImplNoLock(Awakable* awakable,
-                                HandleSignalsState* signals_state) override;
-  void GetSerializedSizeImplNoLock(uint32_t* num_bytes,
-                                   uint32_t* num_handles) override;
-  bool SerializeAndCloseImplNoLock(void* destination,
-                                   PlatformHandleVector* handles) override;
-
+  HandleSignalsState GetHandleSignalsStateNoLock() const;
   bool UpdateSignalsStateNoLock();
 
   // Called by PortObserverThunk when messages are available on the port.
   void OnMessagesAvailable();
 
-  Node* node_;
-  ports::PortRef port_;
+  // These are safe to access from any thread without locking.
+  Node* const node_;
+  const ports::PortRef port_;
 
+  // Guards |peer_closed_|, |port_transferred_|, |port_readable_|, and
+  // |port_closed_|.
+  mutable base::Lock signal_lock_;
   bool peer_closed_ = false;
   bool port_transferred_ = false;
   bool port_readable_ = false;
+  bool port_closed_ = false;
+
+  // Guards access to |awakables_|.
+  base::Lock awakables_lock_;
+
   AwakableList awakables_;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePipeDispatcher);
