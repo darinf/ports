@@ -268,8 +268,8 @@ TEST_F(PortsTest, Basic1) {
 
   // Setup pipe between node0 and node1.
   PortRef x0, x1;
-  EXPECT_EQ(OK, node0.CreatePort(&x0));
-  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.CreateUninitializedPort(&x0));
+  EXPECT_EQ(OK, node1.CreateUninitializedPort(&x1));
   EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
   EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
@@ -297,8 +297,8 @@ TEST_F(PortsTest, Basic2) {
 
   // Setup pipe between node0 and node1.
   PortRef x0, x1;
-  EXPECT_EQ(OK, node0.CreatePort(&x0));
-  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.CreateUninitializedPort(&x0));
+  EXPECT_EQ(OK, node1.CreateUninitializedPort(&x1));
   EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
   EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
@@ -327,8 +327,8 @@ TEST_F(PortsTest, Basic3) {
 
   // Setup pipe between node0 and node1.
   PortRef x0, x1;
-  EXPECT_EQ(OK, node0.CreatePort(&x0));
-  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.CreateUninitializedPort(&x0));
+  EXPECT_EQ(OK, node1.CreateUninitializedPort(&x1));
   EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
   EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
@@ -366,8 +366,8 @@ TEST_F(PortsTest, LostConnectionToNode1) {
 
   // Setup pipe between node0 and node1.
   PortRef x0, x1;
-  EXPECT_EQ(OK, node0.CreatePort(&x0));
-  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.CreateUninitializedPort(&x0));
+  EXPECT_EQ(OK, node1.CreateUninitializedPort(&x1));
   EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
   EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
@@ -404,8 +404,8 @@ TEST_F(PortsTest, LostConnectionToNode2) {
 
   // Setup pipe between node0 and node1.
   PortRef x0, x1;
-  EXPECT_EQ(OK, node0.CreatePort(&x0));
-  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.CreateUninitializedPort(&x0));
+  EXPECT_EQ(OK, node1.CreateUninitializedPort(&x1));
   EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
   EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
@@ -534,8 +534,8 @@ TEST_F(PortsTest, Delegation1) {
 
   // Setup pipe between node0 and node1.
   PortRef x0, x1;
-  EXPECT_EQ(OK, node0.CreatePort(&x0));
-  EXPECT_EQ(OK, node1.CreatePort(&x1));
+  EXPECT_EQ(OK, node0.CreateUninitializedPort(&x0));
+  EXPECT_EQ(OK, node1.CreateUninitializedPort(&x1));
   EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
   EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
 
@@ -605,8 +605,8 @@ TEST_F(PortsTest, Delegation2) {
   for (int i = 0; i < 10; ++i) {
     // Setup pipe a<->b between node0 and node1.
     PortRef A, B;
-    EXPECT_EQ(OK, node0.CreatePort(&A));
-    EXPECT_EQ(OK, node1.CreatePort(&B));
+    EXPECT_EQ(OK, node0.CreateUninitializedPort(&A));
+    EXPECT_EQ(OK, node1.CreateUninitializedPort(&B));
     EXPECT_EQ(OK, node0.InitializePort(A, node1_name, B.name()));
     EXPECT_EQ(OK, node1.InitializePort(B, node0_name, A.name()));
 
