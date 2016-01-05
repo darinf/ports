@@ -63,7 +63,7 @@ MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
     : node_(node), port_(port) {
   // OnMessagesAvailable (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
-  base::AutoLock locker(lock());
+  base::AutoLock lock(signal_lock_);
   node_->SetPortObserver(port_, std::make_shared<PortObserverThunk>(this));
 }
 
@@ -71,38 +71,27 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
   return Type::MESSAGE_PIPE;
 }
 
-MessagePipeDispatcher::~MessagePipeDispatcher() {
+void MessagePipeDispatcher::Close() {
+  {
+    base::AutoLock lock(signal_lock_);
+    DCHECK(!port_closed_);
+    port_closed_ = true;
+    if (!port_transferred_)
+      node_->ClosePort(port_);
+  }
+
+  {
+    base::AutoLock lock(awakables_lock_);
+    awakables_.CancelAll();
+  }
 }
 
-void MessagePipeDispatcher::CompleteTransit() {
-  base::AutoLock locker(lock());
-
-  // port_ has been closed by virtue of having been transferred. This
-  // dispatcher needs to be closed as well.
-  port_transferred_ = true;
-  CloseNoLock();
-}
-
-void MessagePipeDispatcher::CancelAllAwakablesNoLock() {
-  lock().AssertAcquired();
-  awakables_.CancelAll();
-}
-
-void MessagePipeDispatcher::CloseImplNoLock() {
-  lock().AssertAcquired();
-  DCHECK(is_closed());
-  if (!port_transferred_)
-    node_->ClosePort(port_);
-}
-
-MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
+MojoResult MessagePipeDispatcher::WriteMessage(
     const void* bytes,
     uint32_t num_bytes,
     const DispatcherInTransit* dispatchers,
     uint32_t num_dispatchers,
     MojoWriteMessageFlags flags) {
-  lock().AssertAcquired();
-
   size_t header_size = sizeof(MessageHeader) +
       num_dispatchers * sizeof(DispatcherHeader);
   size_t num_ports = 0;
@@ -172,8 +161,13 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
       return MOJO_RESULT_INVALID_ARGUMENT;
 
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
-      peer_closed_ = true;
-      awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+      {
+        base::AutoLock lock(signal_lock_);
+        peer_closed_ = true;
+      }
+
+      base::AutoLock lock(awakables_lock_);
+      awakables_.AwakeForStateChange(GetHandleSignalsState());
       return MOJO_RESULT_FAILED_PRECONDITION;
     }
 
@@ -184,14 +178,11 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
   return MOJO_RESULT_OK;
 }
 
-MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
-    void* bytes,
-    uint32_t* num_bytes,
-    MojoHandle* handles,
-    uint32_t* num_handles,
-    MojoReadMessageFlags flags) {
-  lock().AssertAcquired();
-
+MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
+                                              uint32_t* num_bytes,
+                                              MojoHandle* handles,
+                                              uint32_t* num_handles,
+                                              MojoReadMessageFlags flags) {
   bool no_space = false;
 
   // Ensure the provided buffers are large enough to hold the next message.
@@ -246,8 +237,13 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
       return MOJO_RESULT_INVALID_ARGUMENT;
 
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
-      peer_closed_ = true;
-      awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+      {
+        base::AutoLock lock(signal_lock_);
+        peer_closed_ = true;
+      }
+
+      base::AutoLock lock(awakables_lock_);
+      awakables_.AwakeForStateChange(GetHandleSignalsState());
       return MOJO_RESULT_FAILED_PRECONDITION;
     }
 
@@ -259,6 +255,7 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   if (!ports_message) {
+    base::AutoLock lock(signal_lock_);
     port_readable_ = false;
     return MOJO_RESULT_SHOULD_WAIT;
   }
@@ -344,9 +341,8 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
 }
 
 HandleSignalsState
-MessagePipeDispatcher::GetHandleSignalsStateImplNoLock() const {
-  lock().AssertAcquired();
-
+MessagePipeDispatcher::GetHandleSignalsState() const {
+  base::AutoLock lock(signal_lock_);
   HandleSignalsState rv;
   if (port_readable_) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
@@ -363,16 +359,13 @@ MessagePipeDispatcher::GetHandleSignalsStateImplNoLock() const {
   return rv;
 }
 
-MojoResult MessagePipeDispatcher::AddAwakableImplNoLock(
+MojoResult MessagePipeDispatcher::AddAwakable(
     Awakable* awakable,
     MojoHandleSignals signals,
     uintptr_t context,
     HandleSignalsState* signals_state) {
-  lock().AssertAcquired();
-
-  UpdateSignalsStateNoLock();
-
-  HandleSignalsState state = GetHandleSignalsStateImplNoLock();
+  UpdateSignalsState();
+  HandleSignalsState state = GetHandleSignalsState();
   if (state.satisfies(signals)) {
     if (signals_state)
       *signals_state = state;
@@ -384,31 +377,44 @@ MojoResult MessagePipeDispatcher::AddAwakableImplNoLock(
     return MOJO_RESULT_FAILED_PRECONDITION;
   }
 
+  base::AutoLock locker(awakables_lock_);
   awakables_.Add(awakable, signals, context);
   return MOJO_RESULT_OK;
 }
 
-void MessagePipeDispatcher::RemoveAwakableImplNoLock(
-    Awakable* awakable,
-    HandleSignalsState* signals_state) {
-  lock().AssertAcquired();
+void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
+                                           HandleSignalsState* signals_state) {
+  base::AutoLock locker(awakables_lock_);
   awakables_.Remove(awakable);
 }
 
-void MessagePipeDispatcher::GetSerializedSizeImplNoLock(uint32_t* num_bytes,
-                                                        uint32_t* num_handles) {
+void MessagePipeDispatcher::GetSerializedSize(uint32_t* num_bytes,
+                                              uint32_t* num_handles) {
   *num_bytes = 0;
   *num_handles = 0;
 }
 
-bool MessagePipeDispatcher::SerializeAndCloseImplNoLock(
-    void* destination,
-    PlatformHandleVector* handles) {
+bool MessagePipeDispatcher::SerializeAndClose(void* destination,
+                                              PlatformHandleVector* handles) {
   // Nothing to do. Pipes are serialied as ports.
   return true;
 }
 
-bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
+void MessagePipeDispatcher::CompleteTransit() {
+  {
+    base::AutoLock lock(signal_lock_);
+    port_transferred_ = true;
+  }
+
+  // port_ has been closed by virtue of having been transferred. This
+  // dispatcher needs to be closed as well.
+  Close();
+}
+
+MessagePipeDispatcher::~MessagePipeDispatcher() {
+}
+
+bool MessagePipeDispatcher::UpdateSignalsState() {
   // Peek at the queue. If our selector function runs at all, it's not empty.
   //
   // TODO: maybe Node should have an interface for this test?
@@ -427,6 +433,7 @@ bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
   // Awakables will not be interested in this becoming unreadable.
   bool awakable_change = false;
 
+  base::AutoLock lock(signal_lock_);
   if (rv == ports::OK) {
     if (has_messages && !port_readable_)
       awakable_change = true;
@@ -442,10 +449,12 @@ bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
 }
 
 void MessagePipeDispatcher::OnMessagesAvailable() {
-  base::AutoLock locker(lock());
+  if (UpdateSignalsState()) {
+    HandleSignalsState state = GetHandleSignalsState();
 
-  if (UpdateSignalsStateNoLock())
-    awakables_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+    base::AutoLock locker(awakables_lock_);
+    awakables_.AwakeForStateChange(state);
+  }
 }
 
 }  // namespace edk
