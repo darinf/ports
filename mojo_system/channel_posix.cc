@@ -253,20 +253,20 @@ class ChannelPosix : public Channel,
     do {
       message_view.advance_data_offset(bytes_written);
 
-      iovec iov = {
-        const_cast<void*>(message_view.data()),
-        message_view.data_num_bytes()
-      };
-
       ssize_t result;
       ScopedPlatformHandleVectorPtr handles = message_view.TakeHandles();
       if (handles && handles->size()) {
+        iovec iov = {
+          const_cast<void*>(message_view.data()),
+          message_view.data_num_bytes()
+        };
         // TODO: Handle lots of handles.
         result = PlatformChannelSendmsgWithHandles(
             handle_.get(), &iov, 1, handles->data(), handles->size());
         handles->clear();
       } else {
-        result = PlatformChannelWritev(handle_.get(), &iov, 1);
+        result = PlatformChannelWrite(handle_.get(), message_view.data(),
+                                      message_view.data_num_bytes());
       }
 
       if (result < 0) {
