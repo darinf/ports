@@ -109,11 +109,11 @@ class ChannelPosix : public Channel,
       base::AutoLock lock(write_lock_);
       if (reject_writes_)
         return;
-      bool queue_was_empty = outgoing_messages_.empty();
-      outgoing_messages_.emplace_back(std::move(message), 0);
-      if (queue_was_empty) {
-        if (!WriteNoLock())
+      if (outgoing_messages_.empty()) {
+        if (!WriteNoLock(MessageView(std::move(message), 0)))
           reject_writes_ = write_error = true;
+      } else {
+        outgoing_messages_.emplace_back(std::move(message), 0);
       }
     }
     if (write_error)
@@ -239,24 +239,26 @@ class ChannelPosix : public Channel,
     {
       base::AutoLock lock(write_lock_);
       pending_write_ = false;
-      if (!WriteNoLock())
+      if (!FlushOutgoingMessagesNoLock())
         reject_writes_ = write_error = true;
     }
     if (write_error)
       OnError();
   }
 
-  bool WriteNoLock() {
-    std::deque<MessageView> messages;
-    std::swap(outgoing_messages_, messages);
+  // Attempts to write a message directly to the channel. If the full message
+  // cannot be written, it's queued and a wait is initiated to write the message
+  // ASAP on the I/O thread.
+  bool WriteNoLock(MessageView message_view) {
+    size_t bytes_written = 0;
+    do {
+      message_view.advance_data_offset(bytes_written);
 
-    // TODO: Send a batch of iovecs when possible.
-    while (!messages.empty()) {
-      MessageView message_view = std::move(messages.front());
       iovec iov = {
         const_cast<void*>(message_view.data()),
         message_view.data_num_bytes()
       };
+
       ssize_t result;
       ScopedPlatformHandleVectorPtr handles = message_view.TakeHandles();
       if (handles && handles->size()) {
@@ -268,30 +270,38 @@ class ChannelPosix : public Channel,
         result = PlatformChannelWritev(handle_.get(), &iov, 1);
       }
 
-      if (result >= 0) {
-        size_t bytes_written = static_cast<size_t>(result);
-        if (bytes_written < message_view.data_num_bytes()) {
-          message_view.advance_data_offset(bytes_written);
-          messages.front() = std::move(message_view);
-        } else {
-          messages.pop_front();
-        }
-      } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-        return false;
-      } else {
-        // Need to try again!
-        messages.front() = std::move(message_view);
-        break;
+      if (result < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+          return false;
+        outgoing_messages_.emplace_back(std::move(message_view));
+        WaitForWriteOnIOThreadNoLock();
+        return true;
       }
-    }
 
-    if (!messages.empty()) {
-      // Put back any remaining messages if necessary, preserving order.
-      std::move(messages.begin(), messages.end(),
-          std::front_inserter(outgoing_messages_));
+      bytes_written = static_cast<size_t>(result);
+    } while (bytes_written < message_view.data_num_bytes());
 
-      // Wait to write again.
-      WaitForWriteOnIOThreadNoLock();
+    return true;
+  }
+
+  bool FlushOutgoingMessagesNoLock() {
+    std::deque<MessageView> messages;
+    std::swap(outgoing_messages_, messages);
+
+    while (!messages.empty()) {
+      if (!WriteNoLock(std::move(messages.front())))
+        return false;
+
+      messages.pop_front();
+      if (!outgoing_messages_.empty()) {
+        // The message was requeued by WriteNoLock(), so we have to wait for
+        // pipe to become writable again. Repopulate the message queue and exit.
+        DCHECK_EQ(outgoing_messages_.size(), 1u);
+        MessageView message_view = std::move(outgoing_messages_.front());
+        std::swap(messages, outgoing_messages_);
+        outgoing_messages_.push_front(std::move(message_view));
+        return true;
+      }
     }
 
     return true;
