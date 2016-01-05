@@ -290,8 +290,10 @@ void Node::ForwardMessage(const ports::NodeName& node,
   }
 }
 
-void Node::MessagesAvailable(const ports::PortRef& port,
-                             std::shared_ptr<ports::UserData> user_data) {
+void Node::MessagesAvailable(const ports::PortRef& port) {
+  std::shared_ptr<ports::UserData> user_data;
+  node_->GetUserData(port, &user_data);
+
   PortObserver* observer = static_cast<PortObserver*>(user_data.get());
   if (observer)
     observer->OnMessagesAvailable();

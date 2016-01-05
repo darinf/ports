@@ -53,6 +53,8 @@ class Node::Impl {
   int CreatePortPair(PortRef* port0_ref, PortRef* port1_ref);
   int SetUserData(const PortRef& port_ref,
                   std::shared_ptr<UserData> user_data);
+  int GetUserData(const PortRef& port_ref,
+                  std::shared_ptr<UserData>* user_data);
   int ClosePort(const PortRef& port_ref);
   int GetMessage(const PortRef& port_ref, ScopedMessage* message);
   int GetMessageIf(const PortRef& port_ref,

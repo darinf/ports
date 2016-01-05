@@ -155,8 +155,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
                     ports::ScopedMessage* message) override;
   void ForwardMessage(const ports::NodeName& node,
                       ports::ScopedMessage message) override;
-  void MessagesAvailable(const ports::PortRef& port,
-                         std::shared_ptr<ports::UserData> user_data) override;
+  void MessagesAvailable(const ports::PortRef& port) override;
 
   // NodeChannel::Delegate:
   void OnAcceptChild(const ports::NodeName& from_node,

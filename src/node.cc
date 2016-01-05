@@ -62,6 +62,11 @@ int Node::SetUserData(const PortRef& port_ref,
   return impl_->SetUserData(port_ref, std::move(user_data));
 }
 
+int Node::GetUserData(const PortRef& port_ref,
+                      std::shared_ptr<UserData>* user_data) {
+  return impl_->GetUserData(port_ref, user_data);
+}
+
 int Node::ClosePort(const PortRef& port_ref) {
   return impl_->ClosePort(port_ref);
 }

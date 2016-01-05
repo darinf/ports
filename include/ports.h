@@ -192,9 +192,7 @@ class NodeDelegate {
 
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
-  // TODO: Remove user_data parameter in favor of GetUserData.
-  virtual void MessagesAvailable(const PortRef& port_ref,
-                                 std::shared_ptr<UserData> user_data) = 0;
+  virtual void MessagesAvailable(const PortRef& port_ref) = 0;
 };
 
 class Node {
@@ -221,8 +219,10 @@ class Node {
   // are initialized and ready to go.
   int CreatePortPair(PortRef* port0_ref, PortRef* port1_ref);
 
-  // User data associated with the port. Passed to MessagesAvailable.
+  // User data associated with the port.
   int SetUserData(const PortRef& port_ref, std::shared_ptr<UserData> user_data);
+  int GetUserData(const PortRef& port_ref,
+                  std::shared_ptr<UserData>* user_data);
 
   // Prevents further messages from being sent from this port or delivered to
   // this port. The port is removed, and the port's peer is notified of the
