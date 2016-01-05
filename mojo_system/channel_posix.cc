@@ -119,9 +119,8 @@ class ChannelPosix : public Channel,
       OnError();
   }
 
-  ScopedPlatformHandleVectorPtr GetReadPlatformHandlesNoLock(
+  ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
       size_t num_handles) override {
-    read_lock().AssertAcquired();
     if (incoming_platform_handles_.size() < num_handles)
       return nullptr;
     ScopedPlatformHandleVectorPtr handles(
@@ -196,8 +195,6 @@ class ChannelPosix : public Channel,
     scoped_refptr<Channel> keep_alive(this);
     bool read_error = false;
     {
-      base::AutoLock lock(read_lock());
-
       size_t next_read_size = 0;
       size_t buffer_capacity = 0;
       size_t total_bytes_read = 0;
@@ -216,7 +213,7 @@ class ChannelPosix : public Channel,
         if (read_result > 0) {
           bytes_read = static_cast<size_t>(read_result);
           total_bytes_read += bytes_read;
-          if (!OnReadCompleteNoLock(bytes_read, &next_read_size)) {
+          if (!OnReadComplete(bytes_read, &next_read_size)) {
             read_error = true;
             break;
           }

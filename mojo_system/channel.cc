@@ -161,10 +161,7 @@ char* Channel::GetReadBuffer(size_t *buffer_capacity) {
   return read_buffer_->Reserve(required_capacity);
 }
 
-bool Channel::OnReadCompleteNoLock(size_t bytes_read,
-                                   size_t *next_read_size_hint) {
-  read_lock().AssertAcquired();
-
+bool Channel::OnReadComplete(size_t bytes_read, size_t *next_read_size_hint) {
   read_buffer_->Claim(bytes_read);
   while (read_buffer_->num_occupied_bytes() >= sizeof(Message::Header)) {
     // We have at least enough data available for a MessageHeader.
@@ -186,7 +183,7 @@ bool Channel::OnReadCompleteNoLock(size_t bytes_read,
 
     ScopedPlatformHandleVectorPtr handles;
     if (header->num_handles > 0) {
-      handles = GetReadPlatformHandlesNoLock(header->num_handles);
+      handles = GetReadPlatformHandles(header->num_handles);
       if (!handles) {
         // Not enough handles available for this message.
         break;

@@ -8,7 +8,6 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
@@ -122,8 +121,6 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   Channel(Delegate* delegate);
   virtual ~Channel();
 
-  base::Lock& read_lock() { return read_lock_; }
-
   // Called by the implementation when it wants somewhere to stick data.
   // |*buffer_capacity| may be set by the caller to indicate the desired buffer
   // size. If 0, a sane default size will be used instead.
@@ -136,12 +133,12 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   // buffer. Returns false to indicate an error. Upon success,
   // |*next_read_size_hint| will be set to a recommended size for the next
   // read done by the implementation.
-  bool OnReadCompleteNoLock(size_t bytes_read, size_t* next_read_size_hint);
+  bool OnReadComplete(size_t bytes_read, size_t* next_read_size_hint);
 
   // Called by the implementation when something goes horribly wrong.
   void OnError();
 
-  virtual ScopedPlatformHandleVectorPtr GetReadPlatformHandlesNoLock(
+  virtual ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
       size_t num_handles) = 0;
 
  private:
@@ -150,10 +147,6 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   class ReadBuffer;
 
   Delegate* delegate_;
-
-  // Guards |read_buffer_| as well as the implementation's read platform
-  // handles if applicable.
-  base::Lock read_lock_;
   const scoped_ptr<ReadBuffer> read_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(Channel);
