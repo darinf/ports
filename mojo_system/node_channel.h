@@ -84,12 +84,10 @@ class NodeChannel : public Channel::Delegate {
                         ScopedPlatformHandleVectorPtr handles) override;
   void OnChannelError() override;
 
-  Delegate* delegate_;
-
-  base::Lock name_lock_;
+  Delegate* const delegate_;
+  const scoped_refptr<base::TaskRunner> io_task_runner_;
+  const scoped_refptr<Channel> channel_;
   ports::NodeName remote_node_name_;
-
-  scoped_refptr<Channel> channel_;
 
   DISALLOW_COPY_AND_ASSIGN(NodeChannel);
 };

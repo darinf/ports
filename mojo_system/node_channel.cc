@@ -102,24 +102,28 @@ NodeChannel::NodeChannel(Delegate* delegate,
                          ScopedPlatformHandle platform_handle,
                          scoped_refptr<base::TaskRunner> io_task_runner)
     : delegate_(delegate),
+      io_task_runner_(io_task_runner),
       channel_(
-          Channel::Create(this, std::move(platform_handle), io_task_runner)) {}
+          Channel::Create(this, std::move(platform_handle), io_task_runner_)) {}
 
 NodeChannel::~NodeChannel() {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   channel_->ShutDown();
 }
 
 void NodeChannel::Start() {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   channel_->Start();
 }
 
 void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
-  base::AutoLock lock(name_lock_);
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   remote_node_name_ = name;
 }
 
 void NodeChannel::AcceptChild(const ports::NodeName& parent_name,
                               const ports::NodeName& token) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   AcceptChildData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::ACCEPT_CHILD, sizeof(AcceptChildData), nullptr, &data);
@@ -130,6 +134,7 @@ void NodeChannel::AcceptChild(const ports::NodeName& parent_name,
 
 void NodeChannel::AcceptParent(const ports::NodeName& token,
                                const ports::NodeName& child_name) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   AcceptParentData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::ACCEPT_PARENT, sizeof(AcceptParentData), nullptr, &data);
@@ -139,11 +144,13 @@ void NodeChannel::AcceptParent(const ports::NodeName& token,
 }
 
 void NodeChannel::PortsMessage(Channel::MessagePtr message) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   channel_->Write(std::move(message));
 }
 
 void NodeChannel::ConnectToPort(const std::string& token,
                                 const ports::PortName& connector_port) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   ConnectToPortData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::CONNECT_TO_PORT, sizeof(ConnectToPortData) + token.size(),
@@ -155,6 +162,7 @@ void NodeChannel::ConnectToPort(const std::string& token,
 
 void NodeChannel::ConnectToPortAck(const ports::PortName& connector_port,
                                    const ports::PortName& connectee_port) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   ConnectToPortAckData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::CONNECT_TO_PORT_ACK, sizeof(ConnectToPortAckData), nullptr,
@@ -165,6 +173,7 @@ void NodeChannel::ConnectToPortAck(const ports::PortName& connector_port,
 }
 
 void NodeChannel::RequestIntroduction(const ports::NodeName& name) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   IntroductionData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::REQUEST_INTRODUCTION, sizeof(IntroductionData), nullptr,
@@ -175,6 +184,7 @@ void NodeChannel::RequestIntroduction(const ports::NodeName& name) {
 
 void NodeChannel::Introduce(const ports::NodeName& name,
                             ScopedPlatformHandle handle) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   ScopedPlatformHandleVectorPtr handles;
   if (handle.is_valid()) {
     handles.reset(new PlatformHandleVector(1));
@@ -191,33 +201,32 @@ void NodeChannel::Introduce(const ports::NodeName& name,
 void NodeChannel::OnChannelMessage(const void* payload,
                                    size_t payload_size,
                                    ScopedPlatformHandleVectorPtr handles) {
-  ports::NodeName from_node;
-  {
-    base::AutoLock lock(name_lock_);
-    from_node = remote_node_name_;
-  }
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   const Header* header = static_cast<const Header*>(payload);
   switch (header->type) {
     case MessageType::ACCEPT_CHILD: {
       const AcceptChildData* data;
       GetMessagePayload(payload, &data);
-      delegate_->OnAcceptChild(from_node, data->parent_name, data->token);
+      delegate_->OnAcceptChild(remote_node_name_, data->parent_name,
+                               data->token);
       break;
     }
 
     case MessageType::ACCEPT_PARENT: {
       const AcceptParentData* data;
       GetMessagePayload(payload, &data);
-      delegate_->OnAcceptParent(from_node, data->token, data->child_name);
+      delegate_->OnAcceptParent(remote_node_name_, data->token,
+                                data->child_name);
       break;
     }
 
     case MessageType::PORTS_MESSAGE: {
       const void* data;
       GetMessagePayload(payload, &data);
-      delegate_->OnPortsMessage(
-          from_node, data, payload_size - sizeof(Header), std::move(handles));
+      delegate_->OnPortsMessage(remote_node_name_, data,
+                                payload_size - sizeof(Header),
+                                std::move(handles));
       break;
     }
 
@@ -228,22 +237,23 @@ void NodeChannel::OnChannelMessage(const void* payload,
       std::string token(
           reinterpret_cast<const char*>(&data[1]),
           payload_size - sizeof(Header) - sizeof(ConnectToPortData));
-      delegate_->OnConnectToPort(from_node, data->connector_port, token);
+      delegate_->OnConnectToPort(remote_node_name_, data->connector_port,
+                                 token);
       break;
     }
 
     case MessageType::CONNECT_TO_PORT_ACK: {
       const ConnectToPortAckData* data;
       GetMessagePayload(payload, &data);
-      delegate_->OnConnectToPortAck(
-          from_node, data->connector_port, data->connectee_port);
+      delegate_->OnConnectToPortAck(remote_node_name_, data->connector_port,
+                                    data->connectee_port);
       break;
     }
 
     case MessageType::REQUEST_INTRODUCTION: {
       const IntroductionData* data;
       GetMessagePayload(payload, &data);
-      delegate_->OnRequestIntroduction(from_node, data->name);
+      delegate_->OnRequestIntroduction(remote_node_name_, data->name);
       break;
     }
 
@@ -255,26 +265,21 @@ void NodeChannel::OnChannelMessage(const void* payload,
         handle = ScopedPlatformHandle(handles->at(0));
         handles->clear();
       }
-      delegate_->OnIntroduce(from_node, data->name, std::move(handle));
+      delegate_->OnIntroduce(remote_node_name_, data->name, std::move(handle));
       break;
     }
 
     default:
       DLOG(ERROR) << "Received unknown message type "
                   << static_cast<uint32_t>(header->type) << " from node "
-                  << from_node;
-      delegate_->OnChannelError(from_node);
+                  << remote_node_name_;
+      delegate_->OnChannelError(remote_node_name_);
       break;
   }
 }
 
 void NodeChannel::OnChannelError() {
-  ports::NodeName from_node;
-  {
-    base::AutoLock lock(name_lock_);
-    from_node = remote_node_name_;
-  }
-  delegate_->OnChannelError(from_node);
+  delegate_->OnChannelError(remote_node_name_);
 }
 
 }  // namespace edk
