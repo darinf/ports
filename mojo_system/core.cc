@@ -32,8 +32,12 @@ void OnRemotePeerConnected(
     const ports::PortName& local_port_name,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   DLOG(INFO) << "Remote peer connected for " << local_port_name;
+
+  ports::PortRef local_port;
+  core->node()->GetPort(local_port_name, &local_port);
+
   callback.Run(ScopedMessagePipeHandle(MessagePipeHandle(core->AddDispatcher(
-      new MessagePipeDispatcher(core->node(), local_port_name)))));
+      new MessagePipeDispatcher(core->node(), local_port)))));
 }
 
 }  // namespace
@@ -63,8 +67,11 @@ bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
                                           MojoHandle* handles) {
   std::vector<Dispatcher::DispatcherInTransit> dispatchers(message.num_ports());
   for (size_t i = 0; i < message.num_ports(); ++i) {
+    ports::PortRef port;
+    node_.GetPort(message.ports()[i], &port);
+
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(&node_, message.ports()[i]);
+    d.dispatcher = new MessagePipeDispatcher(&node_, port);
   }
   return AddDispatchersFromTransit(dispatchers, handles);
 }
@@ -89,22 +96,22 @@ bool Core::AddDispatchersFromTransit(
 void Core::CreateParentMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
-  ports::PortName port_name;
-  node_.CreateUninitializedPort(&port_name);
+  ports::PortRef port;
+  node_.CreateUninitializedPort(&port);
   node_.ReservePortForToken(
-      port_name, token,
-      base::Bind(&OnRemotePeerConnected, base::Unretained(this), port_name,
+      port.name(), token,
+      base::Bind(&OnRemotePeerConnected, base::Unretained(this), port.name(),
                  callback));
 }
 
 void Core::CreateChildMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
-  ports::PortName port_name;
-  node_.CreateUninitializedPort(&port_name);
+  ports::PortRef port;
+  node_.CreateUninitializedPort(&port);
   node_.ConnectToParentPortByToken(
-      token, port_name,
-      base::Bind(&OnRemotePeerConnected, base::Unretained(this), port_name,
+      token, port.name(),
+      base::Bind(&OnRemotePeerConnected, base::Unretained(this), port.name(),
                  callback));
 }
 
@@ -248,7 +255,7 @@ MojoResult Core::CreateMessagePipe(
     const MojoCreateMessagePipeOptions* options,
     MojoHandle* message_pipe_handle0,
     MojoHandle* message_pipe_handle1) {
-  ports::PortName port0, port1;
+  ports::PortRef port0, port1;
   node_.CreatePortPair(&port0, &port1);
   *message_pipe_handle0 = AddDispatcher(
       new MessagePipeDispatcher(&node_, port0));

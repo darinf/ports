@@ -66,31 +66,33 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   void SendPeerMessage(const ports::NodeName& name,
                        ports::ScopedMessage message);
 
+  void GetPort(const ports::PortName& port_name, ports::PortRef* port);
+
   // Creates a single uninitialized port which is not ready for use.
-  void CreateUninitializedPort(ports::PortName* port_name);
+  void CreateUninitializedPort(ports::PortRef* port);
 
   // Initializes a port with peer information.
-  void InitializePort(const ports::PortName& port_name,
+  void InitializePort(const ports::PortRef& port,
                       const ports::NodeName& peer_node_name,
                       const ports::PortName& peer_port_name);
 
   // Creates a new pair of local ports on this node, returning their names.
-  void CreatePortPair(ports::PortName* port0, ports::PortName* port1);
+  void CreatePortPair(ports::PortRef* port0, ports::PortRef* port1);
 
   // Sets a port's observer.
-  void SetPortObserver(const ports::PortName& port_name,
+  void SetPortObserver(const ports::PortRef& port,
                        std::shared_ptr<PortObserver> observer);
 
   scoped_ptr<PortsMessage> AllocMessage(size_t num_payload_bytes,
                                         size_t num_ports);
 
   // Sends a message on a port to its peer.
-  int SendMessage(const ports::PortName& port_name,
+  int SendMessage(const ports::PortRef& port_ref,
                   scoped_ptr<PortsMessage> message);
 
   // Enable use of lambda functions for selecting messages.
   template <typename Predicate>
-  int GetMessageIf(const ports::PortName& port_name,
+  int GetMessageIf(const ports::PortRef& port_ref,
                    Predicate predicate,
                    ports::ScopedMessage* message) {
     class Adaptor : public ports::MessageSelector {
@@ -101,11 +103,11 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
       }
       Predicate predicate_;
     } adaptor(predicate);
-    return node_->GetMessageIf(port_name, &adaptor, message);
+    return node_->GetMessageIf(port_ref, &adaptor, message);
   }
 
   // Closes a port.
-  void ClosePort(const ports::PortName& port_name);
+  void ClosePort(const ports::PortRef& port_ref);
 
   void ReservePortForToken(const ports::PortName& port_name,
                            const std::string& token,
@@ -153,7 +155,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
                     ports::ScopedMessage* message) override;
   void ForwardMessage(const ports::NodeName& node,
                       ports::ScopedMessage message) override;
-  void MessagesAvailable(const ports::PortName& port,
+  void MessagesAvailable(const ports::PortRef& port,
                          std::shared_ptr<ports::UserData> user_data) override;
 
   // NodeChannel::Delegate:

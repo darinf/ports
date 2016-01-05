@@ -71,7 +71,7 @@ int Node::Impl::GetPort(const PortName& port_name, PortRef* port_ref) {
   return OK;
 }
 
-int Node::Impl::CreatePort(PortRef* port_ref) {
+int Node::Impl::CreateUninitializedPort(PortRef* port_ref) {
   PortName port_name;
   delegate_->GenerateRandomPortName(&port_name);
 
@@ -104,11 +104,11 @@ int Node::Impl::InitializePort(const PortRef& port_ref,
 int Node::Impl::CreatePortPair(PortRef* port0_ref, PortRef* port1_ref) {
   int rv;
 
-  rv = CreatePort(port0_ref);
+  rv = CreateUninitializedPort(port0_ref);
   if (rv != OK)
     return rv;
 
-  rv = CreatePort(port1_ref);
+  rv = CreateUninitializedPort(port1_ref);
   if (rv != OK)
     return rv;
 

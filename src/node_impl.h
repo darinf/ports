@@ -46,7 +46,7 @@ class Node::Impl {
   ~Impl();
 
   int GetPort(const PortName& port_name, PortRef* port_ref);
-  int CreatePort(PortRef* port_ref);
+  int CreateUninitializedPort(PortRef* port_ref);
   int InitializePort(const PortRef& port_ref,
                      const NodeName& peer_node_name,
                      const PortName& peer_port_name);

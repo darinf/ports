@@ -43,8 +43,8 @@ int Node::GetPort(const PortName& port_name, PortRef* port_ref) {
   return impl_->GetPort(port_name, port_ref);
 }
 
-int Node::CreatePort(PortRef* port_ref) {
-  return impl_->CreatePort(port_ref);
+int Node::CreateUninitializedPort(PortRef* port_ref) {
+  return impl_->CreateUninitializedPort(port_ref);
 }
 
 int Node::InitializePort(const PortRef& port_ref,

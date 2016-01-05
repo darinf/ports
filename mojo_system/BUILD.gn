@@ -32,6 +32,7 @@ source_set("mojo_system") {
     "//mojo/edk/system/awakable.h",
     "//mojo/edk/system/awakable_list.cc",
     "//mojo/edk/system/awakable_list.h",
+    "//mojo/edk/system/configuration.cc",
     "//mojo/edk/system/configuration.h",
     "//mojo/edk/system/handle_signals_state.h",
     "//mojo/edk/system/mapping_table.cc",

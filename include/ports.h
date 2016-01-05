@@ -192,6 +192,7 @@ class NodeDelegate {
 
   // Expected to call Node's GetMessage method to access the next available
   // message. There may be zero or more messages available.
+  // TODO: Remove user_data parameter in favor of GetUserData.
   virtual void MessagesAvailable(const PortRef& port_ref,
                                  std::shared_ptr<UserData> user_data) = 0;
 };
@@ -209,7 +210,7 @@ class Node {
   // initialized using InitializePort. This method is useful for bootstrapping
   // a connection between two nodes. Generally, ports are created using
   // CreatePortPair instead.
-  int CreatePort(PortRef* port_ref);
+  int CreateUninitializedPort(PortRef* port_ref);
 
   // Initializes a newly created port.
   int InitializePort(const PortRef& port_ref,

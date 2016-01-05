@@ -59,12 +59,12 @@ class MessagePipeDispatcher::PortObserverThunk : public Node::PortObserver {
 };
 
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
-                                             const ports::PortName& port_name)
-    : node_(node), port_name_(port_name) {
+                                             const ports::PortRef& port)
+    : node_(node), port_(port) {
   // OnMessagesAvailable (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
   base::AutoLock locker(lock());
-  node_->SetPortObserver(port_name_, std::make_shared<PortObserverThunk>(this));
+  node_->SetPortObserver(port_, std::make_shared<PortObserverThunk>(this));
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
@@ -77,8 +77,8 @@ MessagePipeDispatcher::~MessagePipeDispatcher() {
 void MessagePipeDispatcher::CompleteTransit() {
   base::AutoLock locker(lock());
 
-  // port_name_ has been closed by virtue of having been transferred.
-  // This dispatcher needs to be closed as well.
+  // port_ has been closed by virtue of having been transferred. This
+  // dispatcher needs to be closed as well.
   port_transferred_ = true;
   CloseNoLock();
 }
@@ -92,7 +92,7 @@ void MessagePipeDispatcher::CloseImplNoLock() {
   lock().AssertAcquired();
   DCHECK(is_closed());
   if (!port_transferred_)
-    node_->ClosePort(port_name_);
+    node_->ClosePort(port_);
 }
 
 MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
@@ -164,7 +164,7 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
       static_cast<char*>(message->mutable_payload_bytes()) + header_size);
   memcpy(message_body, bytes, num_bytes);
 
-  int rv = node_->SendMessage(port_name_, std::move(message));
+  int rv = node_->SendMessage(port_, std::move(message));
 
   if (rv != ports::OK) {
     if (rv == ports::ERROR_PORT_UNKNOWN ||
@@ -201,7 +201,7 @@ MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
 
   ports::ScopedMessage ports_message;
   int rv = node_->GetMessageIf(
-      port_name_,
+      port_,
       [num_bytes, num_handles, &no_space](const ports::Message& next_message) {
         const PortsMessage& message =
             static_cast<const PortsMessage&>(next_message);
@@ -415,7 +415,7 @@ bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
   bool has_messages = false;
   ports::ScopedMessage message;
   int rv = node_->GetMessageIf(
-      port_name_,
+      port_,
       [&has_messages](const ports::Message&) {
         has_messages = true;
         return false;  // Don't return the message.

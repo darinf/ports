@@ -20,11 +20,11 @@ class Node;
 class MessagePipeDispatcher : public Dispatcher {
  public:
   // Create a MessagePipeDispatcher for port |port_name| on |node|.
-  MessagePipeDispatcher(Node* node, const ports::PortName& port_name);
+  MessagePipeDispatcher(Node* node, const ports::PortRef& port);
 
   Type GetType() const override;
 
-  const ports::PortName& GetPortName() const { return port_name_; }
+  const ports::PortName& GetPortName() const { return port_.name(); }
 
  private:
   class PortObserverThunk;
@@ -64,7 +64,7 @@ class MessagePipeDispatcher : public Dispatcher {
   void OnMessagesAvailable();
 
   Node* node_;
-  const ports::PortName port_name_;
+  ports::PortRef port_;
 
   bool peer_closed_ = false;
   bool port_transferred_ = false;

@@ -112,26 +112,30 @@ void Node::SendPeerMessage(const ports::NodeName& name,
   queue.emplace(std::move(message));
 }
 
-void Node::CreateUninitializedPort(ports::PortName* port_name) {
-  node_->CreatePort(port_name);
+void Node::GetPort(const ports::PortName& port_name, ports::PortRef* port) {
+  node_->GetPort(port_name, port);
 }
 
-void Node::InitializePort(const ports::PortName& port_name,
+void Node::CreateUninitializedPort(ports::PortRef* port) {
+  node_->CreateUninitializedPort(port);
+}
+
+void Node::InitializePort(const ports::PortRef& port,
                           const ports::NodeName& peer_node_name,
                           const ports::PortName& peer_port_name) {
-  int rv = node_->InitializePort(port_name, peer_node_name, peer_port_name);
+  int rv = node_->InitializePort(port, peer_node_name, peer_port_name);
   DCHECK_EQ(rv, ports::OK);
 }
 
-void Node::CreatePortPair(ports::PortName* port0, ports::PortName* port1) {
+void Node::CreatePortPair(ports::PortRef* port0, ports::PortRef* port1) {
   int rv = node_->CreatePortPair(port0, port1);
   DCHECK_EQ(rv, ports::OK);
 }
 
-void Node::SetPortObserver(const ports::PortName& port_name,
+void Node::SetPortObserver(const ports::PortRef& port,
                            std::shared_ptr<PortObserver> observer) {
   DCHECK(observer);
-  node_->SetUserData(port_name, std::move(observer));
+  node_->SetUserData(port, std::move(observer));
 }
 
 scoped_ptr<PortsMessage> Node::AllocMessage(size_t num_payload_bytes,
@@ -145,14 +149,14 @@ scoped_ptr<PortsMessage> Node::AllocMessage(size_t num_payload_bytes,
   return make_scoped_ptr(static_cast<PortsMessage*>(m.release()));
 }
 
-int Node::SendMessage(const ports::PortName& port_name,
+int Node::SendMessage(const ports::PortRef& port,
                       scoped_ptr<PortsMessage> message) {
   ports::ScopedMessage ports_message(message.release());
-  return node_->SendMessage(port_name, std::move(ports_message));
+  return node_->SendMessage(port, std::move(ports_message));
 }
 
-void Node::ClosePort(const ports::PortName& port_name) {
-  int rv = node_->ClosePort(port_name);
+void Node::ClosePort(const ports::PortRef& port) {
+  int rv = node_->ClosePort(port);
   DCHECK_EQ(rv, ports::OK) << "ClosePort failed: " << rv;
 }
 
@@ -286,7 +290,7 @@ void Node::ForwardMessage(const ports::NodeName& node,
   }
 }
 
-void Node::MessagesAvailable(const ports::PortName& port,
+void Node::MessagesAvailable(const ports::PortRef& port,
                              std::shared_ptr<ports::UserData> user_data) {
   PortObserver* observer = static_cast<PortObserver*>(user_data.get());
   if (observer)
@@ -360,7 +364,7 @@ void Node::OnPortsMessage(const ports::NodeName& from_node,
 }
 
 void Node::OnConnectToPort(const ports::NodeName& from_node,
-                           const ports::PortName& connector_port,
+                           const ports::PortName& connector_port_name,
                            const std::string& token) {
   base::AutoLock lock(lock_);
 
@@ -379,15 +383,18 @@ void Node::OnConnectToPort(const ports::NodeName& from_node,
 
   DCHECK(!callback.is_null());
 
-  InitializePort(parent_port_name, from_node, connector_port);
+  ports::PortRef parent_port;
+  GetPort(parent_port_name, &parent_port);
+
+  InitializePort(parent_port, from_node, connector_port_name);
   callback.Run();
 
-  peer_it->second->ConnectToPortAck(connector_port, parent_port_name);
+  peer_it->second->ConnectToPortAck(connector_port_name, parent_port_name);
 }
 
 void Node::OnConnectToPortAck(const ports::NodeName& from_node,
-                              const ports::PortName& connector_port,
-                              const ports::PortName& connectee_port) {
+                              const ports::PortName& connector_port_name,
+                              const ports::PortName& connectee_port_name) {
   base::AutoLock lock(lock_);
 
   if (from_node != parent_name_) {
@@ -397,14 +404,17 @@ void Node::OnConnectToPortAck(const ports::NodeName& from_node,
     return;
   }
 
-  auto it = pending_connection_acks_.find(connector_port);
+  auto it = pending_connection_acks_.find(connector_port_name);
   DCHECK(it != pending_connection_acks_.end());
   base::Closure callback = it->second;
   pending_connection_acks_.erase(it);
 
   DCHECK(!callback.is_null());
 
-  InitializePort(connector_port, parent_name_, connectee_port);
+  ports::PortRef connector_port;
+  GetPort(connector_port_name, &connector_port);
+
+  InitializePort(connector_port, parent_name_, connectee_port_name);
   callback.Run();
 }
 
