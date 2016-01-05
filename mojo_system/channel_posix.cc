@@ -42,6 +42,15 @@ class MessageView {
     DCHECK_GT(message_->data_num_bytes(), offset_);
   }
 
+  MessageView(MessageView&& other) { *this = std::move(other); }
+
+  MessageView& operator=(MessageView&& other) {
+    message_ = std::move(other.message_);
+    offset_ = other.offset_;
+    handles_ = std::move(other.handles_);
+    return *this;
+  }
+
   ~MessageView() {}
 
   const void* data() const {
@@ -49,20 +58,23 @@ class MessageView {
   }
 
   size_t data_num_bytes() const { return message_->data_num_bytes() - offset_; }
+
   size_t data_offset() const { return offset_; }
+  void advance_data_offset(size_t num_bytes) {
+    DCHECK_GT(message_->data_num_bytes(), offset_ + num_bytes);
+    offset_ += num_bytes;
+  }
 
   ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
   Channel::MessagePtr TakeMessage() { return std::move(message_); }
 
  private:
   Channel::MessagePtr message_;
-  const size_t offset_;
+  size_t offset_;
   ScopedPlatformHandleVectorPtr handles_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageView);
 };
-
-using MessageViewPtr = scoped_ptr<MessageView>;
 
 class ChannelPosix : public Channel,
                      public base::MessageLoop::DestructionObserver,
@@ -98,7 +110,7 @@ class ChannelPosix : public Channel,
       if (reject_writes_)
         return;
       bool queue_was_empty = outgoing_messages_.empty();
-      outgoing_messages_.emplace_back(new MessageView(std::move(message), 0));
+      outgoing_messages_.emplace_back(std::move(message), 0);
       if (queue_was_empty) {
         if (!WriteNoLock())
           reject_writes_ = write_error = true;
@@ -235,18 +247,18 @@ class ChannelPosix : public Channel,
   }
 
   bool WriteNoLock() {
-    std::deque<MessageViewPtr> messages;
+    std::deque<MessageView> messages;
     std::swap(outgoing_messages_, messages);
 
     // TODO: Send a batch of iovecs when possible.
     while (!messages.empty()) {
-      MessageViewPtr message_view = std::move(messages.front());
+      MessageView message_view = std::move(messages.front());
       iovec iov = {
-        const_cast<void*>(message_view->data()),
-        message_view->data_num_bytes()
+        const_cast<void*>(message_view.data()),
+        message_view.data_num_bytes()
       };
       ssize_t result;
-      ScopedPlatformHandleVectorPtr handles = message_view->TakeHandles();
+      ScopedPlatformHandleVectorPtr handles = message_view.TakeHandles();
       if (handles && handles->size()) {
         // TODO: Handle lots of handles.
         result = PlatformChannelSendmsgWithHandles(
@@ -258,10 +270,8 @@ class ChannelPosix : public Channel,
 
       if (result >= 0) {
         size_t bytes_written = static_cast<size_t>(result);
-        if (bytes_written < message_view->data_num_bytes()) {
-          message_view.reset(new MessageView(
-              message_view->TakeMessage(),
-              message_view->data_offset() + bytes_written));
+        if (bytes_written < message_view.data_num_bytes()) {
+          message_view.advance_data_offset(bytes_written);
           messages.front() = std::move(message_view);
         } else {
           messages.pop_front();
@@ -303,7 +313,7 @@ class ChannelPosix : public Channel,
   base::Lock write_lock_;
   bool pending_write_ = false;
   bool reject_writes_ = false;
-  std::deque<MessageViewPtr> outgoing_messages_;
+  std::deque<MessageView> outgoing_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(ChannelPosix);
 };
