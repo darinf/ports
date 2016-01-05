@@ -108,7 +108,7 @@ index 3393258..65ffcce 100644
  }  // namespace mojo
  
 diff --git a/mojo/edk/system/BUILD.gn b/mojo/edk/system/BUILD.gn
-index cd58ff4..65749bc 100644
+index cd58ff4..99c1504 100644
 --- a/mojo/edk/system/BUILD.gn
 +++ b/mojo/edk/system/BUILD.gn
 @@ -2,6 +2,7 @@
@@ -186,7 +186,7 @@ index cd58ff4..65749bc 100644
  
 +  if (use_ports_for_mojo_edk) {
 +    deps += [ "//local/ports/mojo_system" ]
-+    sources = [ "configuration.cc" ]
++    sources = [ "dummy.cc" ]
 +  } else {
 +    sources = [
 +      "async_waiter.cc",
@@ -262,3 +262,15 @@ index cd58ff4..65749bc 100644
    if (is_win) {
      cflags = [ "/wd4324" ]  # Structure was padded due to __declspec(align()),
                              # which is uninteresting.
+diff --git a/mojo/edk/system/dummy.cc b/mojo/edk/system/dummy.cc
+new file mode 100644
+index 0000000..6ea615d
+--- /dev/null
++++ b/mojo/edk/system/dummy.cc
+@@ -0,0 +1,6 @@
++// Copyright 2014 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Nothing to see here. Just a file to compile so that the OSX build works.
++
