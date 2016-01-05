@@ -179,6 +179,16 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   const ports::NodeName name_;
   const scoped_ptr<ports::Node> node_;
 
+  // Guards peers_ and pending_peer_messages_.
+  base::Lock peers_lock_;
+
+  // Channels to known peers, including parent and children, if any.
+  NodeMap peers_;
+
+  // Outgoing message queues for peers we've heard of but can't yet talk to.
+  std::unordered_map<ports::NodeName, OutgoingMessageQueue>
+      pending_peer_messages_;
+
   // All other fields below (with the exception of |weak_factory_|) must only
   // be accessed on the I/O thread, i.e., the thread on which
   // core_->io_task_runner() runs tasks.
@@ -188,9 +198,6 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   // A channel to our parent during handshake.
   scoped_ptr<NodeChannel> bootstrap_channel_to_parent_;
-
-  // Channels to known peers, including parent and children, if any.
-  NodeMap peers_;
 
   // Channels to children during handshake.
   NodeMap pending_children_;
@@ -206,10 +213,6 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // This tracks pending outgoing connection request for named ports.
   std::vector<PendingTokenConnection> pending_token_connections_;
   std::unordered_map<ports::PortName, base::Closure> pending_connection_acks_;
-
-  // Outgoing message queues for peers we've heard of but can't yet talk to.
-  std::unordered_map<ports::NodeName, OutgoingMessageQueue>
-      pending_peer_messages_;
 
   base::WeakPtrFactory<Node> weak_factory_;
 

@@ -123,7 +123,6 @@ void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
 
 void NodeChannel::AcceptChild(const ports::NodeName& parent_name,
                               const ports::NodeName& token) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   AcceptChildData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::ACCEPT_CHILD, sizeof(AcceptChildData), nullptr, &data);
@@ -134,7 +133,6 @@ void NodeChannel::AcceptChild(const ports::NodeName& parent_name,
 
 void NodeChannel::AcceptParent(const ports::NodeName& token,
                                const ports::NodeName& child_name) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   AcceptParentData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::ACCEPT_PARENT, sizeof(AcceptParentData), nullptr, &data);
@@ -144,13 +142,11 @@ void NodeChannel::AcceptParent(const ports::NodeName& token,
 }
 
 void NodeChannel::PortsMessage(Channel::MessagePtr message) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   channel_->Write(std::move(message));
 }
 
 void NodeChannel::ConnectToPort(const std::string& token,
                                 const ports::PortName& connector_port) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   ConnectToPortData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::CONNECT_TO_PORT, sizeof(ConnectToPortData) + token.size(),
@@ -162,7 +158,6 @@ void NodeChannel::ConnectToPort(const std::string& token,
 
 void NodeChannel::ConnectToPortAck(const ports::PortName& connector_port,
                                    const ports::PortName& connectee_port) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   ConnectToPortAckData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::CONNECT_TO_PORT_ACK, sizeof(ConnectToPortAckData), nullptr,
@@ -173,7 +168,6 @@ void NodeChannel::ConnectToPortAck(const ports::PortName& connector_port,
 }
 
 void NodeChannel::RequestIntroduction(const ports::NodeName& name) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   IntroductionData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::REQUEST_INTRODUCTION, sizeof(IntroductionData), nullptr,
@@ -184,7 +178,6 @@ void NodeChannel::RequestIntroduction(const ports::NodeName& name) {
 
 void NodeChannel::Introduce(const ports::NodeName& name,
                             ScopedPlatformHandle handle) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   ScopedPlatformHandleVectorPtr handles;
   if (handle.is_valid()) {
     handles.reset(new PlatformHandleVector(1));

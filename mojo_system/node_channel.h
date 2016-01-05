@@ -87,6 +87,8 @@ class NodeChannel : public Channel::Delegate {
   Delegate* const delegate_;
   const scoped_refptr<base::TaskRunner> io_task_runner_;
   const scoped_refptr<Channel> channel_;
+
+  // Must only be accessed from |io_task_runner_|'s thread.
   ports::NodeName remote_node_name_;
 
   DISALLOW_COPY_AND_ASSIGN(NodeChannel);

@@ -166,6 +166,7 @@ void Node::AddPeer(const ports::NodeName& name,
 
   channel->SetRemoteNodeName(name);
 
+  base::AutoLock lock(peers_lock_);
   if (peers_.find(name) != peers_.end()) {
     // This can happen normally if two nodes race to be introduced to each
     // other. The losing pipe will be silently closed and introduction should
@@ -198,6 +199,8 @@ void Node::AddPeer(const ports::NodeName& name,
 
 void Node::DropPeer(const ports::NodeName& name) {
   DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
+  base::AutoLock lock(peers_lock_);
   auto it = peers_.find(name);
 
   if (it != peers_.end()) {
@@ -214,8 +217,7 @@ void Node::DropPeer(const ports::NodeName& name) {
 
 void Node::SendPeerMessage(const ports::NodeName& name,
                            ports::ScopedMessage message) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
-
+  base::AutoLock lock(peers_lock_);
   auto it = peers_.find(name);
   if (it != peers_.end()) {
     it->second->PortsMessage(
@@ -282,6 +284,7 @@ void Node::ConnectToParentPortByTokenNow(
       std::make_pair(local_port, on_connect));
   DCHECK(result.second);
 
+  base::AutoLock lock(peers_lock_);
   auto it = peers_.find(parent_name_);
   it->second->ConnectToPort(token, local_port);
 }
@@ -401,6 +404,7 @@ void Node::OnConnectToPort(const ports::NodeName& from_node,
                            const std::string& token) {
   DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
 
+  base::AutoLock lock(peers_lock_);
   auto port_it = reserved_ports_.find(token);
   auto peer_it = peers_.find(from_node);
   if (port_it == reserved_ports_.end() || peer_it == peers_.end()) {
@@ -462,6 +466,7 @@ void Node::OnRequestIntroduction(const ports::NodeName& from_node,
     return;
   }
 
+  base::AutoLock lock(peers_lock_);
   auto it = peers_.find(from_node);
   DCHECK(it != peers_.end());
 
@@ -490,6 +495,7 @@ void Node::OnIntroduce(const ports::NodeName& from_node,
 
   if (!channel_handle.is_valid()) {
     DLOG(ERROR) << "Could not be introduced to peer " << name;
+    base::AutoLock lock(peers_lock_);
     pending_peer_messages_.erase(name);
     return;
   }
