@@ -13,6 +13,7 @@
 #include "base/time/time.h"
 #include "crypto/random.h"
 #include "mojo/edk/embedder/embedder_internal.h"
+#include "mojo/edk/system/async_waiter.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/waiter.h"
@@ -118,8 +119,14 @@ void Core::CreateChildMessagePipe(
 MojoResult Core::AsyncWait(MojoHandle handle,
                            MojoHandleSignals signals,
                            const base::Callback<void(MojoResult)>& callback) {
-  NOTIMPLEMENTED();
-  return 0;
+  scoped_refptr<Dispatcher> dispatcher = GetDispatcher(handle);
+  DCHECK(dispatcher);
+
+  scoped_ptr<AsyncWaiter> waiter = make_scoped_ptr(new AsyncWaiter(callback));
+  MojoResult rv = dispatcher->AddAwakable(waiter.get(), signals, 0, nullptr);
+  if (rv == MOJO_RESULT_OK)
+    ignore_result(waiter.release());
+  return rv;
 }
 
 MojoTimeTicks Core::GetTimeTicksNow() {

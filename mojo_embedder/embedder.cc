@@ -58,8 +58,7 @@ void Init() {
 MojoResult AsyncWait(MojoHandle handle,
                      MojoHandleSignals signals,
                      const base::Callback<void(MojoResult)>& callback) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  return internal::g_core->AsyncWait(handle, signals, callback);
 }
 
 MojoResult CreatePlatformHandleWrapper(

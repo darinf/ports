@@ -29,6 +29,8 @@ source_set("mojo_system") {
 
   # Sources we can repurpose from the existing EDK impl
   sources += [
+    "//mojo/edk/system/async_waiter.cc",
+    "//mojo/edk/system/async_waiter.h",
     "//mojo/edk/system/awakable.h",
     "//mojo/edk/system/awakable_list.cc",
     "//mojo/edk/system/awakable_list.h",
