@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "base/macros.h"
+#include "base/memory/aligned_memory.h"
 
 namespace mojo {
 namespace edk {
@@ -26,7 +27,8 @@ Channel::Message::Message(size_t payload_size,
                           ScopedPlatformHandleVectorPtr handles)
     : handles_(std::move(handles)) {
   size_ = payload_size + sizeof(Header);
-  data_ = static_cast<char*>(malloc(size_));
+  data_ = static_cast<char*>(base::AlignedAlloc(size_,
+                                                kChannelMessageAlignment));
   Header* header = reinterpret_cast<Header*>(data_);
   header->num_bytes = size_;
   header->num_handles = handles_ ? handles_->size() : 0;
@@ -34,7 +36,7 @@ Channel::Message::Message(size_t payload_size,
 }
 
 Channel::Message::~Message() {
-  free(data_);
+  base::AlignedFree(data_);
 }
 
 void Channel::Message::SetHandles(ScopedPlatformHandleVectorPtr handles) {
@@ -64,12 +66,13 @@ class Channel::ReadBuffer {
  public:
   ReadBuffer() {
     size_ = kReadBufferSize;
-    data_ = static_cast<char*>(malloc(size_));
+    data_ = static_cast<char*>(base::AlignedAlloc(size_,
+                                                  kChannelMessageAlignment));
   }
 
   ~ReadBuffer() {
     DCHECK(data_);
-    free(data_);
+    base::AlignedFree(data_);
   }
 
   const char* occupied_bytes() const { return data_ + num_discarded_bytes_; }
@@ -83,7 +86,10 @@ class Channel::ReadBuffer {
   char* Reserve(size_t num_bytes) {
     if (num_occupied_bytes_ + num_bytes > size_) {
       size_ = std::max(size_ * 2, num_occupied_bytes_ + num_bytes);
-      data_ = static_cast<char*>(realloc(data_, size_));
+      void* new_data = base::AlignedAlloc(size_, kChannelMessageAlignment);
+      memcpy(new_data, data_, num_occupied_bytes_);
+      base::AlignedFree(data_);
+      data_ = static_cast<char*>(new_data);
     }
 
     return data_ + num_occupied_bytes_;
@@ -113,9 +119,10 @@ class Channel::ReadBuffer {
       // front of the buffer, simply move remaining data to a smaller buffer.
       size_t num_preserved_bytes = num_occupied_bytes_ - num_discarded_bytes_;
       size_ = std::max(num_preserved_bytes, kReadBufferSize);
-      char* new_data = static_cast<char*>(malloc(size_));
+      char* new_data = static_cast<char*>(
+          base::AlignedAlloc(size_, kChannelMessageAlignment));
       memcpy(new_data, data_ + num_discarded_bytes_, num_preserved_bytes);
-      free(data_);
+      base::AlignedFree(data_);
       data_ = new_data;
       num_discarded_bytes_ = 0;
       num_occupied_bytes_ = num_preserved_bytes;
