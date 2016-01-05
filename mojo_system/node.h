@@ -12,7 +12,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
+#include "base/memory/weak_ptr.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "ports/include/ports.h"
@@ -25,6 +25,8 @@ namespace edk {
 class Core;
 class PortsMessage;
 
+// An implementation of ports::Node which facilitates core EDK implementation.
+// All public interface methods are safe to call from any thread.
 class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
  public:
   class PortObserver : public ports::UserData {
@@ -46,25 +48,6 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Connects this node to a parent node. The parent node will initiate a
   // handshake.
   void ConnectToParent(ScopedPlatformHandle platform_handle);
-
-  // Connects this node to a via an OS pipe under |platform_handle|.
-  void ConnectToPeer(const ports::NodeName& peer_name,
-                     ScopedPlatformHandle platform_handle);
-
-  // Registers a peer named |name| with a new NodeChannel established over
-  // |platform_handle|. |name| must be a valid node name. If |start_channel|
-  // is true, |channel| will be started immediately after it's added as a peer.
-  void AddPeer(const ports::NodeName& name,
-               scoped_ptr<NodeChannel> channel,
-               bool start_channel);
-
-  // Drops the connection to peer named |name| if one exists.
-  void DropPeer(const ports::NodeName& name);
-
-  // Sends a ports::ScopedMessage to another node, or queues it for delivery if
-  // we don't yet know how to talk to that node.
-  void SendPeerMessage(const ports::NodeName& name,
-                       ports::ScopedMessage message);
 
   void GetPort(const ports::PortName& port_name, ports::PortRef* port);
 
@@ -138,13 +121,23 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
     base::Closure callback;
   };
 
-  void AddPeerNoLock(const ports::NodeName& name,
-                     scoped_ptr<NodeChannel> channel,
-                     bool start_channel);
-  void DropPeerNoLock(const ports::NodeName& name);
-  void ConnectToParentPortByTokenNowNoLock(const std::string& token,
-                                           const ports::PortName& local_port,
-                                           const base::Closure& on_connect);
+  void ConnectToChildOnIOThread(ScopedPlatformHandle platform_handle);
+  void ConnectToParentOnIOThread(ScopedPlatformHandle platform_handle);
+  void AddPeer(const ports::NodeName& name,
+               scoped_ptr<NodeChannel> channel,
+               bool start_channel);
+  void DropPeer(const ports::NodeName& name);
+  void SendPeerMessage(const ports::NodeName& name,
+                       ports::ScopedMessage message);
+  void ReservePortForTokenOnIOThread(const ports::PortName& port_name,
+                                     const std::string& token,
+                                     const base::Closure& on_connect);
+  void ConnectToParentPortByTokenOnIOThread(const std::string& token,
+                                            const ports::PortName& local_port,
+                                            const base::Closure& on_connect);
+  void ConnectToParentPortByTokenNow(const std::string& token,
+                                     const ports::PortName& local_port,
+                                     const base::Closure& on_connect);
   void AcceptMessageOnIOThread(ports::ScopedMessage message);
 
   // ports::NodeDelegate:
@@ -181,14 +174,14 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
                    ScopedPlatformHandle channel_handle) override;
   void OnChannelError(const ports::NodeName& from_node) override;
 
-  // These are safe to access from any thread without locking as long as the
-  // Node is alive.
+  // These are safe to access from any thread as long as the Node is alive.
   Core* const core_;
   const ports::NodeName name_;
   const scoped_ptr<ports::Node> node_;
 
-  // Guards access to all of the fields below.
-  base::Lock lock_;
+  // All other fields below (with the exception of |weak_factory_|) must only
+  // be accessed on the I/O thread, i.e., the thread on which
+  // core_->io_task_runner() runs tasks.
 
   // The name of our parent node, if any.
   ports::NodeName parent_name_;
@@ -217,6 +210,8 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Outgoing message queues for peers we've heard of but can't yet talk to.
   std::unordered_map<ports::NodeName, OutgoingMessageQueue>
       pending_peer_messages_;
+
+  base::WeakPtrFactory<Node> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };

@@ -41,75 +41,23 @@ Node::~Node() {}
 Node::Node(Core* core)
     : core_(core),
       name_(GetRandomNodeName()),
-      node_(new ports::Node(name_, this)) {
+      node_(new ports::Node(name_, this)),
+      weak_factory_(this) {
   DLOG(INFO) << "Initializing node " << name_;
 }
 
 void Node::ConnectToChild(ScopedPlatformHandle platform_handle) {
-  scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(platform_handle),
-                      core_->io_task_runner()));
-
-  ports::NodeName token;
-  GenerateRandomName(&token);
-
-  base::AutoLock lock(lock_);
-
-  channel->SetRemoteNodeName(token);
-  channel->Start();
-  channel->AcceptChild(name_, token);
-
-  pending_children_.insert(std::make_pair(token, std::move(channel)));
+  core_->io_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&Node::ConnectToChildOnIOThread, weak_factory_.GetWeakPtr(),
+                 base::Passed(&platform_handle)));
 }
 
 void Node::ConnectToParent(ScopedPlatformHandle platform_handle) {
-  base::AutoLock lock(lock_);
-  DCHECK(parent_name_ == ports::kInvalidNodeName);
-  DCHECK(!bootstrap_channel_to_parent_);
-
-  scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(platform_handle),
-                      core_->io_task_runner()));
-  bootstrap_channel_to_parent_ = std::move(channel);
-  bootstrap_channel_to_parent_->Start();
-}
-
-void Node::AddPeer(const ports::NodeName& name,
-                   scoped_ptr<NodeChannel> channel,
-                   bool start_channel) {
-  base::AutoLock lock(lock_);
-  AddPeerNoLock(name, std::move(channel), start_channel);
-}
-
-void Node::DropPeer(const ports::NodeName& name) {
-  base::AutoLock lock(lock_);
-  DropPeerNoLock(name);
-}
-
-void Node::SendPeerMessage(const ports::NodeName& name,
-                           ports::ScopedMessage message) {
-  base::AutoLock lock(lock_);
-  auto it = peers_.find(name);
-  if (it != peers_.end()) {
-    it->second->PortsMessage(
-        static_cast<PortsMessage*>(message.get())->TakeChannelMessage());
-    return;
-  }
-
-  if (parent_name_ == ports::kInvalidNodeName) {
-    DLOG(INFO) << "Dropping message for unknown peer: " << name;
-    return;
-  }
-
-  // If we don't know who the peer is, queue the message for delivery and ask
-  // our parent node to introduce us.
-  auto& queue = pending_peer_messages_[name];
-  if (queue.empty()) {
-    auto it = peers_.find(parent_name_);
-    DCHECK(it != peers_.end());
-    it->second->RequestIntroduction(name);
-  }
-  queue.emplace(std::move(message));
+  core_->io_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&Node::ConnectToParentOnIOThread, weak_factory_.GetWeakPtr(),
+                 base::Passed(&platform_handle)));
 }
 
 void Node::GetPort(const ports::PortName& port_name, ports::PortRef* port) {
@@ -163,35 +111,56 @@ void Node::ClosePort(const ports::PortRef& port) {
 void Node::ReservePortForToken(const ports::PortName& port_name,
                                const std::string& token,
                                const base::Closure& on_connect) {
-  ReservedPort reservation;
-  reservation.local_port = port_name;
-  reservation.callback = on_connect;
-
-  base::AutoLock lock(lock_);
-  auto result = reserved_ports_.insert(std::make_pair(token, reservation));
-  if (!result.second)
-    DLOG(ERROR) << "Can't reserve port for duplicate token: " << token;
+  core_->io_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&Node::ReservePortForTokenOnIOThread,
+                 weak_factory_.GetWeakPtr(), port_name, token, on_connect));
 }
 
 void Node::ConnectToParentPortByToken(const std::string& token,
                                       const ports::PortName& local_port,
                                       const base::Closure& on_connect) {
-  base::AutoLock lock(lock_);
-  if (parent_name_ != ports::kInvalidNodeName) {
-    ConnectToParentPortByTokenNowNoLock(token, local_port, on_connect);
-  } else {
-    PendingTokenConnection pending_connection;
-    pending_connection.port = local_port;
-    pending_connection.token = token;
-    pending_connection.callback = on_connect;
 
-    pending_token_connections_.push_back(pending_connection);
-  }
+  core_->io_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&Node::ConnectToParentPortByTokenOnIOThread,
+                 weak_factory_.GetWeakPtr(), token, local_port, on_connect));
 }
 
-void Node::AddPeerNoLock(const ports::NodeName& name,
-                         scoped_ptr<NodeChannel> channel,
-                         bool start_channel) {
+void Node::ConnectToChildOnIOThread(ScopedPlatformHandle platform_handle) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
+  scoped_ptr<NodeChannel> channel(
+      new NodeChannel(this, std::move(platform_handle),
+                      core_->io_task_runner()));
+
+  ports::NodeName token;
+  GenerateRandomName(&token);
+
+  channel->SetRemoteNodeName(token);
+  channel->Start();
+  channel->AcceptChild(name_, token);
+
+  pending_children_.insert(std::make_pair(token, std::move(channel)));
+}
+
+void Node::ConnectToParentOnIOThread(ScopedPlatformHandle platform_handle) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(parent_name_ == ports::kInvalidNodeName);
+  DCHECK(!bootstrap_channel_to_parent_);
+
+  scoped_ptr<NodeChannel> channel(
+      new NodeChannel(this, std::move(platform_handle),
+                      core_->io_task_runner()));
+  bootstrap_channel_to_parent_ = std::move(channel);
+  bootstrap_channel_to_parent_->Start();
+}
+
+void Node::AddPeer(const ports::NodeName& name,
+                   scoped_ptr<NodeChannel> channel,
+                   bool start_channel) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
   DCHECK(name != ports::kInvalidNodeName);
   DCHECK(channel);
 
@@ -227,8 +196,10 @@ void Node::AddPeerNoLock(const ports::NodeName& name,
   DCHECK(result.second);
 }
 
-void Node::DropPeerNoLock(const ports::NodeName& name) {
+void Node::DropPeer(const ports::NodeName& name) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
   auto it = peers_.find(name);
+
   if (it != peers_.end()) {
     ports::NodeName peer = it->first;
     peers_.erase(it);
@@ -238,16 +209,73 @@ void Node::DropPeerNoLock(const ports::NodeName& name) {
   pending_peer_messages_.erase(name);
   pending_children_.erase(name);
 
-  {
-    base::AutoUnlock unlock(lock_);
-    node_->LostConnectionToNode(name);
-  }
+  node_->LostConnectionToNode(name);
 }
 
-void Node::ConnectToParentPortByTokenNowNoLock(
+void Node::SendPeerMessage(const ports::NodeName& name,
+                           ports::ScopedMessage message) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
+  auto it = peers_.find(name);
+  if (it != peers_.end()) {
+    it->second->PortsMessage(
+        static_cast<PortsMessage*>(message.get())->TakeChannelMessage());
+    return;
+  }
+
+  if (parent_name_ == ports::kInvalidNodeName) {
+    DLOG(INFO) << "Dropping message for unknown peer: " << name;
+    return;
+  }
+
+  // If we don't know who the peer is, queue the message for delivery and ask
+  // our parent node to introduce us.
+  auto& queue = pending_peer_messages_[name];
+  if (queue.empty()) {
+    auto it = peers_.find(parent_name_);
+    DCHECK(it != peers_.end());
+    it->second->RequestIntroduction(name);
+  }
+  queue.emplace(std::move(message));
+}
+
+void Node::ReservePortForTokenOnIOThread(const ports::PortName& port_name,
+                                         const std::string& token,
+                                         const base::Closure& on_connect) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
+  ReservedPort reservation;
+  reservation.local_port = port_name;
+  reservation.callback = on_connect;
+
+  auto result = reserved_ports_.insert(std::make_pair(token, reservation));
+  if (!result.second)
+    DLOG(ERROR) << "Can't reserve port for duplicate token: " << token;
+}
+
+void Node::ConnectToParentPortByTokenOnIOThread(
     const std::string& token,
     const ports::PortName& local_port,
     const base::Closure& on_connect) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
+  if (parent_name_ != ports::kInvalidNodeName) {
+    ConnectToParentPortByTokenNow(token, local_port, on_connect);
+  } else {
+    PendingTokenConnection pending_connection;
+    pending_connection.port = local_port;
+    pending_connection.token = token;
+    pending_connection.callback = on_connect;
+
+    pending_token_connections_.push_back(pending_connection);
+  }
+}
+
+void Node::ConnectToParentPortByTokenNow(
+    const std::string& token,
+    const ports::PortName& local_port,
+    const base::Closure& on_connect) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
   DCHECK(parent_name_ != ports::kInvalidNodeName);
 
   auto result = pending_connection_acks_.insert(
@@ -302,22 +330,22 @@ void Node::MessagesAvailable(const ports::PortRef& port) {
 void Node::OnAcceptChild(const ports::NodeName& from_node,
                          const ports::NodeName& parent_name,
                          const ports::NodeName& token) {
-  base::AutoLock lock(lock_);
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
 
   if (!bootstrap_channel_to_parent_) {
     DLOG(ERROR) << "Unexpected AcceptChild message from " << from_node;
-    DropPeerNoLock(from_node);
+    DropPeer(from_node);
     return;
   }
 
   parent_name_ = parent_name;
   bootstrap_channel_to_parent_->AcceptParent(token, name_);
-  AddPeerNoLock(parent_name_, std::move(bootstrap_channel_to_parent_),
-                false /* start_channel */);
+  AddPeer(parent_name_, std::move(bootstrap_channel_to_parent_),
+          false /* start_channel */);
 
   // Flush any pending token-based port connections.
   for (const PendingTokenConnection& c : pending_token_connections_)
-    ConnectToParentPortByTokenNowNoLock(c.token, c.port, c.callback);
+    ConnectToParentPortByTokenNow(c.token, c.port, c.callback);
 
   DLOG(INFO) << "Child " << name_ << " accepted parent " << parent_name;
 }
@@ -325,14 +353,15 @@ void Node::OnAcceptChild(const ports::NodeName& from_node,
 void Node::OnAcceptParent(const ports::NodeName& from_node,
                           const ports::NodeName& token,
                           const ports::NodeName& child_name) {
-  base::AutoLock lock(lock_);
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
   scoped_ptr<NodeChannel> channel;
 
   auto it = pending_children_.find(from_node);
   if (it == pending_children_.end() || token != from_node) {
     DLOG(ERROR) << "Received unexpected AcceptParent message from "
                 << from_node;
-    DropPeerNoLock(from_node);
+    DropPeer(from_node);
     return;
   }
 
@@ -341,13 +370,15 @@ void Node::OnAcceptParent(const ports::NodeName& from_node,
 
   DCHECK(channel);
 
-  AddPeerNoLock(child_name, std::move(channel), false /* start_channel */);
+  AddPeer(child_name, std::move(channel), false /* start_channel */);
 }
 
 void Node::OnPortsMessage(const ports::NodeName& from_node,
                           const void* bytes,
                           size_t num_bytes,
                           ScopedPlatformHandleVectorPtr platform_handles) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
   size_t num_header_bytes, num_payload_bytes, num_ports_bytes;
   ports::Message::Parse(bytes,
                         num_bytes,
@@ -368,14 +399,14 @@ void Node::OnPortsMessage(const ports::NodeName& from_node,
 void Node::OnConnectToPort(const ports::NodeName& from_node,
                            const ports::PortName& connector_port_name,
                            const std::string& token) {
-  base::AutoLock lock(lock_);
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
 
   auto port_it = reserved_ports_.find(token);
   auto peer_it = peers_.find(from_node);
   if (port_it == reserved_ports_.end() || peer_it == peers_.end()) {
     DLOG(ERROR) << "Ignoring invalid ConnectToPort from node " << from_node
                 << " for token " << token;
-    DropPeerNoLock(from_node);
+    DropPeer(from_node);
     return;
   }
 
@@ -397,12 +428,12 @@ void Node::OnConnectToPort(const ports::NodeName& from_node,
 void Node::OnConnectToPortAck(const ports::NodeName& from_node,
                               const ports::PortName& connector_port_name,
                               const ports::PortName& connectee_port_name) {
-  base::AutoLock lock(lock_);
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
 
   if (from_node != parent_name_) {
     DLOG(ERROR) << "Ignoring ConnectToPortAck from non-parent node "
                 << from_node;
-    DropPeerNoLock(from_node);
+    DropPeer(from_node);
     return;
   }
 
@@ -422,6 +453,8 @@ void Node::OnConnectToPortAck(const ports::NodeName& from_node,
 
 void Node::OnRequestIntroduction(const ports::NodeName& from_node,
                                  const ports::NodeName& name) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
   if (from_node == name || name == ports::kInvalidNodeName) {
     DLOG(ERROR) << "Rejecting invalid OnRequestIntroduction message from "
                 << from_node;
@@ -429,7 +462,6 @@ void Node::OnRequestIntroduction(const ports::NodeName& from_node,
     return;
   }
 
-  base::AutoLock lock(lock_);
   auto it = peers_.find(from_node);
   DCHECK(it != peers_.end());
 
@@ -447,12 +479,12 @@ void Node::OnRequestIntroduction(const ports::NodeName& from_node,
 void Node::OnIntroduce(const ports::NodeName& from_node,
                        const ports::NodeName& name,
                        ScopedPlatformHandle channel_handle) {
-  base::AutoLock lock(lock_);
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
 
   if (from_node != parent_name_) {
     DLOG(INFO) << "Received unexpected Introduce message from node "
                << from_node;
-    DropPeerNoLock(from_node);
+    DropPeer(from_node);
     return;
   }
 
@@ -465,10 +497,12 @@ void Node::OnIntroduce(const ports::NodeName& from_node,
   scoped_ptr<NodeChannel> channel(
       new NodeChannel(this, std::move(channel_handle),
                       core_->io_task_runner()));
-  AddPeerNoLock(name, std::move(channel), true /* start_channel */);
+  AddPeer(name, std::move(channel), true /* start_channel */);
 }
 
 void Node::OnChannelError(const ports::NodeName& from_node) {
+  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+
   DropPeer(from_node);
 }
 
