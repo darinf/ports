@@ -93,7 +93,6 @@ class Node::Impl {
   int ForwardMessages_Locked(Port* port, const PortName& port_name);
   void InitiateProxyRemoval_Locked(Port* port, const PortName& port_name);
   void MaybeRemoveProxy_Locked(Port* port, const PortName& port_name);
-  void ClosePort_Locked(Port* port, const PortName& port_name);
 
   ScopedMessage NewInternalMessage_Helper(const PortName& port_name,
                                           const EventType& type,

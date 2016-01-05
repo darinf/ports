@@ -91,6 +91,8 @@ int Node::Impl::InitializePort(const PortRef& port_ref,
   Port* port = port_ref.port();
 
   std::lock_guard<std::mutex> guard(port->lock);
+  if (port->state == Port::kClosed)
+    return ERROR_PORT_STATE_UNEXPECTED;
 
   if (port->peer_node_name != kInvalidNodeName ||
       port->peer_port_name != kInvalidPortName)
@@ -128,6 +130,9 @@ int Node::Impl::SetUserData(const PortRef& port_ref,
   Port* port = port_ref.port();
 
   std::lock_guard<std::mutex> guard(port->lock);
+  if (port->state == Port::kClosed)
+    return ERROR_PORT_STATE_UNEXPECTED;
+
   port->user_data = std::move(user_data);
 
   return OK;
@@ -138,6 +143,9 @@ int Node::Impl::GetUserData(const PortRef& port_ref,
   Port* port = port_ref.port();
 
   std::lock_guard<std::mutex> guard(port->lock);
+  if (port->state == Port::kClosed)
+    return ERROR_PORT_STATE_UNEXPECTED;
+
   *user_data = port->user_data;
 
   return OK;
@@ -150,7 +158,21 @@ int Node::Impl::ClosePort(const PortRef& port_ref) {
     if (port->state != Port::kReceiving)
       return ERROR_PORT_STATE_UNEXPECTED;
 
-    ClosePort_Locked(port, port_ref.name());
+    port->state = Port::kClosed;
+
+    // We pass along the sequence number of the last message sent from this
+    // port to allow the peer to have the opportunity to consume all inbound
+    // messages before notifying the embedder that this port is closed.
+
+    ObserveClosureEventData data;
+    data.last_sequence_num = port->next_sequence_num_to_send - 1;
+    data.padding = 0;
+
+    delegate_->ForwardMessage(
+        port->peer_node_name,
+        NewInternalMessage(port->peer_port_name,
+                           EventType::kObserveClosure,
+                           data));
   }
   ErasePort(port_ref.name());
   return OK;
@@ -794,22 +816,6 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
     DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
                << " now; waiting for more messages";
   }
-}
-
-void Node::Impl::ClosePort_Locked(Port* port, const PortName& port_name) {
-  // We pass along the sequence number of the last message sent from this
-  // port to allow the peer to have the opportunity to consume all inbound
-  // messages before notifying the embedder that this port is closed.
-
-  ObserveClosureEventData data;
-  data.last_sequence_num = port->next_sequence_num_to_send - 1;
-  data.padding = 0;
-
-  delegate_->ForwardMessage(
-      port->peer_node_name,
-      NewInternalMessage(port->peer_port_name,
-                         EventType::kObserveClosure,
-                         data));
 }
 
 ScopedMessage Node::Impl::NewInternalMessage_Helper(const PortName& port_name,
