@@ -222,7 +222,8 @@ class ChannelPosix : public Channel,
           break;
         }
       } while (bytes_read == buffer_capacity &&
-               total_bytes_read < kMaxBatchReadCapacity);
+               total_bytes_read < kMaxBatchReadCapacity &&
+               next_read_size > 0);
     }
     if (read_error)
       OnError();

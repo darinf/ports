@@ -169,6 +169,7 @@ char* Channel::GetReadBuffer(size_t *buffer_capacity) {
 }
 
 bool Channel::OnReadComplete(size_t bytes_read, size_t *next_read_size_hint) {
+  bool did_dispatch_message = false;
   read_buffer_->Claim(bytes_read);
   while (read_buffer_->num_occupied_bytes() >= sizeof(Message::Header)) {
     // We have at least enough data available for a MessageHeader.
@@ -200,13 +201,15 @@ bool Channel::OnReadComplete(size_t bytes_read, size_t *next_read_size_hint) {
     // We've got a complete message! Dispatch it and try another.
     const size_t payload_size = header->num_bytes - sizeof(Message::Header);
     const void* payload = payload_size ? &header[1] : nullptr;
-    if (delegate_)
+    if (delegate_) {
       delegate_->OnChannelMessage(payload, payload_size, std::move(handles));
+      did_dispatch_message = true;
+    }
 
     read_buffer_->Discard(header->num_bytes);
   }
 
-  *next_read_size_hint = kReadBufferSize;
+  *next_read_size_hint = did_dispatch_message ? 0 : kReadBufferSize;
   return true;
 }
 
