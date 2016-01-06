@@ -65,17 +65,13 @@ class MessagePipeDispatcher : public Dispatcher {
   Node* const node_;
   const ports::PortRef port_;
 
-  // Guards |peer_closed_|, |port_transferred_|, |port_readable_|, and
-  // |port_closed_|.
+  // Guards access to all the fields below.
   mutable base::Lock signal_lock_;
+
   bool peer_closed_ = false;
   bool port_transferred_ = false;
   bool port_readable_ = false;
   bool port_closed_ = false;
-
-  // Guards access to |awakables_|.
-  base::Lock awakables_lock_;
-
   AwakableList awakables_;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePipeDispatcher);
