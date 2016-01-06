@@ -12,7 +12,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "ports/include/ports.h"
@@ -189,9 +188,8 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   std::unordered_map<ports::NodeName, OutgoingMessageQueue>
       pending_peer_messages_;
 
-  // All other fields below (with the exception of |weak_factory_|) must only
-  // be accessed on the I/O thread, i.e., the thread on which
-  // core_->io_task_runner() runs tasks.
+  // All other fields below must only be accessed on the I/O thread, i.e., the
+  // thread on which core_->io_task_runner() runs tasks.
 
   // The name of our parent node, if any.
   ports::NodeName parent_name_;
@@ -213,8 +211,6 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // This tracks pending outgoing connection request for named ports.
   std::vector<PendingTokenConnection> pending_token_connections_;
   std::unordered_map<ports::PortName, base::Closure> pending_connection_acks_;
-
-  base::WeakPtrFactory<Node> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };

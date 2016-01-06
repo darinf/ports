@@ -41,22 +41,21 @@ Node::~Node() {}
 Node::Node(Core* core)
     : core_(core),
       name_(GetRandomNodeName()),
-      node_(new ports::Node(name_, this)),
-      weak_factory_(this) {
+      node_(new ports::Node(name_, this)) {
   DLOG(INFO) << "Initializing node " << name_;
 }
 
 void Node::ConnectToChild(ScopedPlatformHandle platform_handle) {
   core_->io_task_runner()->PostTask(
       FROM_HERE,
-      base::Bind(&Node::ConnectToChildOnIOThread, weak_factory_.GetWeakPtr(),
+      base::Bind(&Node::ConnectToChildOnIOThread, base::Unretained(this),
                  base::Passed(&platform_handle)));
 }
 
 void Node::ConnectToParent(ScopedPlatformHandle platform_handle) {
   core_->io_task_runner()->PostTask(
       FROM_HERE,
-      base::Bind(&Node::ConnectToParentOnIOThread, weak_factory_.GetWeakPtr(),
+      base::Bind(&Node::ConnectToParentOnIOThread, base::Unretained(this),
                  base::Passed(&platform_handle)));
 }
 
@@ -114,7 +113,7 @@ void Node::ReservePortForToken(const ports::PortName& port_name,
   core_->io_task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&Node::ReservePortForTokenOnIOThread,
-                 weak_factory_.GetWeakPtr(), port_name, token, on_connect));
+                 base::Unretained(this), port_name, token, on_connect));
 }
 
 void Node::ConnectToParentPortByToken(const std::string& token,
@@ -124,7 +123,7 @@ void Node::ConnectToParentPortByToken(const std::string& token,
   core_->io_task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&Node::ConnectToParentPortByTokenOnIOThread,
-                 weak_factory_.GetWeakPtr(), token, local_port, on_connect));
+                 base::Unretained(this), token, local_port, on_connect));
 }
 
 void Node::ConnectToChildOnIOThread(ScopedPlatformHandle platform_handle) {
