@@ -94,12 +94,10 @@ class ChannelPosix : public Channel,
   }
 
   void ShutDownImpl() override {
-    if (io_task_runner_->RunsTasksOnCurrentThread()) {
-      ShutDownOnIOThread();
-    } else {
-      io_task_runner_->PostTask(
-          FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
-    }
+    // Note that we do this asynchronously even on the I/O thread in order to
+    // avoid OnError() synchronously destroying this object.
+    io_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
   }
 
   void Write(MessagePtr message) override {
@@ -135,6 +133,8 @@ class ChannelPosix : public Channel,
  private:
   ~ChannelPosix() override {
     DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+    DCHECK(!read_watcher_);
+    DCHECK(!write_watcher_);
     base::MessageLoop::current()->RemoveDestructionObserver(this);
     for (auto handle : incoming_platform_handles_)
       handle.CloseIfNecessary();
@@ -192,7 +192,6 @@ class ChannelPosix : public Channel,
   void OnFileCanReadWithoutBlocking(int fd) override {
     CHECK_EQ(fd, handle_.get().handle);
 
-    scoped_refptr<Channel> keep_alive(this);
     bool read_error = false;
     {
       size_t next_read_size = 0;
@@ -230,7 +229,6 @@ class ChannelPosix : public Channel,
   }
 
   void OnFileCanWriteWithoutBlocking(int fd) override {
-    scoped_refptr<Channel> keep_alive(this);
     bool write_error = false;
     {
       base::AutoLock lock(write_lock_);
