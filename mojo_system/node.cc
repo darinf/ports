@@ -200,17 +200,19 @@ void Node::AddPeer(const ports::NodeName& name,
 void Node::DropPeer(const ports::NodeName& name) {
   DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
 
-  base::AutoLock lock(peers_lock_);
-  auto it = peers_.find(name);
+  {
+    base::AutoLock lock(peers_lock_);
+    auto it = peers_.find(name);
 
-  if (it != peers_.end()) {
-    ports::NodeName peer = it->first;
-    peers_.erase(it);
-    DLOG(INFO) << "Dropped peer " << peer;
+    if (it != peers_.end()) {
+      ports::NodeName peer = it->first;
+      peers_.erase(it);
+      DLOG(INFO) << "Dropped peer " << peer;
+    }
+
+    pending_peer_messages_.erase(name);
+    pending_children_.erase(name);
   }
-
-  pending_peer_messages_.erase(name);
-  pending_children_.erase(name);
 
   node_->LostConnectionToNode(name);
 }
@@ -408,6 +410,7 @@ void Node::OnConnectToPort(const ports::NodeName& from_node,
   auto port_it = reserved_ports_.find(token);
   auto peer_it = peers_.find(from_node);
   if (port_it == reserved_ports_.end() || peer_it == peers_.end()) {
+    base::AutoUnlock unlock(peers_lock_);
     DLOG(ERROR) << "Ignoring invalid ConnectToPort from node " << from_node
                 << " for token " << token;
     DropPeer(from_node);
