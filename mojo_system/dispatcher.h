@@ -11,7 +11,6 @@
 #include <ostream>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
@@ -22,6 +21,7 @@
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
+#include "mojo/public/cpp/system/macros.h"
 #include "ports/include/ports.h"
 
 namespace mojo {
@@ -32,9 +32,11 @@ class Dispatcher;
 
 using DispatcherVector = std::vector<scoped_refptr<Dispatcher>>;
 
-// A |Dispatcher| implements Mojo EDK calls that are associated with a
-// particular MojoHandle, with the exception of MojoWait and MojoWaitMany (
-// which are implemented directly in Core.).
+// A |Dispatcher| implements Mojo primitives that are "attached" to a particular
+// handle. This includes most (all?) primitives except for |MojoWait...()|. This
+// object is thread-safe, with its state being protected by a single lock
+// |lock_|, which is also made available to implementation subclasses (via the
+// |lock()| method).
 class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
     : public base::RefCountedThreadSafe<Dispatcher> {
  public:
@@ -57,72 +59,49 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
     // "Private" types (not exposed via the public interface):
     PLATFORM_HANDLE = -1,
   };
-
-  // All Dispatchers must minimally implement these methods.
-
   virtual Type GetType() const = 0;
-  virtual void Close() = 0;
 
-  ///////////// Message pipe API /////////////
+  // These methods implement the various primitives named |Mojo...()|. These
+  // take |lock_| and handle races with |Close()|. Then they call out to
+  // subclasses' |...ImplNoLock()| methods (still under |lock_|), which actually
+  // implement the primitives.
+  // NOTE(vtl): This puts a big lock around each dispatcher (i.e., handle), and
+  // prevents the various |...ImplNoLock()|s from releasing the lock as soon as
+  // possible. If this becomes an issue, we can rethink this.
+  MojoResult Close();
 
-  virtual MojoResult WriteMessage(const void* bytes,
-                                  uint32_t num_bytes,
-                                  const DispatcherInTransit* dispatchers,
-                                  uint32_t num_dispatchers,
-                                  MojoWriteMessageFlags flags);
+  // |handles| contains all non-message-pipe handles to be transferred.
+  // Message pipe handles must be translated to port names and specified via
+  // |ports| and |num_ports|.
+  MojoResult WriteMessage(const void* bytes,
+                          uint32_t num_bytes,
+                          const DispatcherInTransit* dispatchers,
+                          uint32_t num_dispatchers,
+                          MojoWriteMessageFlags flags);
 
-  virtual MojoResult ReadMessage(void* bytes,
-                                 uint32_t* num_bytes,
-                                 MojoHandle* handles,
-                                 uint32_t* num_handles,
-                                 MojoReadMessageFlags flags);
-
-  ///////////// Shared buffer API /////////////
+  MojoResult ReadMessage(void* bytes,
+                         uint32_t* num_bytes,
+                         MojoHandle* handles,
+                         uint32_t* num_handles,
+                         MojoReadMessageFlags flags);
 
   // |options| may be null. |new_dispatcher| must not be null, but
   // |*new_dispatcher| should be null (and will contain the dispatcher for the
   // new handle on success).
-  virtual MojoResult DuplicateBufferHandle(
+  MojoResult DuplicateBufferHandle(
       const MojoDuplicateBufferHandleOptions* options,
       scoped_refptr<Dispatcher>* new_dispatcher);
-
-  virtual MojoResult MapBuffer(
+  MojoResult MapBuffer(
       uint64_t offset,
       uint64_t num_bytes,
       MojoMapBufferFlags flags,
       scoped_ptr<PlatformSharedBufferMapping>* mapping);
 
-  ///////////// Wait set API /////////////
-
-  // Adds a dispatcher to wait on. When the dispatcher satisfies |signals|, it
-  // will be returned in the next call to |GetReadyDispatchers()|. If
-  // |dispatcher| has been added, it must be removed before adding again,
-  // otherwise |MOJO_RESULT_ALREADY_EXISTS| will be returned.
-  virtual MojoResult AddWaitingDispatcher(
-      const scoped_refptr<Dispatcher>& dispatcher,
-      MojoHandleSignals signals,
-      uintptr_t context);
-
-  // Removes a dispatcher to wait on. If |dispatcher| has not been added,
-  // |MOJO_RESULT_NOT_FOUND| will be returned.
-  virtual MojoResult RemoveWaitingDispatcher(
-      const scoped_refptr<Dispatcher>& dispatcher);
-
-  // Returns a set of ready dispatchers. |*count| is the maximum number of
-  // dispatchers to return, and will contain the number of dispatchers returned
-  // in |dispatchers| on completion.
-  virtual MojoResult GetReadyDispatchers(uint32_t* count,
-                                         DispatcherVector* dispatchers,
-                                         MojoResult* results,
-                                         uintptr_t* contexts);
-
-  ///////////// General-purpose API for all handle types /////////
-
   // Gets the current handle signals state. (The default implementation simply
   // returns a default-constructed |HandleSignalsState|, i.e., no signals
   // satisfied or satisfiable.) Note: The state is subject to change from other
   // threads.
-  virtual HandleSignalsState GetHandleSignalsState() const;
+  HandleSignalsState GetHandleSignalsState() const;
 
   // Adds an awakable to this dispatcher, which will be woken up when this
   // object changes state to satisfy |signals| with context |context|. It will
@@ -138,28 +117,43 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   //  - |MOJO_RESULT_INVALID_ARGUMENT| if the dispatcher has been closed; and
   //  - |MOJO_RESULT_FAILED_PRECONDITION| if it is not (or no longer) possible
   //    that |signals| will ever be satisfied.
-  virtual MojoResult AddAwakable(Awakable* awakable,
-                                 MojoHandleSignals signals,
-                                 uintptr_t context,
-                                 HandleSignalsState* signals_state);
-
+  MojoResult AddAwakable(Awakable* awakable,
+                         MojoHandleSignals signals,
+                         uintptr_t context,
+                         HandleSignalsState* signals_state);
   // Removes an awakable from this dispatcher. (It is valid to call this
   // multiple times for the same |awakable| on the same object, so long as
   // |AddAwakable()| was called at most once.) If |signals_state| is non-null,
   // |*signals_state| will be set to the current handle signals state.
-  virtual void RemoveAwakable(Awakable* awakable,
-                              HandleSignalsState* signals_state);
+  void RemoveAwakable(Awakable* awakable, HandleSignalsState* signals_state);
+
+  // Adds a dispatcher to wait on. When the dispatcher satisfies |signals|, it
+  // will be returned in the next call to |GetReadyDispatchers()|. If
+  // |dispatcher| has been added, it must be removed before adding again,
+  // otherwise |MOJO_RESULT_ALREADY_EXISTS| will be returned.
+  MojoResult AddWaitingDispatcher(const scoped_refptr<Dispatcher>& dispatcher,
+                                  MojoHandleSignals signals,
+                                  uintptr_t context);
+  // Removes a dispatcher to wait on. If |dispatcher| has not been added,
+  // |MOJO_RESULT_NOT_FOUND| will be returned.
+  MojoResult RemoveWaitingDispatcher(
+      const scoped_refptr<Dispatcher>& dispatcher);
+  // Returns a set of ready dispatchers. |*count| is the maximum number of
+  // dispatchers to return, and will contain the number of dispatchers returned
+  // in |dispatchers| on completion.
+  MojoResult GetReadyDispatchers(uint32_t* count,
+                                 DispatcherVector* dispatchers,
+                                 MojoResult* results,
+                                 uintptr_t* contexts);
 
   // Informs the caller of the total serialized size (in bytes) and the total
   // number of platform handles needed to transfer this dispatcher across
   // a message pipe.
-  virtual void GetSerializedSize(uint32_t* num_bytes,
-                                 uint32_t* num_platform_handles);
+  void GetSerializedSize(uint32_t* num_bytes, uint32_t* num_platform_handles);
 
   // Serializes this dispatcher into |destination| and |handles|. Returns true
   // iff successful, false otherwise. In either case the dispatcher will close.
-  virtual bool SerializeAndClose(void* destination,
-                                 PlatformHandleVector* handles);
+  bool SerializeAndClose(void* destination, PlatformHandleVector* handles);
 
   // Does whatever is necessary to begin transit of the dispatcher.  This
   // should return |true| if transit is OK, or false if the underlying resource
@@ -186,7 +180,80 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   Dispatcher();
   virtual ~Dispatcher();
 
-  DISALLOW_COPY_AND_ASSIGN(Dispatcher);
+  // These are to be overridden by subclasses (if necessary). They are called
+  // exactly once -- first |CancelAllAwakablesNoLock()|, then
+  // |CloseImplNoLock()|,
+  // when the dispatcher is being closed. They are called under |lock_|.
+  virtual void CancelAllAwakablesNoLock();
+  virtual void CloseImplNoLock();
+
+  // These are to be overridden by subclasses (if necessary). They are never
+  // called after the dispatcher has been closed. They are called under |lock_|.
+  // See the descriptions of the methods without the "ImplNoLock" for more
+  // information.
+  virtual MojoResult WriteMessageImplNoLock(
+      const void* bytes,
+      uint32_t num_bytes,
+      const DispatcherInTransit* dispatchers,
+      uint32_t num_dispatchers,
+      MojoWriteMessageFlags flags);
+  virtual MojoResult ReadMessageImplNoLock(void* bytes,
+                                           uint32_t* num_bytes,
+                                           MojoHandle* handles,
+                                           uint32_t* num_handles,
+                                           MojoReadMessageFlags flags);
+  virtual MojoResult DuplicateBufferHandleImplNoLock(
+      const MojoDuplicateBufferHandleOptions* options,
+      scoped_refptr<Dispatcher>* new_dispatcher);
+  virtual MojoResult MapBufferImplNoLock(
+      uint64_t offset,
+      uint64_t num_bytes,
+      MojoMapBufferFlags flags,
+      scoped_ptr<PlatformSharedBufferMapping>* mapping);
+  virtual MojoResult AddAwakableImplNoLock(Awakable* awakable,
+                                           MojoHandleSignals signals,
+                                           uintptr_t context,
+                                           HandleSignalsState* signals_state);
+  virtual void RemoveAwakableImplNoLock(Awakable* awakable,
+                                        HandleSignalsState* signals_state);
+  virtual MojoResult AddWaitingDispatcherImplNoLock(
+      const scoped_refptr<Dispatcher>& dispatcher,
+      MojoHandleSignals signals,
+      uintptr_t context);
+  virtual MojoResult RemoveWaitingDispatcherImplNoLock(
+      const scoped_refptr<Dispatcher>& dispatcher);
+  virtual MojoResult GetReadyDispatchersImplNoLock(
+      uint32_t* count,
+      DispatcherVector* dispatchers,
+      MojoResult* results,
+      uintptr_t* contexts);
+  virtual HandleSignalsState GetHandleSignalsStateImplNoLock() const;
+  virtual void GetSerializedSizeImplNoLock(uint32_t* num_bytes,
+                                           uint32_t* num_platform_handles);
+  virtual bool SerializeAndCloseImplNoLock(void* destination,
+                                           PlatformHandleVector* handles);
+
+  // This should be overridden to return true if/when there's an ongoing
+  // operation (e.g., two-phase read/writes on data pipes) that should prevent a
+  // handle from being sent over a message pipe (with status "busy").
+  virtual bool IsBusyNoLock() const;
+
+  // Available to subclasses. (Note: Returns a non-const reference, just like
+  // |base::AutoLock|'s constructor takes a non-const reference.)
+  base::Lock& lock() const { return lock_; }
+  bool is_closed() const { return is_closed_; }
+
+  // Closes the dispatcher. This must be done under lock, and unlike |Close()|,
+  // the dispatcher must not be closed already.
+  void CloseNoLock();
+
+ private:
+  // This protects the following members as well as any state added by
+  // subclasses.
+  mutable base::Lock lock_;
+  bool is_closed_;
+
+  MOJO_DISALLOW_COPY_AND_ASSIGN(Dispatcher);
 };
 
 // So logging macros and |DCHECK_EQ()|, etc. work.

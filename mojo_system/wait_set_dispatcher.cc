@@ -39,42 +39,41 @@ WaitSetDispatcher::WaitState::~WaitState() {}
 WaitSetDispatcher::WaitSetDispatcher()
     : waiter_(new WaitSetDispatcher::Waiter(this)) {}
 
+WaitSetDispatcher::~WaitSetDispatcher() {
+  DCHECK(waiting_dispatchers_.empty());
+  DCHECK(awoken_queue_.empty());
+  DCHECK(processed_dispatchers_.empty());
+}
+
 Dispatcher::Type WaitSetDispatcher::GetType() const {
   return Type::WAIT_SET;
 }
 
-void WaitSetDispatcher::Close() {
-  {
-    base::AutoLock lock(lock_);
-    DCHECK(!is_closed_);
-    is_closed_ = true;
-  }
+void WaitSetDispatcher::CancelAllAwakablesNoLock() {
+  lock().AssertAcquired();
+  base::AutoLock locker(awakable_lock_);
+  awakable_list_.CancelAll();
+}
 
-  {
-    base::AutoLock locker(awakable_lock_);
-    awakable_list_.CancelAll();
-  }
-
-  {
-    base::AutoLock lock(lock_);
-    for (const auto& entry : waiting_dispatchers_)
-      entry.second.dispatcher->RemoveAwakable(waiter_.get(), nullptr);
-    waiting_dispatchers_.clear();
-  }
+void WaitSetDispatcher::CloseImplNoLock() {
+  lock().AssertAcquired();
+  for (const auto& entry : waiting_dispatchers_)
+    entry.second.dispatcher->RemoveAwakable(waiter_.get(), nullptr);
+  waiting_dispatchers_.clear();
 
   base::AutoLock locker(awoken_lock_);
   awoken_queue_.clear();
   processed_dispatchers_.clear();
 }
 
-MojoResult WaitSetDispatcher::AddWaitingDispatcher(
+MojoResult WaitSetDispatcher::AddWaitingDispatcherImplNoLock(
     const scoped_refptr<Dispatcher>& dispatcher,
     MojoHandleSignals signals,
     uintptr_t context) {
+  lock().AssertAcquired();
   if (dispatcher == this)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  base::AutoLock lock(lock_);
   uintptr_t dispatcher_handle = reinterpret_cast<uintptr_t>(dispatcher.get());
   auto it = waiting_dispatchers_.find(dispatcher_handle);
   if (it != waiting_dispatchers_.end()) {
@@ -101,20 +100,18 @@ MojoResult WaitSetDispatcher::AddWaitingDispatcher(
   return MOJO_RESULT_OK;
 }
 
-MojoResult WaitSetDispatcher::RemoveWaitingDispatcher(
+MojoResult WaitSetDispatcher::RemoveWaitingDispatcherImplNoLock(
     const scoped_refptr<Dispatcher>& dispatcher) {
+  lock().AssertAcquired();
   uintptr_t dispatcher_handle = reinterpret_cast<uintptr_t>(dispatcher.get());
-  {
-    base::AutoLock lock(lock_);
-    auto it = waiting_dispatchers_.find(dispatcher_handle);
-    if (it == waiting_dispatchers_.end())
-      return MOJO_RESULT_NOT_FOUND;
+  auto it = waiting_dispatchers_.find(dispatcher_handle);
+  if (it == waiting_dispatchers_.end())
+    return MOJO_RESULT_NOT_FOUND;
 
-    dispatcher->RemoveAwakable(waiter_.get(), nullptr);
-    // At this point, it should not be possible for |waiter_| to be woken with
-    // |dispatcher|.
-    waiting_dispatchers_.erase(it);
-  }
+  dispatcher->RemoveAwakable(waiter_.get(), nullptr);
+  // At this point, it should not be possible for |waiter_| to be woken with
+  // |dispatcher|.
+  waiting_dispatchers_.erase(it);
 
   base::AutoLock locker(awoken_lock_);
   int num_erased = 0;
@@ -136,13 +133,12 @@ MojoResult WaitSetDispatcher::RemoveWaitingDispatcher(
   return MOJO_RESULT_OK;
 }
 
-MojoResult WaitSetDispatcher::GetReadyDispatchers(
+MojoResult WaitSetDispatcher::GetReadyDispatchersImplNoLock(
     uint32_t* count,
     DispatcherVector* dispatchers,
     MojoResult* results,
     uintptr_t* contexts) {
-  base::AutoLock lock(lock_);
-
+  lock().AssertAcquired();
   dispatchers->clear();
 
   // Re-queue any already retrieved dispatchers. These should be the dispatchers
@@ -215,11 +211,14 @@ MojoResult WaitSetDispatcher::GetReadyDispatchers(
   return MOJO_RESULT_OK;
 }
 
-MojoResult WaitSetDispatcher::AddAwakable(Awakable* awakable,
-                                          MojoHandleSignals signals,
-                                          uintptr_t context,
-                                          HandleSignalsState* signals_state) {
-  HandleSignalsState state(GetHandleSignalsState());
+MojoResult WaitSetDispatcher::AddAwakableImplNoLock(
+    Awakable* awakable,
+    MojoHandleSignals signals,
+    uintptr_t context,
+    HandleSignalsState* signals_state) {
+  lock().AssertAcquired();
+
+  HandleSignalsState state(GetHandleSignalsStateImplNoLock());
   if (state.satisfies(signals)) {
     if (signals_state)
       *signals_state = state;
@@ -236,27 +235,24 @@ MojoResult WaitSetDispatcher::AddAwakable(Awakable* awakable,
   return MOJO_RESULT_OK;
 }
 
-void WaitSetDispatcher::RemoveAwakable(Awakable* awakable,
-                                       HandleSignalsState* signals_state) {
+void WaitSetDispatcher::RemoveAwakableImplNoLock(
+    Awakable* awakable,
+    HandleSignalsState* signals_state) {
+  lock().AssertAcquired();
   base::AutoLock locker(awakable_lock_);
   awakable_list_.Remove(awakable);
   if (signals_state)
-    *signals_state = GetHandleSignalsState();
+    *signals_state = GetHandleSignalsStateImplNoLock();
 }
 
-HandleSignalsState WaitSetDispatcher::GetHandleSignalsState() const {
+HandleSignalsState WaitSetDispatcher::GetHandleSignalsStateImplNoLock() const {
+  lock().AssertAcquired();
   HandleSignalsState rv;
   rv.satisfiable_signals = MOJO_HANDLE_SIGNAL_READABLE;
   base::AutoLock locker(awoken_lock_);
   if (!awoken_queue_.empty() || !processed_dispatchers_.empty())
     rv.satisfied_signals = MOJO_HANDLE_SIGNAL_READABLE;
   return rv;
-}
-
-WaitSetDispatcher::~WaitSetDispatcher() {
-  DCHECK(waiting_dispatchers_.empty());
-  DCHECK(awoken_queue_.empty());
-  DCHECK(processed_dispatchers_.empty());
 }
 
 void WaitSetDispatcher::WakeDispatcher(MojoResult result, uintptr_t context) {
