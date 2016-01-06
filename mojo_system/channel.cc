@@ -216,7 +216,6 @@ bool Channel::OnReadComplete(size_t bytes_read, size_t *next_read_size_hint) {
 void Channel::OnError() {
   if (delegate_)
     delegate_->OnChannelError();
-  ShutDown();
 }
 
 }  // namespace edk

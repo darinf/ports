@@ -94,10 +94,12 @@ class ChannelPosix : public Channel,
   }
 
   void ShutDownImpl() override {
-    // Note that we do this asynchronously even on the I/O thread in order to
-    // avoid OnError() synchronously destroying this object.
-    io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
+    if (io_task_runner_->RunsTasksOnCurrentThread()) {
+      ShutDownOnIOThread();
+    } else {
+      io_task_runner_->PostTask(
+          FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
+    }
   }
 
   void Write(MessagePtr message) override {
@@ -173,6 +175,9 @@ class ChannelPosix : public Channel,
   }
 
   void ShutDownOnIOThread() {
+    DCHECK(read_watcher_);
+    DCHECK(write_watcher_);
+
     read_watcher_.reset();
     write_watcher_.reset();
     handle_.reset();
