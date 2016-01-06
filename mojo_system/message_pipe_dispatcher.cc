@@ -61,9 +61,6 @@ class MessagePipeDispatcher::PortObserverThunk : public Node::PortObserver {
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
                                              const ports::PortRef& port)
     : node_(node), port_(port) {
-  // OnMessagesAvailable (via PortObserverThunk) may be called before this
-  // constructor returns. Hold a lock here to prevent signal races.
-  base::AutoLock lock(signal_lock_);
   node_->SetPortObserver(port_, std::make_shared<PortObserverThunk>(this));
 }
 
@@ -72,18 +69,14 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
 }
 
 void MessagePipeDispatcher::Close() {
-  {
-    base::AutoLock lock(signal_lock_);
-    DCHECK(!port_closed_);
-    port_closed_ = true;
-    if (!port_transferred_)
-      node_->ClosePort(port_);
-  }
+  bool was_closed = port_closed_.set_value(true);
+  DCHECK(!was_closed);
 
-  {
-    base::AutoLock lock(awakables_lock_);
-    awakables_.CancelAll();
-  }
+  if (!port_transferred_.value())
+    node_->ClosePort(port_);
+
+  base::AutoLock lock(awakables_lock_);
+  awakables_.CancelAll();
 }
 
 MojoResult MessagePipeDispatcher::WriteMessage(
@@ -161,10 +154,7 @@ MojoResult MessagePipeDispatcher::WriteMessage(
       return MOJO_RESULT_INVALID_ARGUMENT;
 
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
-      {
-        base::AutoLock lock(signal_lock_);
-        peer_closed_ = true;
-      }
+      peer_closed_.set_value(true);
 
       base::AutoLock lock(awakables_lock_);
       awakables_.AwakeForStateChange(GetHandleSignalsState());
@@ -237,10 +227,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
       return MOJO_RESULT_INVALID_ARGUMENT;
 
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
-      {
-        base::AutoLock lock(signal_lock_);
-        peer_closed_ = true;
-      }
+      peer_closed_.set_value(true);
 
       base::AutoLock lock(awakables_lock_);
       awakables_.AwakeForStateChange(GetHandleSignalsState());
@@ -255,8 +242,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   if (!ports_message) {
-    base::AutoLock lock(signal_lock_);
-    port_readable_ = false;
+    port_readable_.set_value(false);
     return MOJO_RESULT_SHOULD_WAIT;
   }
 
@@ -342,13 +328,12 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
 
 HandleSignalsState
 MessagePipeDispatcher::GetHandleSignalsState() const {
-  base::AutoLock lock(signal_lock_);
   HandleSignalsState rv;
-  if (port_readable_) {
+  if (port_readable_.value()) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
   }
-  if (!peer_closed_) {
+  if (!peer_closed_.value()) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
@@ -401,10 +386,7 @@ bool MessagePipeDispatcher::SerializeAndClose(void* destination,
 }
 
 void MessagePipeDispatcher::CompleteTransit() {
-  {
-    base::AutoLock lock(signal_lock_);
-    port_transferred_ = true;
-  }
+  port_transferred_.set_value(true);
 
   // port_ has been closed by virtue of having been transferred. This
   // dispatcher needs to be closed as well.
@@ -433,27 +415,21 @@ bool MessagePipeDispatcher::UpdateSignalsState() {
   // Awakables will not be interested in this becoming unreadable.
   bool awakable_change = false;
 
-  base::AutoLock lock(signal_lock_);
   if (rv == ports::OK) {
-    if (has_messages && !port_readable_)
+    if (port_readable_.set_value(has_messages) != has_messages)
       awakable_change = true;
-    port_readable_ = has_messages;
   }
 
-  if (rv == ports::ERROR_PORT_PEER_CLOSED && !peer_closed_) {
-    peer_closed_ = true;
+  if (rv == ports::ERROR_PORT_PEER_CLOSED && !peer_closed_.set_value(true))
     awakable_change = true;
-  }
 
   return awakable_change;
 }
 
 void MessagePipeDispatcher::OnMessagesAvailable() {
   if (UpdateSignalsState()) {
-    HandleSignalsState state = GetHandleSignalsState();
-
     base::AutoLock locker(awakables_lock_);
-    awakables_.AwakeForStateChange(state);
+    awakables_.AwakeForStateChange(GetHandleSignalsState());
   }
 }
 

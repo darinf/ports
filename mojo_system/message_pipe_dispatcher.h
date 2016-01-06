@@ -7,6 +7,7 @@
 
 #include <queue>
 
+#include "base/atomicops.h"
 #include "base/macros.h"
 #include "mojo/edk/system/awakable_list.h"
 #include "ports/include/ports.h"
@@ -53,6 +54,21 @@ class MessagePipeDispatcher : public Dispatcher {
   class PortObserverThunk;
   friend class PortObserverThunk;
 
+  struct AtomicFlag {
+    // Returns the previous value.
+    inline bool set_value(bool value) {
+      return base::subtle::NoBarrier_AtomicExchange(
+          &value_, static_cast<base::subtle::Atomic32>(value));
+    }
+
+    inline bool value() const {
+      return base::subtle::NoBarrier_Load(&value_);
+    }
+
+   private:
+    base::subtle::Atomic32 value_ = 0;
+  };
+
   ~MessagePipeDispatcher() override;
 
   bool UpdateSignalsState();
@@ -64,17 +80,12 @@ class MessagePipeDispatcher : public Dispatcher {
   Node* const node_;
   const ports::PortRef port_;
 
-  // Guards |peer_closed_|, |port_transferred_|, |port_readable_|, and
-  // |port_closed_|.
-  mutable base::Lock signal_lock_;
-  bool peer_closed_ = false;
-  bool port_transferred_ = false;
-  bool port_readable_ = false;
-  bool port_closed_ = false;
+  AtomicFlag peer_closed_;
+  AtomicFlag port_transferred_;
+  AtomicFlag port_readable_;
+  AtomicFlag port_closed_;
 
-  // Guards access to |awakables_|.
   base::Lock awakables_lock_;
-
   AwakableList awakables_;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePipeDispatcher);
