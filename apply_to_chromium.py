@@ -17,7 +17,8 @@ import sys
 DIRS_TO_COPY_ = [
   "mojo/edk/embedder",
   "mojo/edk/system",
-  "mojo/edk/system/ports"
+  "mojo/edk/system/ports",
+  "mojo/edk/test",
 ]
 
 
@@ -27,7 +28,8 @@ def CopyDirWithOverwrite(src_path, dest_path):
   for entry in os.listdir(src_path):
     src_entry = os.path.join(src_path, entry)
     dest_entry = os.path.join(dest_path, entry)
-    if os.path.isfile(src_entry) and not filecmp.cmp(src_entry, dest_entry):
+    if os.path.isfile(src_entry) and (not os.path.isfile(dest_entry) or
+                                      not filecmp.cmp(src_entry, dest_entry)):
       shutil.copyfile(src_entry, dest_entry)
 
 

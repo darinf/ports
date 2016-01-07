@@ -13,6 +13,8 @@
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+// TODO: merge these with tests in multiprocess_message_pipe_unittest.cc
+
 namespace mojo {
 namespace edk {
 namespace {

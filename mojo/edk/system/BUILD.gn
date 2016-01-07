@@ -75,6 +75,7 @@ static_library("system") {
     "../embedder",
     "../embedder:delegates",
     "../embedder:platform",
+    "ports",
   ]
 
   deps = [
@@ -124,26 +125,28 @@ source_set("test_utils") {
 # TODO(use_chrome_edk): remove "2"
 test("mojo_system_unittests2") {
   sources = [
-    "../test/multiprocess_test_helper_unittest.cc",
-    "awakable_list_unittest.cc",
-    "core_test_base.cc",
-    "core_test_base.h",
-    "core_unittest.cc",
-    "data_pipe_unittest.cc",
-    "dispatcher_unittest.cc",
-    "message_in_transit_queue_unittest.cc",
-    "message_in_transit_test_utils.cc",
-    "message_in_transit_test_utils.h",
+    #"../test/multiprocess_test_helper_unittest.cc",
+    #"awakable_list_unittest.cc",
+    "buffers_unittest.cc",
+    #"core_test_base.cc",
+    #"core_test_base.h",
+    #"core_unittest.cc",
+    #"data_pipe_unittest.cc",
+    #"dispatcher_unittest.cc",
+    #"message_in_transit_queue_unittest.cc",
+    #"message_in_transit_test_utils.cc",
+    #"message_in_transit_test_utils.h",
     "message_pipe_test_utils.cc",
     "message_pipe_test_utils.h",
     "message_pipe_unittest.cc",
-    "multiprocess_message_pipe_unittest.cc",
+    #"multiprocess_message_pipe_unittest.cc",
+    "new_multiprocess_message_pipe_unittest.cc",
     "options_validation_unittest.cc",
-    "platform_handle_dispatcher_unittest.cc",
-    "raw_channel_unittest.cc",
-    "shared_buffer_dispatcher_unittest.cc",
-    "simple_dispatcher_unittest.cc",
-    "wait_set_dispatcher_unittest.cc",
+    #"platform_handle_dispatcher_unittest.cc",
+    #"raw_channel_unittest.cc",
+    #"shared_buffer_dispatcher_unittest.cc",
+    #"simple_dispatcher_unittest.cc",
+    #"wait_set_dispatcher_unittest.cc",
     "waiter_test_utils.cc",
     "waiter_test_utils.h",
     "waiter_unittest.cc",
@@ -154,7 +157,7 @@ test("mojo_system_unittests2") {
 
     # TODO(use_chrome_edk): remove "2"
     "../../../mojo/public/cpp/environment:standalone",
-    "../embedder:embedder_unittests2",
+    #"../embedder:embedder_unittests2",
     "../test:test_support",
     "//base",
     "//base/test:test_support",
@@ -167,7 +170,7 @@ test("mojo_system_unittests2") {
   ]
 
   # TODO(use_chrome_edk): remove "2"
-  allow_circular_includes_from = [ "../embedder:embedder_unittests2" ]
+  #allow_circular_includes_from = [ "../embedder:embedder_unittests2" ]
 }
 
 # TODO(use_chrome_edk): remove "2"
