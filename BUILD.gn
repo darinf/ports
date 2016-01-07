@@ -4,25 +4,22 @@
 
 source_set("ports") {
   sources = [
-    "include/ports.h",
-    "src/event.h",
-    "src/hash_functions.h",
-    "src/logging.cc",
-    "src/logging.h",
-    "src/message.cc",
-    "src/message_queue.cc",
-    "src/message_queue.h",
-    "src/node.cc",
-    "src/node_impl.cc",
-    "src/node_impl.h",
-    "src/port.cc",
-    "src/port.h",
-    "src/port_ref.cc",
+    "mojo/edk/system/ports/ports.h",
+    "mojo/edk/system/ports/event.h",
+    "mojo/edk/system/ports/hash_functions.h",
+    "mojo/edk/system/ports/logging.cc",
+    "mojo/edk/system/ports/message.cc",
+    "mojo/edk/system/ports/message_queue.cc",
+    "mojo/edk/system/ports/message_queue.h",
+    "mojo/edk/system/ports/node.cc",
+    "mojo/edk/system/ports/node_impl.cc",
+    "mojo/edk/system/ports/node_impl.h",
+    "mojo/edk/system/ports/port.cc",
+    "mojo/edk/system/ports/port.h",
+    "mojo/edk/system/ports/port_ref.cc",
   ]
 
-  include_dirs = [ ".." ]
-
-  defines = [ "INSIDE_CHROMIUM" ]
+  include_dirs = [ "." ]
 
   deps = [
     "//base",
@@ -33,10 +30,8 @@ executable("ports_unittests") {
   testonly = true
 
   sources = [
-    "src/test.cc",
+    "mojo/edk/system/ports/test.cc",
   ]
-
-  defines = [ "INSIDE_CHROMIUM" ]
 
   deps = [
     ":ports",
@@ -44,17 +39,18 @@ executable("ports_unittests") {
     "//testing/gtest:gtest_main",
   ]
 
-  include_dirs = [ ".." ]
+  include_dirs = [ "." ]
 }
 
 source_set("ports_edk_test_support") {
   testonly = true
 
   sources = [
-    "mojo_system/multiprocess_test_base.cc",
-    "mojo_system/multiprocess_test_base.h",
-    "mojo_system/multiprocess_test_helper.cc",
-    "mojo_system/multiprocess_test_helper.h",
+    "mojo/edk/system/multiprocess_test_base.cc",
+    "mojo/edk/system/multiprocess_test_base.h",
+    "mojo/edk/system/multiprocess_test_helper.cc",
+    "mojo/edk/system/multiprocess_test_helper.h",
+
     "//mojo/edk/test/scoped_ipc_support.cc",
     "//mojo/edk/test/scoped_ipc_support.h",
   ]
@@ -70,17 +66,15 @@ source_set("ports_edk_test_support") {
     "//third_party/mojo/src/mojo/edk/system",
   ]
 
-  defines = [ "INSIDE_CHROMIUM" ]
-
-  include_dirs = [ ".." ]
+  include_dirs = [ "." ]
 }
 
 executable("ports_edk_unittests") {
   testonly = true
 
   sources = [
-    "mojo_system/buffers_unittest.cc",
-    "mojo_system/pipes_unittest.cc",
+    "mojo/edk/system/buffers_unittest.cc",
+    "mojo/edk/system/pipes_unittest.cc",
 
     "//mojo/edk/test/run_all_unittests.cc",
   ]
@@ -91,16 +85,14 @@ executable("ports_edk_unittests") {
     "//testing/gtest",
   ]
 
-  defines = [ "INSIDE_CHROMIUM" ]
-
-  include_dirs = [ ".." ]
+  include_dirs = [ "." ]
 }
 
 executable("ports_edk_perftests") {
   testonly = true
 
   sources = [
-    "mojo_system/pipes_perftest.cc",
+    "mojo/edk/system/pipes_perftest.cc",
 
     "//mojo/edk/test/run_all_perftests.cc",
   ]
@@ -111,7 +103,5 @@ executable("ports_edk_perftests") {
     "//testing/gtest",
   ]
 
-  defines = [ "INSIDE_CHROMIUM" ]
-
-  include_dirs = [ ".." ]
+  include_dirs = [ "." ]
 }

@@ -12,7 +12,7 @@ index 0000000..b5d93fe
 +  use_ports_for_mojo_edk = false
 +}
 diff --git a/mojo/edk/embedder/BUILD.gn b/mojo/edk/embedder/BUILD.gn
-index e307ed1..9e61890 100644
+index e307ed1..f96b538 100644
 --- a/mojo/edk/embedder/BUILD.gn
 +++ b/mojo/edk/embedder/BUILD.gn
 @@ -2,6 +2,8 @@
@@ -46,7 +46,7 @@ index e307ed1..9e61890 100644
    ]
 +
 +  if (use_ports_for_mojo_edk) {
-+    deps += [ "//local/ports/mojo_embedder" ]
++    deps += [ "//local/ports/mojo/edk/embedder" ]
 +  } else {
 +    sources += [
 +      "embedder.cc",
@@ -62,8 +62,8 @@ index e307ed1..9e61890 100644
  
 +  if (use_ports_for_mojo_edk) {
 +    visibility += [
-+      "//local/ports/mojo_embedder",
-+      "//local/ports/mojo_system"
++      "//local/ports/mojo/edk/embedder",
++      "//local/ports/mojo/edk/system"
 +    ]
 +  }
 +
@@ -76,8 +76,8 @@ index e307ed1..9e61890 100644
  
 +  if (use_ports_for_mojo_edk) {
 +    visibility += [
-+      "//local/ports/mojo_embedder",
-+      "//local/ports/mojo_system"
++      "//local/ports/mojo/edk/embedder",
++      "//local/ports/mojo/edk/system"
 +    ]
 +  }
 +
@@ -108,7 +108,7 @@ index 3393258..65ffcce 100644
  }  // namespace mojo
  
 diff --git a/mojo/edk/system/BUILD.gn b/mojo/edk/system/BUILD.gn
-index cd58ff4..99c1504 100644
+index cd58ff4..12690c8 100644
 --- a/mojo/edk/system/BUILD.gn
 +++ b/mojo/edk/system/BUILD.gn
 @@ -2,6 +2,7 @@
@@ -185,7 +185,7 @@ index cd58ff4..99c1504 100644
    ]
  
 +  if (use_ports_for_mojo_edk) {
-+    deps += [ "//local/ports/mojo_system" ]
++    deps += [ "//local/ports/mojo/edk/system" ]
 +    sources = [ "dummy.cc" ]
 +  } else {
 +    sources = [
