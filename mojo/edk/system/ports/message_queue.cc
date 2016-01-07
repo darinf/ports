@@ -9,6 +9,8 @@
 #include "base/logging.h"
 #include "mojo/edk/system/ports/event.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 inline uint32_t GetSequenceNum(const ScopedMessage& message) {
@@ -66,3 +68,5 @@ void MessageQueue::AcceptMessage(ScopedMessage message,
 }
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo

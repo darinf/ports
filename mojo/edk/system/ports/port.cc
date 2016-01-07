@@ -4,6 +4,8 @@
 
 #include "mojo/edk/system/ports/port.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 Port::Port(uint32_t next_sequence_num_to_send,
@@ -18,3 +20,5 @@ Port::Port(uint32_t next_sequence_num_to_send,
 Port::~Port() {}
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo

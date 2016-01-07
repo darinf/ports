@@ -6,6 +6,8 @@
 
 #include "mojo/edk/system/ports/ports.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 std::ostream& operator<<(std::ostream& stream, const PortName& name) {
@@ -27,3 +29,5 @@ std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
 }
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo

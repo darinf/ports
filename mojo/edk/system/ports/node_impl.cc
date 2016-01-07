@@ -4,19 +4,25 @@
 
 #include "mojo/edk/system/ports/node_impl.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "base/logging.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
-static int DebugError(const char* message, int error_code, const char* func) {
+namespace {
+
+int DebugError(const char* message, int error_code, const char* func) {
   CHECK(false) << "Oops: " << message << " @ " << func;
   return error_code;
 }
-#define Oops(x) DebugError(#x, x, __func__)
 
-static bool CanAcceptMoreMessages(const Port* port) {
+#define OOPS(x) DebugError(#x, x, __func__)
+
+bool CanAcceptMoreMessages(const Port* port) {
   // Have we already doled out the last message (i.e., do we expect to NOT
   // receive further messages)?
   uint32_t next_sequence_num = port->message_queue.next_sequence_num();
@@ -26,6 +32,8 @@ static bool CanAcceptMoreMessages(const Port* port) {
   }
   return true;
 }
+
+}  // namespace
 
 Node::Impl::Impl(const NodeName& name, NodeDelegate* delegate)
     : name_(name),
@@ -257,7 +265,7 @@ int Node::Impl::AcceptMessage(ScopedMessage message) {
           header->port_name,
           GetEventData<ObserveClosureEventData>(message)->last_sequence_num);
   }
-  return Oops(ERROR_NOT_IMPLEMENTED);
+  return OOPS(ERROR_NOT_IMPLEMENTED);
 }
 
 int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
@@ -396,7 +404,7 @@ int Node::Impl::OnUserMessage(ScopedMessage message) {
 int Node::Impl::OnPortAccepted(const PortName& port_name) {
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
-    return Oops(ERROR_PORT_UNKNOWN);
+    return OOPS(ERROR_PORT_UNKNOWN);
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -406,7 +414,7 @@ int Node::Impl::OnPortAccepted(const PortName& port_name) {
                << port->peer_port_name << "@" << port->peer_node_name;
 
     if (port->state != Port::kBuffering)
-      return Oops(ERROR_PORT_STATE_UNEXPECTED);
+      return OOPS(ERROR_PORT_STATE_UNEXPECTED);
 
     port->state = Port::kProxying;
 
@@ -514,7 +522,7 @@ int Node::Impl::OnObserveProxyAck(const PortName& port_name,
     std::lock_guard<std::mutex> guard(port->lock);
 
     if (port->state != Port::kProxying)
-      return Oops(ERROR_PORT_STATE_UNEXPECTED);
+      return OOPS(ERROR_PORT_STATE_UNEXPECTED);
 
     if (last_sequence_num == kInvalidSequenceNum) {
       // Send again.
@@ -595,7 +603,7 @@ int Node::Impl::AddPortWithName(const PortName& port_name,
   std::lock_guard<std::mutex> guard(ports_lock_);
 
   if (!ports_.insert(std::make_pair(port_name, port)).second)
-    return Oops(ERROR_PORT_EXISTS);  // Suggests a bad UUID generator.
+    return OOPS(ERROR_PORT_EXISTS);  // Suggests a bad UUID generator.
 
   DLOG(INFO) << "Created port " << port_name << "@" << name_;
   return OK;
@@ -812,3 +820,5 @@ ScopedMessage Node::Impl::NewInternalMessage_Helper(const PortName& port_name,
 }
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo

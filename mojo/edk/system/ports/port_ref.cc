@@ -6,6 +6,8 @@
 
 #include "mojo/edk/system/ports/port.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 PortRef::~PortRef() {
@@ -31,3 +33,5 @@ PortRef& PortRef::operator=(const PortRef& other) {
 }
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo

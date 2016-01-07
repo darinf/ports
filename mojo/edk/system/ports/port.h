@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PORTS_SRC_PORT_H_
-#define PORTS_SRC_PORT_H_
+#ifndef MOJO_EDK_SYSTEM_PORTS_PORT_H_
+#define MOJO_EDK_SYSTEM_PORTS_PORT_H_
 
 #include <memory>
 #include <mutex>
@@ -12,6 +12,8 @@
 
 #include "mojo/edk/system/ports/message_queue.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 class Port {
@@ -41,5 +43,7 @@ class Port {
 };
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo
 
-#endif  // PORTS_SRC_PORT_H_
+#endif  // MOJO_EDK_SYSTEM_PORTS_PORT_H_

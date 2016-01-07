@@ -11,6 +11,8 @@
 #include "base/logging.h"
 #include "mojo/edk/system/ports/event.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 // static
@@ -65,3 +67,5 @@ Message::Message(size_t num_header_bytes,
 }
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo

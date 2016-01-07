@@ -21,7 +21,7 @@ source_set("ports") {
 
   include_dirs = [ "." ]
 
-  deps = [
+  public_deps = [
     "//base",
   ]
 }

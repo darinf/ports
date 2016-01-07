@@ -15,6 +15,8 @@
 #include "mojo/edk/system/ports/ports.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 namespace test {
 
@@ -616,3 +618,5 @@ TEST_F(PortsTest, Delegation2) {
 
 }  // namespace test
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo

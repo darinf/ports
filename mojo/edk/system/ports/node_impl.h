@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PORTS_SRC_NODE_IMPL_H_
-#define PORTS_SRC_NODE_IMPL_H_
+#ifndef MOJO_EDK_SYSTEM_PORTS_NODE_IMPL_H_
+#define MOJO_EDK_SYSTEM_PORTS_NODE_IMPL_H_
 
 #include <mutex>
 #include <unordered_map>
@@ -13,6 +13,8 @@
 #include "mojo/edk/system/ports/port.h"
 #include "mojo/edk/system/ports/ports.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 class Node::Impl {
@@ -96,5 +98,7 @@ class Node::Impl {
 };
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo
 
-#endif  // PORTS_SRC_NODE_IMPL_H_
+#endif  // MOJO_EDK_SYSTEM_PORTS_NODE_IMPL_H_

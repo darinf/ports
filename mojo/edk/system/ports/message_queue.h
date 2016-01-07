@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PORTS_SRC_MESSAGE_QUEUE_H_
-#define PORTS_SRC_MESSAGE_QUEUE_H_
+#ifndef MOJO_EDK_SYSTEM_PORTS_MESSAGE_QUEUE_H_
+#define MOJO_EDK_SYSTEM_PORTS_MESSAGE_QUEUE_H_
 
 #include <functional>
 #include <memory>
@@ -11,6 +11,8 @@
 
 #include "mojo/edk/system/ports/ports.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 const uint32_t kInitialSequenceNum = 1;
@@ -47,5 +49,7 @@ class MessageQueue {
 };
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo
 
-#endif  // PORTS_SRC_MESSAGE_QUEUE_H_
+#endif  // MOJO_EDK_SYSTEM_PORTS_MESSAGE_QUEUE_H_

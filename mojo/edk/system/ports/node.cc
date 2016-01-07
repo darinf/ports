@@ -4,6 +4,8 @@
 
 #include "mojo/edk/system/ports/node_impl.h"
 
+namespace mojo {
+namespace edk {
 namespace ports {
 
 Node::Node(const NodeName& name, NodeDelegate* delegate)
@@ -75,3 +77,5 @@ int Node::LostConnectionToNode(const NodeName& node) {
 }
 
 }  // namespace ports
+}  // namespace edk
+}  // namespace mojo
