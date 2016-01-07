@@ -26,7 +26,7 @@ source_set("ports") {
   ]
 }
 
-executable("ports_unittests") {
+executable("mojo_system_ports_unittests") {
   testonly = true
 
   sources = [
@@ -38,6 +38,4 @@ executable("ports_unittests") {
     "//testing/gtest",
     "//testing/gtest:gtest_main",
   ]
-
-  include_dirs = [ "." ]
 }
