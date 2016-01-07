@@ -114,6 +114,12 @@ void HandleTable::CancelTransit(
   }
 }
 
+void HandleTable::GetActiveHandlesForTest(std::vector<MojoHandle>* handles) {
+  handles->clear();
+  for (const auto& entry : handles_)
+    handles->push_back(entry.first);
+}
+
 HandleTable::Entry::Entry() {}
 
 HandleTable::Entry::Entry(scoped_refptr<Dispatcher> dispatcher)

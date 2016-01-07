@@ -45,6 +45,8 @@ class HandleTable {
   void CancelTransit(
       const std::vector<Dispatcher::DispatcherInTransit>& dispatchers);
 
+  void GetActiveHandlesForTest(std::vector<MojoHandle> *handles);
+
  private:
   struct Entry {
    Entry();

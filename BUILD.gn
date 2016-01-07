@@ -19,8 +19,6 @@ source_set("ports") {
     "mojo/edk/system/ports/port_ref.cc",
   ]
 
-  include_dirs = [ "." ]
-
   deps = [
     "//base",
   ]
@@ -30,7 +28,7 @@ executable("ports_unittests") {
   testonly = true
 
   sources = [
-    "mojo/edk/system/ports/test.cc",
+    "test.cc",
   ]
 
   deps = [
@@ -38,70 +36,4 @@ executable("ports_unittests") {
     "//testing/gtest",
     "//testing/gtest:gtest_main",
   ]
-
-  include_dirs = [ "." ]
-}
-
-source_set("ports_edk_test_support") {
-  testonly = true
-
-  sources = [
-    "mojo/edk/system/multiprocess_test_base.cc",
-    "mojo/edk/system/multiprocess_test_base.h",
-    "mojo/edk/system/multiprocess_test_helper.cc",
-    "mojo/edk/system/multiprocess_test_helper.h",
-
-    "//mojo/edk/test/scoped_ipc_support.cc",
-    "//mojo/edk/test/scoped_ipc_support.h",
-  ]
-
-  public_deps = [
-    ":ports",
-    "//base",
-    "//base/test:test_support",
-    "//crypto",
-    "//mojo/edk/test:test_support_impl",
-    "//mojo/public/cpp/environment:standalone",
-    "//testing/gtest",
-    "//third_party/mojo/src/mojo/edk/system",
-  ]
-
-  include_dirs = [ "." ]
-}
-
-executable("ports_edk_unittests") {
-  testonly = true
-
-  sources = [
-    "mojo/edk/system/buffers_unittest.cc",
-    "mojo/edk/system/pipes_unittest.cc",
-
-    "//mojo/edk/test/run_all_unittests.cc",
-  ]
-
-  deps = [
-    ":ports",
-    ":ports_edk_test_support",
-    "//testing/gtest",
-  ]
-
-  include_dirs = [ "." ]
-}
-
-executable("ports_edk_perftests") {
-  testonly = true
-
-  sources = [
-    "mojo/edk/system/pipes_perftest.cc",
-
-    "//mojo/edk/test/run_all_perftests.cc",
-  ]
-
-  deps = [
-    ":ports",
-    ":ports_edk_test_support",
-    "//testing/gtest",
-  ]
-
-  include_dirs = [ "." ]
 }

@@ -1,18 +1,50 @@
-# Copyright 2015 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-source_set("system") {
+import("//testing/test.gni")
+import("../../../mojo/public/tools/bindings/mojom.gni")
+
+if (is_android) {
+  import("//build/config/android/config.gni")
+  import("//build/config/android/rules.gni")
+}
+
+config("system_config") {
+  defines = [
+    # Ensures that dependent projects import the core functions on Windows.
+    "MOJO_USE_SYSTEM_IMPL",
+  ]
+}
+
+static_library("system") {
+  # TODO(use_chrome_edk): this should be a component to match third_party,
+  # but since third_party includes it, we either make it a static library
+  # or we have to change the export macros to be different than third_party.
+  #component("system") {
+  # TODO(use_chrome_edk): remove "2"
+  output_name = "mojo_system_impl2"
+
   sources = [
+    "async_waiter.cc",
+    "async_waiter.h",
+    "awakable.h",
+    "awakable_list.cc",
+    "awakable_list.h",
     "channel.cc",
     "channel.h",
     "channel_posix.cc",
+    "configuration.cc",
+    "configuration.h",
     "core.cc",
     "core.h",
     "dispatcher.cc",
     "dispatcher.h",
+    "handle_signals_state.h",
     "handle_table.cc",
     "handle_table.h",
+    "mapping_table.cc",
+    "mapping_table.h",
     "message_pipe_dispatcher.cc",
     "message_pipe_dispatcher.h",
     "node.cc",
@@ -21,28 +53,13 @@ source_set("system") {
     "node_channel.h",
     "ports_message.cc",
     "ports_message.h",
+    "options_validation.h",
     "shared_buffer_dispatcher.cc",
     "shared_buffer_dispatcher.h",
     "wait_set_dispatcher.cc",
     "wait_set_dispatcher.h",
-  ]
-
-  # Sources we can repurpose from the existing EDK impl
-  sources += [
-    "//mojo/edk/system/async_waiter.cc",
-    "//mojo/edk/system/async_waiter.h",
-    "//mojo/edk/system/awakable.h",
-    "//mojo/edk/system/awakable_list.cc",
-    "//mojo/edk/system/awakable_list.h",
-    "//mojo/edk/system/configuration.cc",
-    "//mojo/edk/system/configuration.h",
-    "//mojo/edk/system/handle_signals_state.h",
-    "//mojo/edk/system/mapping_table.cc",
-    "//mojo/edk/system/mapping_table.h",
-    "//mojo/edk/system/options_validation.h",
-    "//mojo/edk/system/system_impl_export.h",
-    "//mojo/edk/system/waiter.cc",
-    "//mojo/edk/system/waiter.h",
+    "waiter.cc",
+    "waiter.h",
   ]
 
   defines = [
@@ -50,21 +67,20 @@ source_set("system") {
     "MOJO_SYSTEM_IMPLEMENTATION",
   ]
 
-  all_dependent_configs = [ "//mojo/edk/system:system_config" ]
+  all_dependent_configs = [ ":system_config" ]
+
+  public_deps = [
+    "../../../mojo/public/c/system",
+    "../../../mojo/public/cpp/system",
+    "../embedder",
+    "../embedder:delegates",
+    "../embedder:platform",
+  ]
 
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
     "//crypto",
-  ]
-
-  public_deps = [
-    "../../..:ports",
-    "../embedder",
-    "//mojo/public/c/system",
-    "//mojo/public/cpp/system",
-    "//mojo/edk/embedder:delegates",
-    "//mojo/edk/embedder:platform",
   ]
 
   if (is_win) {
@@ -73,6 +89,166 @@ source_set("system") {
   }
 
   allow_circular_includes_from = [ "../embedder" ]
+}
 
-  include_dirs = [ "../../.." ]
+group("tests") {
+  testonly = true
+  deps = [
+    # TODO(use_chrome_edk): remove "2"
+    ":mojo_message_pipe_perftests2",
+    ":mojo_system_unittests2",
+  ]
+}
+
+source_set("test_utils") {
+  testonly = true
+
+  sources = [
+    "test_utils.cc",
+    "test_utils.h",
+  ]
+
+  public_deps = [
+    "//mojo/public/c/system",
+    "//mojo/public/cpp/system",
+  ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/edk/test:test_support",
+    "//testing/gtest:gtest",
+  ]
+}
+
+# TODO(use_chrome_edk): remove "2"
+test("mojo_system_unittests2") {
+  sources = [
+    "../test/multiprocess_test_helper_unittest.cc",
+    "awakable_list_unittest.cc",
+    "core_test_base.cc",
+    "core_test_base.h",
+    "core_unittest.cc",
+    "data_pipe_unittest.cc",
+    "dispatcher_unittest.cc",
+    "message_in_transit_queue_unittest.cc",
+    "message_in_transit_test_utils.cc",
+    "message_in_transit_test_utils.h",
+    "message_pipe_test_utils.cc",
+    "message_pipe_test_utils.h",
+    "message_pipe_unittest.cc",
+    "multiprocess_message_pipe_unittest.cc",
+    "options_validation_unittest.cc",
+    "platform_handle_dispatcher_unittest.cc",
+    "raw_channel_unittest.cc",
+    "shared_buffer_dispatcher_unittest.cc",
+    "simple_dispatcher_unittest.cc",
+    "wait_set_dispatcher_unittest.cc",
+    "waiter_test_utils.cc",
+    "waiter_test_utils.h",
+    "waiter_unittest.cc",
+  ]
+
+  deps = [
+    ":test_utils",
+
+    # TODO(use_chrome_edk): remove "2"
+    "../../../mojo/public/cpp/environment:standalone",
+    "../embedder:embedder_unittests2",
+    "../test:test_support",
+    "//base",
+    "//base/test:test_support",
+    "//mojo/edk/test:run_all_unittests",
+    "//testing/gtest",
+
+    # TODO(use_chrome_edk): temporary since the Mojo wrapper primitives are
+    # declared in third party only for now.
+    "//third_party/mojo/src/mojo/edk/system",
+  ]
+
+  # TODO(use_chrome_edk): remove "2"
+  allow_circular_includes_from = [ "../embedder:embedder_unittests2" ]
+}
+
+# TODO(use_chrome_edk): remove "2"
+test("mojo_message_pipe_perftests2") {
+  sources = [
+    "message_pipe_perftest.cc",
+    "message_pipe_test_utils.cc",
+    "message_pipe_test_utils.h",
+  ]
+
+  deps = [
+    ":test_utils",
+    "../../../mojo/public/cpp/environment:standalone",
+    "../test:run_all_perftests",
+    "../test:test_support",
+    "//base",
+    "//base/test:test_support",
+    "//testing/gtest",
+
+    # TODO(use_chrome_edk): temporary since the Mojo wrapper primitives are
+    # declared in third party only for now.
+    "//third_party/mojo/src/mojo/edk/system",
+  ]
+}
+
+# TODO(ports_edk): Merge the targets below into existing test targets
+
+source_set("ports_edk_test_support") {
+  testonly = true
+
+  sources = [
+    "//mojo/edk/system/multiprocess_test_base.cc",
+    "//mojo/edk/system/multiprocess_test_base.h",
+    "//mojo/edk/system/multiprocess_test_helper.cc",
+    "//mojo/edk/system/multiprocess_test_helper.h",
+
+    "//mojo/edk/test/scoped_ipc_support.cc",
+    "//mojo/edk/test/scoped_ipc_support.h",
+  ]
+
+  public_deps = [
+    "ports",
+    "//base",
+    "//base/test:test_support",
+    "//crypto",
+    "//mojo/edk/test:test_support_impl",
+    "//mojo/public/cpp/environment:standalone",
+    "//testing/gtest",
+    "//third_party/mojo/src/mojo/edk/system",
+  ]
+}
+
+executable("ports_edk_unittests") {
+  testonly = true
+
+  sources = [
+    "//mojo/edk/system/buffers_unittest.cc",
+    "//mojo/edk/system/pipes_unittest.cc",
+
+    "//mojo/edk/test/run_all_unittests.cc",
+  ]
+
+  deps = [
+    ":ports_edk_test_support",
+    "ports",
+    "//testing/gtest",
+  ]
+}
+
+executable("ports_edk_perftests") {
+  testonly = true
+
+  sources = [
+    "//mojo/edk/system/pipes_perftest.cc",
+
+    "//mojo/edk/test/run_all_perftests.cc",
+  ]
+
+  deps = [
+    ":ports_edk_test_support",
+    "ports",
+    "//testing/gtest",
+  ]
 }

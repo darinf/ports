@@ -5,6 +5,8 @@
 #ifndef PORTS_MOJO_SYSTEM_CORE_H_
 #define PORTS_MOJO_SYSTEM_CORE_H_
 
+#include <vector>
+
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
 #include "base/macros.h"
@@ -178,6 +180,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                        void** buffer,
                        MojoMapBufferFlags flags);
   MojoResult UnmapBuffer(void* buffer);
+
+  void GetActiveHandlesForTest(std::vector<MojoHandle>* handles);
 
  private:
   using DispatcherMap = base::hash_map<MojoHandle, scoped_refptr<Dispatcher>>;

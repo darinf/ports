@@ -1,0 +1,43 @@
+# Copyright 2016 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+source_set("ports") {
+  sources = [
+    "event.h",
+    "hash_functions.h",
+    "logging.cc",
+    "message.cc",
+    "message_queue.cc",
+    "message_queue.h",
+    "node.cc",
+    "node_impl.cc",
+    "node_impl.h",
+    "port.cc",
+    "port.h",
+    "port_ref.cc",
+    "ports.h",
+  ]
+
+  include_dirs = [ "." ]
+
+  deps = [
+    "//base",
+  ]
+}
+
+executable("ports_unittests") {
+  testonly = true
+
+  sources = [
+    "test.cc",
+  ]
+
+  deps = [
+    ":ports",
+    "//testing/gtest",
+    "//testing/gtest:gtest_main",
+  ]
+
+  include_dirs = [ "." ]
+}

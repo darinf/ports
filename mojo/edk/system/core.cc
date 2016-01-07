@@ -462,6 +462,11 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
   return handles_.GetDispatcher(handle);
 }
 
+void Core::GetActiveHandlesForTest(std::vector<MojoHandle>* handles) {
+  base::AutoLock lock(handles_lock_);
+  handles_.GetActiveHandlesForTest(handles);
+}
+
 MojoResult Core::WaitManyInternal(const MojoHandle* handles,
                                   const MojoHandleSignals* signals,
                                   uint32_t num_handles,
