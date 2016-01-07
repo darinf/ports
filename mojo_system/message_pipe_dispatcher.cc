@@ -157,7 +157,7 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
       base::AutoLock lock(signal_lock_);
       peer_closed_ = true;
-      awakables_.AwakeForStateChange(GetHandleSignalsState());
+      awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
       return MOJO_RESULT_FAILED_PRECONDITION;
     }
 
@@ -229,7 +229,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
       base::AutoLock lock(signal_lock_);
       peer_closed_ = true;
-      awakables_.AwakeForStateChange(GetHandleSignalsState());
+      awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
       return MOJO_RESULT_FAILED_PRECONDITION;
     }
 
