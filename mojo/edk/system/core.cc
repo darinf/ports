@@ -492,7 +492,6 @@ MojoResult Core::WaitManyInternal(const MojoHandle* handles,
                                   MojoDeadline deadline,
                                   uint32_t *result_index,
                                   HandleSignalsState* signals_states) {
-  // TODO: Review this... Ripped from existing EDK.
   CHECK(handles);
   CHECK(signals);
   DCHECK_GT(num_handles, 0u);
