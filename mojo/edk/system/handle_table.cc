@@ -49,8 +49,6 @@ bool HandleTable::AddDispatchersFromTransit(
 }
 
 scoped_refptr<Dispatcher> HandleTable::GetDispatcher(MojoHandle handle) const {
-  DCHECK_NE(handle, MOJO_HANDLE_INVALID);
-
   auto it = handles_.find(handle);
   if (it == handles_.end())
     return nullptr;
@@ -60,8 +58,6 @@ scoped_refptr<Dispatcher> HandleTable::GetDispatcher(MojoHandle handle) const {
 MojoResult HandleTable::GetAndRemoveDispatcher(
     MojoHandle handle,
     scoped_refptr<Dispatcher>* dispatcher) {
-  DCHECK_NE(handle, MOJO_HANDLE_INVALID);
-
   auto it = handles_.find(handle);
   if (it == handles_.end())
     return MOJO_RESULT_INVALID_ARGUMENT;
