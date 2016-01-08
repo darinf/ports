@@ -219,7 +219,7 @@ MojoResult Core::AddHandle(MojoHandle wait_set_handle,
 }
 
 MojoResult Core::RemoveHandle(MojoHandle wait_set_handle,
-                        MojoHandle handle) {
+                              MojoHandle handle) {
   scoped_refptr<Dispatcher> wait_set_dispatcher(GetDispatcher(wait_set_handle));
   if (!wait_set_dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;

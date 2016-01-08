@@ -151,12 +151,12 @@ test("mojo_system_unittests2") {
   ]
 
   deps = [
-    ":system",
+  "../embedder",
     ":test_utils",
 
     # TODO(use_chrome_edk): remove "2"
     "../../../mojo/public/cpp/environment:standalone",
-    #"../embedder:embedder_unittests2",
+    "../embedder:embedder_unittests2",
     "../test:test_support",
     "//base",
     "//base/test:test_support",
@@ -169,7 +169,7 @@ test("mojo_system_unittests2") {
   ]
 
   # TODO(use_chrome_edk): remove "2"
-  #allow_circular_includes_from = [ "../embedder:embedder_unittests2" ]
+  allow_circular_includes_from = [ "../embedder:embedder_unittests2" ]
 }
 
 # TODO(use_chrome_edk): remove "2"
