@@ -10,7 +10,8 @@
 #include <thread>
 
 #include "base/logging.h"
-#include "mojo/edk/system/ports/ports.h"
+#include "mojo/edk/system/ports/node.h"
+#include "mojo/edk/system/ports/node_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // Each thread has a thread-local mapping from thread_id to port to used to

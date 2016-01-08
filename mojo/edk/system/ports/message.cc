@@ -8,7 +8,6 @@
 
 #include "base/logging.h"
 #include "mojo/edk/system/ports/event.h"
-#include "mojo/edk/system/ports/ports.h"
 
 namespace mojo {
 namespace edk {

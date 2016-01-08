@@ -18,7 +18,6 @@ source_set("ports") {
     "port.cc",
     "port.h",
     "port_ref.cc",
-    "ports.h",
     "user_data.h",
   ]
 

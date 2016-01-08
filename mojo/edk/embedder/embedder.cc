@@ -9,7 +9,6 @@
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/simple_platform_support.h"
 #include "mojo/edk/system/core.h"
-#include "mojo/edk/system/ports/ports.h"
 
 namespace mojo {
 namespace edk {
