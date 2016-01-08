@@ -143,7 +143,7 @@ test("mojo_system_unittests2") {
 
     "platform_handle_dispatcher_unittest.cc",
     "shared_buffer_dispatcher_unittest.cc",
-    #"wait_set_dispatcher_unittest.cc",
+    "wait_set_dispatcher_unittest.cc",
     "waiter_test_utils.cc",
     "waiter_test_utils.h",
     "waiter_unittest.cc",

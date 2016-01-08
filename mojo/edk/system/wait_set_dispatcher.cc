@@ -78,6 +78,10 @@ MojoResult WaitSetDispatcher::AddWaitingDispatcher(
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   base::AutoLock lock(lock_);
+
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   uintptr_t dispatcher_handle = reinterpret_cast<uintptr_t>(dispatcher.get());
   auto it = waiting_dispatchers_.find(dispatcher_handle);
   if (it != waiting_dispatchers_.end()) {

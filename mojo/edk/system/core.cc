@@ -50,6 +50,11 @@ Core::Core() : node_(this) {}
 
 Core::~Core() {}
 
+scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
+  base::AutoLock lock(handles_lock_);
+  return handles_.GetDispatcher(handle);
+}
+
 void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
   io_task_runner_ = io_task_runner;
 }
@@ -474,11 +479,6 @@ MojoResult Core::MapBuffer(MojoHandle buffer_handle,
 MojoResult Core::UnmapBuffer(void* buffer) {
   base::AutoLock lock(mapping_table_lock_);
   return mapping_table_.RemoveMapping(buffer);
-}
-
-scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
-  base::AutoLock lock(handles_lock_);
-  return handles_.GetDispatcher(handle);
 }
 
 void Core::GetActiveHandlesForTest(std::vector<MojoHandle>* handles) {

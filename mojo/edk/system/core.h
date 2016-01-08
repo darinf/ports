@@ -42,6 +42,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   Node* node() { return &node_; }
   scoped_refptr<base::TaskRunner> io_task_runner() { return io_task_runner_; }
 
+  scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
+
   // Called exactly once, shortly after construction, and before any other
   // methods are called on this object.
   void SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner);
@@ -186,7 +188,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
  private:
   using DispatcherMap = base::hash_map<MojoHandle, scoped_refptr<Dispatcher>>;
 
-  scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
   MojoResult WaitManyInternal(const MojoHandle* handles,
                               const MojoHandleSignals* signals,
                               uint32_t num_handles,
