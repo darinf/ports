@@ -51,6 +51,8 @@ static_library("system") {
     "node.h",
     "node_channel.cc",
     "node_channel.h",
+    "platform_handle_dispatcher.cc",
+    "platform_handle_dispatcher.h",
     "ports_message.cc",
     "ports_message.h",
     "options_validation.h",
@@ -139,9 +141,7 @@ test("mojo_system_unittests2") {
     "new_multiprocess_message_pipe_unittest.cc",
     "options_validation_unittest.cc",
 
-    # TODO: Replace FooDispatcher unit tests with API tests that exercise EDK
-    # API expectations rather than Dispatcher expectations.
-    #"platform_handle_dispatcher_unittest.cc",
+    "platform_handle_dispatcher_unittest.cc",
     #"shared_buffer_dispatcher_unittest.cc",
     #"simple_dispatcher_unittest.cc",
     #"wait_set_dispatcher_unittest.cc",

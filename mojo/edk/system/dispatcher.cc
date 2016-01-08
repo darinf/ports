@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "mojo/edk/system/configuration.h"
+#include "mojo/edk/system/platform_handle_dispatcher.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
 
 namespace mojo {
@@ -112,6 +113,9 @@ scoped_refptr<Dispatcher> Dispatcher::Deserialize(
   switch (type) {
     case Type::SHARED_BUFFER:
       return SharedBufferDispatcher::Deserialize(
+          bytes, num_bytes, platform_handles, num_platform_handles);
+    case Type::PLATFORM_HANDLE:
+      return PlatformHandleDispatcher::Deserialize(
           bytes, num_bytes, platform_handles, num_platform_handles);
     default:
       LOG(ERROR) << "Deserializing invalid dispatcher type.";
