@@ -14,8 +14,8 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/awakable_list.h"
+#include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/system_impl_export.h"
 
 namespace mojo {

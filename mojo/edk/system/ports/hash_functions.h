@@ -5,9 +5,9 @@
 #ifndef MOJO_EDK_SYSTEM_PORTS_HASH_FUNCTIONS_H_
 #define MOJO_EDK_SYSTEM_PORTS_HASH_FUNCTIONS_H_
 
-#include "mojo/edk/system/ports/ports.h"
-
 #include <functional>
+
+#include "mojo/edk/system/ports/ports.h"
 
 namespace std {
 

@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/system/ports/ports.h"
-
 #include <stdlib.h>
 
 #include <limits>
 
 #include "base/logging.h"
 #include "mojo/edk/system/ports/event.h"
+#include "mojo/edk/system/ports/ports.h"
 
 namespace mojo {
 namespace edk {

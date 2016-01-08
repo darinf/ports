@@ -9,8 +9,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
-#include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
+#include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/channel.h"
 #include "mojo/edk/system/ports/ports.h"
 

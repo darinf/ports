@@ -4,10 +4,10 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <thread>
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <thread>
 
 #include "base/logging.h"
 #include "mojo/edk/system/ports/ports.h"
