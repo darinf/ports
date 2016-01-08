@@ -13,18 +13,18 @@ namespace std {
 
 template <>
 struct hash<mojo::edk::ports::PortName> {
-  std::size_t operator()(const mojo::edk::ports::PortName& port_name) const {
-    size_t h1 = hash<uint64_t>()(port_name.value_major);
-    size_t h2 = hash<uint64_t>()(port_name.value_minor);
+  std::size_t operator()(const mojo::edk::ports::PortName& name) const {
+    size_t h1 = hash<uint64_t>()(name.v1);
+    size_t h2 = hash<uint64_t>()(name.v2);
     return h1 ^ (h2 << 1);
   }
 };
 
 template <>
 struct hash<mojo::edk::ports::NodeName> {
-  std::size_t operator()(const mojo::edk::ports::NodeName& node_name) const {
-    size_t h1 = hash<uint64_t>()(node_name.value_major);
-    size_t h2 = hash<uint64_t>()(node_name.value_minor);
+  std::size_t operator()(const mojo::edk::ports::NodeName& name) const {
+    size_t h1 = hash<uint64_t>()(name.v1);
+    size_t h2 = hash<uint64_t>()(name.v2);
     return h1 ^ (h2 << 1);
   }
 };

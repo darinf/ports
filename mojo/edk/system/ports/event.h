@@ -14,6 +14,8 @@ namespace mojo {
 namespace edk {
 namespace ports {
 
+// TODO: Add static assertions of alignment.
+
 struct PortDescriptor {
   NodeName peer_node_name;
   PortName peer_port_name;

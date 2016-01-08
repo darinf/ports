@@ -10,20 +10,11 @@ namespace mojo {
 namespace edk {
 namespace ports {
 
-std::ostream& operator<<(std::ostream& stream, const PortName& name) {
+std::ostream& operator<<(std::ostream& stream, const Name& name) {
   std::ios::fmtflags flags(stream.flags());
-  stream << std::hex << std::uppercase << name.value_major;
-  if (name.value_minor != 0)
-    stream << '.' << name.value_minor;
-  stream.flags(flags);
-  return stream;
-}
-
-std::ostream& operator<<(std::ostream& stream, const NodeName& name) {
-  std::ios::fmtflags flags(stream.flags());
-  stream << std::hex << std::uppercase << name.value_major;
-  if (name.value_minor != 0)
-    stream << '.' << name.value_minor;
+  stream << std::hex << std::uppercase << name.v1;
+  if (name.v2 != 0)
+    stream << '.' << name.v2;
   stream.flags(flags);
   return stream;
 }

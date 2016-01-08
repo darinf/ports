@@ -11,6 +11,9 @@
 #include <memory>
 #include <ostream>
 
+#include "mojo/edk/system/ports/message.h"
+#include "mojo/edk/system/ports/name.h"
+
 namespace mojo {
 namespace edk {
 namespace ports {
@@ -25,96 +28,6 @@ enum {
   ERROR_PORT_PEER_CLOSED = -15,
   ERROR_NOT_IMPLEMENTED = -100,
 };
-
-// Port names are globally unique.
-struct PortName {
-  PortName() : value_major(0), value_minor(0) {}
-  PortName(uint64_t value_major, uint64_t value_minor)
-      : value_major(value_major), value_minor(value_minor) {}
-  uint64_t value_major;
-  uint64_t value_minor;
-};
-
-const PortName kInvalidPortName = {0, 0};
-
-inline bool operator==(const PortName& a, const PortName& b) {
-  return a.value_major == b.value_major && a.value_minor == b.value_minor;
-}
-inline bool operator!=(const PortName& a, const PortName& b) {
-  return !(a == b);
-}
-
-std::ostream& operator<<(std::ostream& stream, const PortName& name);
-
-// Node names are globally unique.
-struct NodeName {
-  NodeName() : value_major(0), value_minor(0) {}
-  NodeName(uint64_t value_major, uint64_t value_minor)
-      : value_major(value_major), value_minor(value_minor) {}
-  uint64_t value_major;
-  uint64_t value_minor;
-};
-
-const NodeName kInvalidNodeName = {0, 0};
-
-inline bool operator==(const NodeName& a, const NodeName& b) {
-  return a.value_major == b.value_major && a.value_minor == b.value_minor;
-}
-inline bool operator!=(const NodeName& a, const NodeName& b) {
-  return !(a == b);
-}
-
-std::ostream& operator<<(std::ostream& stream, const NodeName& name);
-
-// This class is designed to be subclassed by the embedder. See NodeDelegate's
-// AllocMessage method.
-class Message {
- public:
-  virtual ~Message() {}
-
-  static void Parse(const void* bytes,
-                    size_t num_bytes,
-                    size_t* num_header_bytes,
-                    size_t* num_payload_bytes,
-                    size_t* num_ports_bytes);
-
-  // Header bytes are used by the Node implementation.
-  void* mutable_header_bytes() { return start_; }
-  const void* header_bytes() const { return start_; }
-  size_t num_header_bytes() const { return num_header_bytes_; }
-
-  void* mutable_payload_bytes() {
-    return start_ + num_header_bytes_ + num_ports_bytes_;
-  }
-  const void* payload_bytes() const {
-    return const_cast<Message*>(this)->mutable_payload_bytes();
-  }
-  size_t num_payload_bytes() const { return num_payload_bytes_; }
-
-  PortName* mutable_ports() {
-    return reinterpret_cast<PortName*>(start_ + num_header_bytes_);
-  }
-  const PortName* ports() const {
-    return const_cast<Message*>(this)->mutable_ports();
-  }
-  size_t num_ports_bytes() const { return num_ports_bytes_; }
-  size_t num_ports() const { return num_ports_bytes_ / sizeof(PortName); }
-
- protected:
-  Message(size_t num_header_bytes,
-          size_t num_payload_bytes,
-          size_t num_ports_bytes);
-  Message(const Message& other) = delete;
-  void operator=(const Message& other) = delete;
-
-  // Note: storage is [header][ports][payload].
-  char* start_;
-  size_t num_header_bytes_;
-  size_t num_ports_bytes_;
-  size_t num_payload_bytes_;
-};
-
-typedef std::unique_ptr<Message> ScopedMessage;
 
 class Port;  // Private to the implementation.
 
