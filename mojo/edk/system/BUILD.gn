@@ -126,11 +126,11 @@ source_set("test_utils") {
 test("mojo_system_unittests2") {
   sources = [
     #"../test/multiprocess_test_helper_unittest.cc",
-    #"awakable_list_unittest.cc",
+    "awakable_list_unittest.cc",
     "buffers_unittest.cc",
-    #"core_test_base.cc",
-    #"core_test_base.h",
-    #"core_unittest.cc",
+    "core_test_base.cc",
+    "core_test_base.h",
+    "core_unittest.cc",
     #"data_pipe_unittest.cc",
     #"dispatcher_unittest.cc",
     #"message_in_transit_queue_unittest.cc",

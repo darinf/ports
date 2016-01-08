@@ -28,6 +28,9 @@ namespace edk {
 
 namespace {
 
+// This is an unnecessarily large limit that is relatively easy to enforce.
+const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
+
 void OnRemotePeerConnected(
     Core* core,
     const ports::PortName& local_port_name,
@@ -278,18 +281,28 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
                               uint32_t num_handles,
                               MojoWriteMessageFlags flags) {
   auto dispatcher = GetDispatcher(message_pipe_handle);
-  if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
+  if (!dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   if (num_handles == 0)  // Fast path: no handles.
     return dispatcher->WriteMessage(bytes, num_bytes, nullptr, 0, flags);
 
+  if (num_handles > kMaxHandlesPerMessage)
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+
+  for (size_t i = 0; i < num_handles; ++i) {
+    if (message_pipe_handle == handles[i])
+      return MOJO_RESULT_BUSY;
+  }
+
   std::vector<Dispatcher::DispatcherInTransit> dispatchers;
   {
     base::AutoLock lock(handles_lock_);
     MojoResult rv = handles_.BeginTransit(handles, num_handles, &dispatchers);
-    if (rv != MOJO_RESULT_OK)
+    if (rv != MOJO_RESULT_OK) {
+      handles_.CancelTransit(dispatchers);
       return rv;
+    }
   }
   DCHECK_EQ(num_handles, dispatchers.size());
 
@@ -315,7 +328,7 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
                              uint32_t* num_handles,
                              MojoReadMessageFlags flags) {
   auto dispatcher = GetDispatcher(message_pipe_handle);
-  if (!dispatcher || dispatcher->GetType() != Dispatcher::Type::MESSAGE_PIPE)
+  if (!dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;
   return dispatcher->ReadMessage(bytes, num_bytes, handles, num_handles, flags);
 }

@@ -122,8 +122,10 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     size_t port_index = 0;
     for (size_t i = 0; i < num_dispatchers; ++i) {
       Dispatcher* d = dispatchers[i].dispatcher.get();
+
       if (d->GetType() == Type::MESSAGE_PIPE) {
         MessagePipeDispatcher* mpd = static_cast<MessagePipeDispatcher*>(d);
+        DCHECK_NE(mpd, this);
         message->mutable_ports()[port_index] = mpd->GetPortName();
         port_index++;
       }

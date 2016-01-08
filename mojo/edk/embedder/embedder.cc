@@ -23,6 +23,8 @@ scoped_refptr<base::TaskRunner> g_io_thread_task_runner;
 
 PlatformSupport* g_platform_support;
 
+Core* GetCore() { return g_core; }
+
 }  // namespace internal
 
 void SetMaxMessageSize(size_t bytes) {

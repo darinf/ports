@@ -77,7 +77,8 @@ MojoResult HandleTable::BeginTransit(
     const MojoHandle* handles,
     uint32_t num_handles,
     std::vector<Dispatcher::DispatcherInTransit>* dispatchers) {
-  dispatchers->resize(num_handles);
+  dispatchers->clear();
+  dispatchers->reserve(num_handles);
   for (size_t i = 0; i < num_handles; ++i) {
     auto it = handles_.find(handles[i]);
     if (it == handles_.end())
@@ -86,7 +87,8 @@ MojoResult HandleTable::BeginTransit(
       return MOJO_RESULT_BUSY;
     it->second.busy = true;
 
-    Dispatcher::DispatcherInTransit& d = dispatchers->at(i);
+    dispatchers->emplace_back();
+    Dispatcher::DispatcherInTransit& d = dispatchers->back();
     d.local_handle = handles[i];
     d.dispatcher = it->second.dispatcher;
     d.dispatcher->BeginTransit();
