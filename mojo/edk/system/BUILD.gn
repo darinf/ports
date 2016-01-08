@@ -51,11 +51,11 @@ static_library("system") {
     "node.h",
     "node_channel.cc",
     "node_channel.h",
+    "options_validation.h",
     "platform_handle_dispatcher.cc",
     "platform_handle_dispatcher.h",
     "ports_message.cc",
     "ports_message.h",
-    "options_validation.h",
     "shared_buffer_dispatcher.cc",
     "shared_buffer_dispatcher.h",
     "wait_set_dispatcher.cc",
@@ -133,6 +133,7 @@ test("mojo_system_unittests2") {
     "core_test_base.cc",
     "core_test_base.h",
     "core_unittest.cc",
+
     #"data_pipe_unittest.cc",
     "message_pipe_test_utils.cc",
     "message_pipe_test_utils.h",
@@ -140,7 +141,6 @@ test("mojo_system_unittests2") {
     "multiprocess_message_pipe_unittest.cc",
     "new_multiprocess_message_pipe_unittest.cc",
     "options_validation_unittest.cc",
-
     "platform_handle_dispatcher_unittest.cc",
     "shared_buffer_dispatcher_unittest.cc",
     "wait_set_dispatcher_unittest.cc",
