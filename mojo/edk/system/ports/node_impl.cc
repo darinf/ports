@@ -182,7 +182,7 @@ int Node::Impl::GetMessage(const PortRef& port_ref, ScopedMessage* message) {
 }
 
 int Node::Impl::GetMessageIf(const PortRef& port_ref,
-                             MessageSelector* selector,
+                             std::function<bool(const Message&)> selector,
                              ScopedMessage* message) {
   *message = nullptr;
 

@@ -69,12 +69,6 @@ class Message {
 
 typedef std::unique_ptr<Message> ScopedMessage;
 
-class MessageSelector {
- public:
-  // Returns true to select the given message.
-  virtual bool Select(const Message& message) = 0;
-};
-
 }  // namespace ports
 }  // namespace edk
 }  // namespace mojo

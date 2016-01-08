@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <functional>
 #include <vector>
 
 #include "mojo/edk/system/ports/message.h"
@@ -31,7 +32,8 @@ class MessageQueue {
   bool HasNextMessage() const;
 
   // Gives ownership of the message. The selector may be null.
-  void GetNextMessageIf(MessageSelector* selector, ScopedMessage* message);
+  void GetNextMessageIf(std::function<bool(const Message&)> selector,
+                        ScopedMessage* message);
 
   // Takes ownership of the message. Note: Messages are ordered, so while we
   // have added a message to the queue, we may still be waiting on a message

@@ -106,6 +106,12 @@ int Node::GetStatus(const ports::PortRef& port_ref, ports::PortStatus* status) {
   return node_->GetStatus(port_ref, status);
 }
 
+int Node::GetMessageIf(const ports::PortRef& port_ref,
+                       std::function<bool(const ports::Message&)> selector,
+                       ports::ScopedMessage* message) {
+  return node_->GetMessageIf(port_ref, std::move(selector), message);
+}
+
 void Node::ClosePort(const ports::PortRef& port) {
   int rv = node_->ClosePort(port);
   DCHECK_EQ(rv, ports::OK) << "ClosePort failed: " << rv;

@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <functional>
 #include <memory>
 #include <ostream>
 
@@ -129,12 +130,12 @@ class Node {
   // may be read from the port.
   int GetMessage(const PortRef& port_ref, ScopedMessage* message);
 
-  // Like GetMessage, but the caller may optionally supply a MessageSelector
-  // that decides whether or not to return the message. If |selector| is null,
-  // then GetMessageIf acts just like GetMessage. The |selector| may not call
-  // any Node methods.
+  // Like GetMessage, but the caller may optionally supply a selector function
+  // that decides whether or not to return the message. If |selector| is a
+  // nullptr, then GetMessageIf acts just like GetMessage. The |selector| may
+  // not call any Node methods.
   int GetMessageIf(const PortRef& port_ref,
-                   MessageSelector* selector,
+                   std::function<bool(const Message&)> selector,
                    ScopedMessage* message);
 
   // Allocate a message that can be passed to SendMessage. The caller may

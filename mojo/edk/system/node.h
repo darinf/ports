@@ -74,21 +74,9 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
 
   int GetStatus(const ports::PortRef& port_ref, ports::PortStatus* status);
 
-  // Enable use of lambda functions for selecting messages.
-  template <typename Predicate>
   int GetMessageIf(const ports::PortRef& port_ref,
-                   Predicate predicate,
-                   ports::ScopedMessage* message) {
-    class Adaptor : public ports::MessageSelector {
-     public:
-      explicit Adaptor(Predicate predicate) : predicate_(predicate) {}
-      bool Select(const ports::Message& message) override {
-        return predicate_(message);
-      }
-      Predicate predicate_;
-    } adaptor(predicate);
-    return node_->GetMessageIf(port_ref, &adaptor, message);
-  }
+                   std::function<bool(const ports::Message&)> selector,
+                   ports::ScopedMessage* message);
 
   // Closes a port.
   void ClosePort(const ports::PortRef& port_ref);

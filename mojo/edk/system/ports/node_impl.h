@@ -36,7 +36,7 @@ class Node::Impl {
   int GetStatus(const PortRef& port_ref, PortStatus* port_status);
   int GetMessage(const PortRef& port_ref, ScopedMessage* message);
   int GetMessageIf(const PortRef& port_ref,
-                   MessageSelector* selector,
+                   std::function<bool(const Message&)> selector,
                    ScopedMessage* message);
   int AllocMessage(size_t num_payload_bytes,
                    size_t num_ports,

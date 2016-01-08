@@ -57,9 +57,9 @@ int Node::GetMessage(const PortRef& port_ref, ScopedMessage* message) {
 }
 
 int Node::GetMessageIf(const PortRef& port_ref,
-                       MessageSelector* selector,
+                       std::function<bool(const Message&)> selector,
                        ScopedMessage* message) {
-  return impl_->GetMessageIf(port_ref, selector, message);
+  return impl_->GetMessageIf(port_ref, std::move(selector), message);
 }
 
 int Node::AllocMessage(size_t num_payload_bytes,
