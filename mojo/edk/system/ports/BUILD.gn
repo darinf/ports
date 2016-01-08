@@ -6,10 +6,12 @@ source_set("ports") {
   sources = [
     "event.h",
     "hash_functions.h",
-    "logging.cc",
     "message.cc",
+    "message.h",
     "message_queue.cc",
     "message_queue.h",
+    "name.cc",
+    "name.h",
     "node.cc",
     "node_impl.cc",
     "node_impl.h",

@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include "mojo/edk/system/ports/name.h"
+
 namespace mojo {
 namespace edk {
 namespace ports {
