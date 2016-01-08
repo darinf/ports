@@ -61,28 +61,6 @@ void NodeController::ConnectToParent(ScopedPlatformHandle platform_handle) {
                  base::Passed(&platform_handle)));
 }
 
-void NodeController::GetPort(const ports::PortName& port_name,
-                             ports::PortRef* port) {
-  node_->GetPort(port_name, port);
-}
-
-void NodeController::CreateUninitializedPort(ports::PortRef* port) {
-  node_->CreateUninitializedPort(port);
-}
-
-void NodeController::InitializePort(const ports::PortRef& port,
-                                    const ports::NodeName& peer_node_name,
-                                    const ports::PortName& peer_port_name) {
-  int rv = node_->InitializePort(port, peer_node_name, peer_port_name);
-  DCHECK_EQ(rv, ports::OK);
-}
-
-void NodeController::CreatePortPair(ports::PortRef* port0,
-                                    ports::PortRef* port1) {
-  int rv = node_->CreatePortPair(port0, port1);
-  DCHECK_EQ(rv, ports::OK);
-}
-
 void NodeController::SetPortObserver(
     const ports::PortRef& port,
     std::shared_ptr<PortObserver> observer) {
@@ -105,23 +83,6 @@ int NodeController::SendMessage(const ports::PortRef& port,
                                 scoped_ptr<PortsMessage> message) {
   ports::ScopedMessage ports_message(message.release());
   return node_->SendMessage(port, std::move(ports_message));
-}
-
-int NodeController::GetStatus(const ports::PortRef& port_ref,
-                              ports::PortStatus* status) {
-  return node_->GetStatus(port_ref, status);
-}
-
-int NodeController::GetMessageIf(
-    const ports::PortRef& port_ref,
-    std::function<bool(const ports::Message&)> selector,
-    ports::ScopedMessage* message) {
-  return node_->GetMessageIf(port_ref, std::move(selector), message);
-}
-
-void NodeController::ClosePort(const ports::PortRef& port) {
-  int rv = node_->ClosePort(port);
-  DCHECK_EQ(rv, ports::OK) << "ClosePort failed: " << rv;
 }
 
 void NodeController::ReservePortForToken(const ports::PortName& port_name,
@@ -444,9 +405,11 @@ void NodeController::OnConnectToPort(const ports::NodeName& from_node,
   DCHECK(!callback.is_null());
 
   ports::PortRef parent_port;
-  GetPort(parent_port_name, &parent_port);
+  CHECK_EQ(ports::OK, node_->GetPort(parent_port_name, &parent_port));
 
-  InitializePort(parent_port, from_node, connector_port_name);
+  CHECK_EQ(ports::OK, node_->InitializePort(parent_port, from_node,
+                                            connector_port_name));
+
   callback.Run();
 
   peer_it->second->ConnectToPortAck(connector_port_name, parent_port_name);
@@ -473,9 +436,10 @@ void NodeController::OnConnectToPortAck(
   DCHECK(!callback.is_null());
 
   ports::PortRef connector_port;
-  GetPort(connector_port_name, &connector_port);
+  CHECK_EQ(ports::OK, node_->GetPort(connector_port_name, &connector_port));
 
-  InitializePort(connector_port, parent_name_, connectee_port_name);
+  CHECK_EQ(ports::OK, node_->InitializePort(connector_port, parent_name_,
+                                            connectee_port_name));
   callback.Run();
 }
 

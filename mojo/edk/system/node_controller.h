@@ -51,19 +51,6 @@ class NodeController : public ports::NodeDelegate,
   // handshake.
   void ConnectToParent(ScopedPlatformHandle platform_handle);
 
-  void GetPort(const ports::PortName& port_name, ports::PortRef* port);
-
-  // Creates a single uninitialized port which is not ready for use.
-  void CreateUninitializedPort(ports::PortRef* port);
-
-  // Initializes a port with peer information.
-  void InitializePort(const ports::PortRef& port,
-                      const ports::NodeName& peer_node_name,
-                      const ports::PortName& peer_port_name);
-
-  // Creates a new pair of local ports on this node, returning their names.
-  void CreatePortPair(ports::PortRef* port0, ports::PortRef* port1);
-
   // Sets a port's observer.
   void SetPortObserver(const ports::PortRef& port,
                        std::shared_ptr<PortObserver> observer);
@@ -74,15 +61,6 @@ class NodeController : public ports::NodeDelegate,
   // Sends a message on a port to its peer.
   int SendMessage(const ports::PortRef& port_ref,
                   scoped_ptr<PortsMessage> message);
-
-  int GetStatus(const ports::PortRef& port_ref, ports::PortStatus* status);
-
-  int GetMessageIf(const ports::PortRef& port_ref,
-                   std::function<bool(const ports::Message&)> selector,
-                   ports::ScopedMessage* message);
-
-  // Closes a port.
-  void ClosePort(const ports::PortRef& port_ref);
 
   void ReservePortForToken(const ports::PortName& port_name,
                            const std::string& token,

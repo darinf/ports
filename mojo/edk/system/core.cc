@@ -37,7 +37,9 @@ void OnRemotePeerConnected(
   DVLOG(1) << "Remote peer connected for " << local_port_name;
 
   ports::PortRef local_port;
-  core->node_controller()->GetPort(local_port_name, &local_port);
+  CHECK_EQ(
+      ports::OK,
+      core->node_controller()->node()->GetPort(local_port_name, &local_port));
 
   callback.Run(ScopedMessagePipeHandle(MessagePipeHandle(core->AddDispatcher(
       new MessagePipeDispatcher(core->node_controller(), local_port)))));
@@ -76,7 +78,8 @@ bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
   std::vector<Dispatcher::DispatcherInTransit> dispatchers(message.num_ports());
   for (size_t i = 0; i < message.num_ports(); ++i) {
     ports::PortRef port;
-    node_controller_.GetPort(message.ports()[i], &port);
+    CHECK_EQ(ports::OK,
+             node_controller_.node()->GetPort(message.ports()[i], &port));
 
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
     d.dispatcher = new MessagePipeDispatcher(&node_controller_, port);
@@ -105,7 +108,7 @@ void Core::CreateParentMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   ports::PortRef port;
-  node_controller_.CreateUninitializedPort(&port);
+  node_controller_.node()->CreateUninitializedPort(&port);
   node_controller_.ReservePortForToken(
       port.name(), token,
       base::Bind(&OnRemotePeerConnected, base::Unretained(this), port.name(),
@@ -116,7 +119,7 @@ void Core::CreateChildMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   ports::PortRef port;
-  node_controller_.CreateUninitializedPort(&port);
+  node_controller_.node()->CreateUninitializedPort(&port);
   node_controller_.ConnectToParentPortByToken(
       token, port.name(),
       base::Bind(&OnRemotePeerConnected, base::Unretained(this), port.name(),
@@ -270,7 +273,7 @@ MojoResult Core::CreateMessagePipe(
     MojoHandle* message_pipe_handle0,
     MojoHandle* message_pipe_handle1) {
   ports::PortRef port0, port1;
-  node_controller_.CreatePortPair(&port0, &port1);
+  node_controller_.node()->CreatePortPair(&port0, &port1);
   CHECK(message_pipe_handle0);
   CHECK(message_pipe_handle1);
   *message_pipe_handle0 = AddDispatcher(

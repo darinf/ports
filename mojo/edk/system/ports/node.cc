@@ -74,7 +74,7 @@ int Node::InitializePort(const PortRef& port_ref,
   Port* port = port_ref.port();
 
   std::lock_guard<std::mutex> guard(port->lock);
-  if (port->state == Port::kClosed)
+  if (port->state != Port::kReceiving)
     return ERROR_PORT_STATE_UNEXPECTED;
 
   if (port->peer_node_name != kInvalidNodeName ||

@@ -90,8 +90,10 @@ MojoResult MessagePipeDispatcher::Close() {
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   port_closed_ = true;
-  if (!port_transferred_)
-    node_controller_->ClosePort(port_);
+  if (!port_transferred_) {
+    int rv = node_controller_->node()->ClosePort(port_);
+    DCHECK_EQ(ports::OK, rv);
+  }
   awakables_.CancelAll();
 
   return MOJO_RESULT_OK;
@@ -206,7 +208,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
   // we are sure we can consume it.
 
   ports::ScopedMessage ports_message;
-  int rv = node_controller_->GetMessageIf(
+  int rv = node_controller_->node()->GetMessageIf(
       port_,
       [num_bytes, num_handles, &no_space, &may_discard](
           const ports::Message& next_message) {
@@ -404,7 +406,9 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
     return nullptr;
 
   ports::PortRef port;
-  internal::g_core->node_controller()->GetPort(ports[0], &port);
+  CHECK_EQ(
+      ports::OK,
+      internal::g_core->node_controller()->node()->GetPort(ports[0], &port));
   return new MessagePipeDispatcher(internal::g_core->node_controller(), port);
 }
 
@@ -413,7 +417,7 @@ MessagePipeDispatcher::~MessagePipeDispatcher() {
 
 HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
   ports::PortStatus port_status;
-  if (node_controller_->GetStatus(port_, &port_status) != ports::OK) {
+  if (node_controller_->node()->GetStatus(port_, &port_status) != ports::OK) {
     CHECK(port_transferred_ || port_closed_);
     return HandleSignalsState();
   }
