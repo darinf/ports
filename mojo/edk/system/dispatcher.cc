@@ -46,6 +46,38 @@ MojoResult Dispatcher::MapBuffer(
   return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
+MojoResult Dispatcher::ReadData(void* elements,
+                                uint32_t* num_bytes,
+                                MojoReadDataFlags flags) {
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::BeginReadData(const void** buffer,
+                                     uint32_t* buffer_num_bytes,
+                                     MojoReadDataFlags flags) {
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::EndReadData(uint32_t num_bytes_read) {
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::WriteData(const void* elements,
+                                 uint32_t* num_bytes,
+                                 MojoWriteDataFlags flags) {
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::BeginWriteData(void** buffer,
+                                      uint32_t* buffer_num_bytes,
+                                      MojoWriteDataFlags flags) {
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::EndWriteData(uint32_t num_bytes_written) {
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
 MojoResult Dispatcher::AddWaitingDispatcher(
     const scoped_refptr<Dispatcher>& dispatcher,
     MojoHandleSignals signals,
@@ -81,27 +113,25 @@ void Dispatcher::RemoveAwakable(Awakable* awakable,
   NOTREACHED();
 }
 
-void Dispatcher::GetSerializedSize(uint32_t* num_bytes,
-                                   uint32_t* num_platform_handles) {
+void Dispatcher::StartSerialize(uint32_t* num_bytes,
+                                uint32_t* num_platform_handles) {
   *num_bytes = 0;
   *num_platform_handles = 0;
 }
 
-bool Dispatcher::SerializeAndClose(void* destination,
-                                   PlatformHandleVector* handles) {
+bool Dispatcher::EndSerializeAndClose(void* destination,
+                                      PlatformHandleVector* handles) {
   LOG(ERROR) << "Attempting to serialize a non-transferrable dispatcher.";
   return true;
 }
 
-bool Dispatcher::BeginTransit() {
-  return true;
-}
+bool Dispatcher::BeginTransit() { return true; }
 
-void Dispatcher::CompleteTransit() {
-}
+void Dispatcher::CompleteTransit() {}
 
-void Dispatcher::CancelTransit() {
-}
+void Dispatcher::CancelTransit() {}
+
+bool Dispatcher::IsBusy() { return false; }
 
 // static
 scoped_refptr<Dispatcher> Dispatcher::Deserialize(

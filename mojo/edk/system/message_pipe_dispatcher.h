@@ -44,9 +44,9 @@ class MessagePipeDispatcher : public Dispatcher {
                          HandleSignalsState* signals_state) override;
   void RemoveAwakable(Awakable* awakable,
                       HandleSignalsState* signals_state) override;
-  void GetSerializedSize(uint32_t* num_bytes, uint32_t* num_handles) override;
-  bool SerializeAndClose(void* destination,
-                         PlatformHandleVector* handles) override;
+  void StartSerialize(uint32_t* num_bytes, uint32_t* num_handles) override;
+  bool EndSerializeAndClose(void* destination,
+                            PlatformHandleVector* handles) override;
   void CompleteTransit() override;
 
  private:

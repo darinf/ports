@@ -39,6 +39,11 @@ struct MOJO_ALIGNAS(8) DispatcherHeader {
   uint32_t num_platform_handles;
 };
 
+struct SerializedDispatcherInfo {
+  uint32_t num_bytes;
+  uint32_t num_handles;
+};
+
 }  // namespace
 
 // A PortObserver which forwards to a MessagePipeDispatcher. This owns a
@@ -93,14 +98,14 @@ MojoResult MessagePipeDispatcher::WriteMessage(
   size_t header_size = sizeof(MessageHeader) +
       num_dispatchers * sizeof(DispatcherHeader);
   size_t num_ports = 0;
+  std::vector<SerializedDispatcherInfo> dispatcher_info(num_dispatchers);
   for (size_t i = 0; i < num_dispatchers; ++i) {
     Dispatcher* d = dispatchers[i].dispatcher.get();
     if (d->GetType() == Type::MESSAGE_PIPE)
       num_ports++;
-    uint32_t dispatcher_size = 0;
-    uint32_t num_handles = 0;
-    d->GetSerializedSize(&dispatcher_size, &num_handles);
-    header_size += dispatcher_size;
+    d->StartSerialize(&dispatcher_info[i].num_bytes,
+                      &dispatcher_info[i].num_handles);
+    header_size += dispatcher_info[i].num_bytes;
   }
 
   scoped_ptr<PortsMessage> message =
@@ -136,8 +141,9 @@ MojoResult MessagePipeDispatcher::WriteMessage(
 
       DispatcherHeader* dh = &dispatcher_headers[i];
       dh->type = static_cast<int32_t>(d->GetType());
-      d->GetSerializedSize(&dh->num_bytes, &dh->num_platform_handles);
-      if (!d->SerializeAndClose(dispatcher_data, handles.get())) {
+      dh->num_bytes = dispatcher_info[i].num_bytes;
+      dh->num_platform_handles = dispatcher_info[i].num_handles;
+      if (!d->EndSerializeAndClose(dispatcher_data, handles.get())) {
         // TODO: fail in a more useful manner?
         LOG(ERROR) << "Failed to serialize dispatcher.";
       }
@@ -371,14 +377,15 @@ void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
   awakables_.Remove(awakable);
 }
 
-void MessagePipeDispatcher::GetSerializedSize(uint32_t* num_bytes,
-                                              uint32_t* num_handles) {
+void MessagePipeDispatcher::StartSerialize(uint32_t* num_bytes,
+                                           uint32_t* num_handles) {
   *num_bytes = 0;
   *num_handles = 0;
 }
 
-bool MessagePipeDispatcher::SerializeAndClose(void* destination,
-                                              PlatformHandleVector* handles) {
+bool MessagePipeDispatcher::EndSerializeAndClose(
+    void* destination,
+    PlatformHandleVector* handles) {
   // Nothing to do. Pipes are serialied as ports.
   return true;
 }

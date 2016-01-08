@@ -348,6 +348,49 @@ MojoResult Core::CreateDataPipe(
     const MojoCreateDataPipeOptions* options,
     MojoHandle* data_pipe_producer_handle,
     MojoHandle* data_pipe_consumer_handle) {
+/*  MojoCreateDataPipeOptions validated_options = {};
+  MojoResult result =
+      DataPipe::ValidateCreateOptions(options, &validated_options);
+  if (result != MOJO_RESULT_OK)
+    return result;
+
+  scoped_refptr<DataPipeProducerDispatcher> producer_dispatcher =
+      DataPipeProducerDispatcher::Create(validated_options);
+  scoped_refptr<DataPipeConsumerDispatcher> consumer_dispatcher =
+      DataPipeConsumerDispatcher::Create(validated_options);
+
+  std::pair<MojoHandle, MojoHandle> handle_pair;
+  {
+    base::AutoLock locker(handle_table_lock_);
+    handle_pair = handle_table_.AddDispatcherPair(producer_dispatcher,
+                                                  consumer_dispatcher);
+  }
+
+  if (handle_pair.first == MOJO_HANDLE_INVALID) {
+    DCHECK_EQ(handle_pair.second, MOJO_HANDLE_INVALID);
+    LOG(ERROR) << "Handle table full";
+    producer_dispatcher->Close();
+    consumer_dispatcher->Close();
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+  DCHECK_NE(handle_pair.second, MOJO_HANDLE_INVALID);
+
+  ScopedPlatformHandle server_handle, client_handle;
+// TODO: Enable DataPipe on Windows.
+//#if defined(OS_WIN)
+//  internal::g_broker->CreatePlatformChannelPair(&server_handle, &client_handle);
+//#else
+  PlatformChannelPair channel_pair;
+  server_handle = channel_pair.PassServerHandle();
+  client_handle = channel_pair.PassClientHandle();
+//#endif
+  producer_dispatcher->Init(std::move(server_handle), nullptr, 0u);
+  consumer_dispatcher->Init(std::move(client_handle), nullptr, 0u);
+
+  *data_pipe_producer_handle = handle_pair.first;
+  *data_pipe_consumer_handle = handle_pair.second;
+  return MOJO_RESULT_OK;
+*/
   NOTIMPLEMENTED();
   return MOJO_RESULT_UNIMPLEMENTED;
 }
@@ -356,44 +399,68 @@ MojoResult Core::WriteData(MojoHandle data_pipe_producer_handle,
                            const void* elements,
                            uint32_t* num_bytes,
                            MojoWriteDataFlags flags) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  scoped_refptr<Dispatcher> dispatcher(
+      GetDispatcher(data_pipe_producer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return dispatcher->WriteData(elements, num_bytes, flags);
 }
 
 MojoResult Core::BeginWriteData(MojoHandle data_pipe_producer_handle,
                                 void** buffer,
                                 uint32_t* buffer_num_bytes,
                                 MojoWriteDataFlags flags) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  scoped_refptr<Dispatcher> dispatcher(
+      GetDispatcher(data_pipe_producer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return dispatcher->BeginWriteData(buffer, buffer_num_bytes, flags);
 }
 
 MojoResult Core::EndWriteData(MojoHandle data_pipe_producer_handle,
                               uint32_t num_bytes_written) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  scoped_refptr<Dispatcher> dispatcher(
+      GetDispatcher(data_pipe_producer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return dispatcher->EndWriteData(num_bytes_written);
 }
 
 MojoResult Core::ReadData(MojoHandle data_pipe_consumer_handle,
                           void* elements,
                           uint32_t* num_bytes,
                           MojoReadDataFlags flags) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  scoped_refptr<Dispatcher> dispatcher(
+      GetDispatcher(data_pipe_consumer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return dispatcher->ReadData(elements, num_bytes, flags);
 }
 
 MojoResult Core::BeginReadData(MojoHandle data_pipe_consumer_handle,
                                const void** buffer,
                                uint32_t* buffer_num_bytes,
                                MojoReadDataFlags flags) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  scoped_refptr<Dispatcher> dispatcher(
+      GetDispatcher(data_pipe_consumer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return dispatcher->BeginReadData(buffer, buffer_num_bytes, flags);
 }
 
 MojoResult Core::EndReadData(MojoHandle data_pipe_consumer_handle,
                              uint32_t num_bytes_read) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  scoped_refptr<Dispatcher> dispatcher(
+      GetDispatcher(data_pipe_consumer_handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return dispatcher->EndReadData(num_bytes_read);
 }
 
 MojoResult Core::CreateSharedBuffer(

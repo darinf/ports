@@ -25,9 +25,9 @@ class MOJO_SYSTEM_IMPL_EXPORT PlatformHandleDispatcher : public Dispatcher {
   // Dispatcher:
   Type GetType() const override;
   MojoResult Close() override;
-  void GetSerializedSize(uint32_t* num_bytes, uint32_t* num_handles) override;
-  bool SerializeAndClose(void* destination,
-                         PlatformHandleVector* handles) override;
+  void StartSerialize(uint32_t* num_bytes, uint32_t* num_handles) override;
+  bool EndSerializeAndClose(void* destination,
+                            PlatformHandleVector* handles) override;
 
   static scoped_refptr<PlatformHandleDispatcher> Deserialize(
       const void* bytes,

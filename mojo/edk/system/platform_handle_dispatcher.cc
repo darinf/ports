@@ -33,13 +33,13 @@ MojoResult PlatformHandleDispatcher::Close() {
   return MOJO_RESULT_OK;
 }
 
-void PlatformHandleDispatcher::GetSerializedSize(uint32_t* num_bytes,
-                                                 uint32_t* num_handles) {
+void PlatformHandleDispatcher::StartSerialize(uint32_t* num_bytes,
+                                              uint32_t* num_handles) {
   *num_bytes = 0;
   *num_handles = 1;
 }
 
-bool PlatformHandleDispatcher::SerializeAndClose(
+bool PlatformHandleDispatcher::EndSerializeAndClose(
     void* destination,
     PlatformHandleVector* handles) {
   base::AutoLock lock(lock_);

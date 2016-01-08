@@ -21,6 +21,7 @@
 #include "mojo/edk/system/ports/ports.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/buffer.h"
+#include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
 
@@ -92,6 +93,30 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
       MojoMapBufferFlags flags,
       scoped_ptr<PlatformSharedBufferMapping>* mapping);
 
+  ///////////// Data pipe consumer API /////////////
+
+  virtual MojoResult ReadData(void* elements,
+                              uint32_t* num_bytes,
+                              MojoReadDataFlags flags);
+
+  virtual MojoResult BeginReadData(const void** buffer,
+                                   uint32_t* buffer_num_bytes,
+                                   MojoReadDataFlags flags);
+
+  virtual MojoResult EndReadData(uint32_t num_bytes_read);
+
+  ///////////// Data pipe producer API /////////////
+
+  virtual MojoResult WriteData(const void* elements,
+                               uint32_t* num_bytes,
+                               MojoWriteDataFlags flags);
+
+  virtual MojoResult BeginWriteData(void** buffer,
+                                    uint32_t* buffer_num_bytes,
+                                    MojoWriteDataFlags flags);
+
+  virtual MojoResult EndWriteData(uint32_t num_bytes_written);
+
   ///////////// Wait set API /////////////
 
   // Adds a dispatcher to wait on. When the dispatcher satisfies |signals|, it
@@ -153,13 +178,15 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // Informs the caller of the total serialized size (in bytes) and the total
   // number of platform handles needed to transfer this dispatcher across
   // a message pipe.
-  virtual void GetSerializedSize(uint32_t* num_bytes,
-                                 uint32_t* num_platform_handles);
+  //
+  // Must eventually be followed by a call to EndSerializeAndClose().
+  virtual void StartSerialize(uint32_t* num_bytes,
+                              uint32_t* num_platform_handles);
 
   // Serializes this dispatcher into |destination| and |handles|. Returns true
   // iff successful, false otherwise. In either case the dispatcher will close.
-  virtual bool SerializeAndClose(void* destination,
-                                 PlatformHandleVector* handles);
+  virtual bool EndSerializeAndClose(void* destination,
+                                    PlatformHandleVector* handles);
 
   // Does whatever is necessary to begin transit of the dispatcher.  This
   // should return |true| if transit is OK, or false if the underlying resource
@@ -171,6 +198,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
 
   // Does whatever is necessary to cancel transit of the dispatcher.
   virtual void CancelTransit();
+
+  // May be used by a dispatcher to indicate that it's currently in a
+  // non-transferrable state.
+  virtual bool IsBusy();
 
   // Deserializes a specific dispatcher type from an incoming message.
   static scoped_refptr<Dispatcher> Deserialize(

@@ -180,14 +180,15 @@ MojoResult SharedBufferDispatcher::MapBuffer(
   return MOJO_RESULT_OK;
 }
 
-void SharedBufferDispatcher::GetSerializedSize(uint32_t* num_bytes,
-                                               uint32_t* num_platform_handles) {
+void SharedBufferDispatcher::StartSerialize(uint32_t* num_bytes,
+                                            uint32_t* num_platform_handles) {
   *num_bytes = sizeof(SerializedSharedBufferDispatcher);
   *num_platform_handles = 1;
 }
 
-bool SharedBufferDispatcher::SerializeAndClose(void* destination,
-                                               PlatformHandleVector* handles) {
+bool SharedBufferDispatcher::EndSerializeAndClose(
+    void* destination,
+    PlatformHandleVector* handles) {
   SerializedSharedBufferDispatcher* serialization =
       static_cast<SerializedSharedBufferDispatcher*>(destination);
   {
