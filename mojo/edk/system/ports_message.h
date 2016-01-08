@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MOJO_EDK_SYSTEM_PORTS_MESSAGE_H_
-#define MOJO_EDK_SYSTEM_PORTS_MESSAGE_H_
+#ifndef MOJO_EDK_SYSTEM_PORTS_MESSAGE_H__
+#define MOJO_EDK_SYSTEM_PORTS_MESSAGE_H__
 
 #include <utility>
 
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/system/channel.h"
-#include "mojo/edk/system/ports/ports.h"
+#include "mojo/edk/system/ports/message.h"
 
 namespace mojo {
 namespace edk {
@@ -42,4 +42,4 @@ class PortsMessage : public ports::Message {
 }  // namespace edk
 }  // namespace mojo
 
-#endif  // MOJO_EDK_SYSTEM_PORTS_MESSAGE_H_
+#endif  // MOJO_EDK_SYSTEM_PORTS_MESSAGE_H__
