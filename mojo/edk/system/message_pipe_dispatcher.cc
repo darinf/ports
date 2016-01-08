@@ -309,6 +309,9 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
     }
   }
 
+  if (header->num_dispatchers)
+    CHECK(handles);
+
   // Copy handles from all the new dispatchers.
   size_t pipe_handle_index = 0;
   size_t other_handle_index = 0;

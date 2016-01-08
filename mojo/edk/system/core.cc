@@ -267,6 +267,8 @@ MojoResult Core::CreateMessagePipe(
     MojoHandle* message_pipe_handle1) {
   ports::PortRef port0, port1;
   node_.CreatePortPair(&port0, &port1);
+  CHECK(message_pipe_handle0);
+  CHECK(message_pipe_handle1);
   *message_pipe_handle0 = AddDispatcher(
       new MessagePipeDispatcher(&node_, port0));
   *message_pipe_handle1 = AddDispatcher(
@@ -286,6 +288,8 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
 
   if (num_handles == 0)  // Fast path: no handles.
     return dispatcher->WriteMessage(bytes, num_bytes, nullptr, 0, flags);
+
+  CHECK(handles);
 
   if (num_handles > kMaxHandlesPerMessage)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
@@ -327,6 +331,8 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
                              MojoHandle* handles,
                              uint32_t* num_handles,
                              MojoReadMessageFlags flags) {
+  CHECK((!num_handles || !*num_handles || handles) &&
+        (!num_bytes || !*num_bytes || bytes));
   auto dispatcher = GetDispatcher(message_pipe_handle);
   if (!dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;
