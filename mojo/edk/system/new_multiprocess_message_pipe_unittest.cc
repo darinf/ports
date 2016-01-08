@@ -8,7 +8,7 @@
 
 #include "base/logging.h"
 #include "base/strings/string_split.h"
-#include "mojo/edk/system/multiprocess_test_base.h"
+#include "mojo/edk/test/multiprocess_test_base.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "testing/gtest/include/gtest/gtest.h"

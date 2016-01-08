@@ -12,7 +12,7 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "mojo/edk/system/multiprocess_test_helper.h"
+#include "mojo/edk/test/multiprocess_test_helper.h"
 #include "mojo/public/c/system/types.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -58,13 +58,13 @@ class MultiprocessTestBase : public testing::Test {
   // RunChild does not return until the child process exits.
   //
   // Use the RUN_CHILD (et al) macro below for convenience.
-  void RunChildWithCallback(
+  int RunChildWithCallback(
       const std::string& client_name,
       const base::Callback<void(ScopedMessagePipeHandle)>& callback);
 
   template <typename CallbackType>
-  void RunChild(const std::string& client_name, const CallbackType& callback) {
-    RunChildWithCallback(
+  int RunChild(const std::string& client_name, const CallbackType& callback) {
+    return RunChildWithCallback(
         client_name,
         BindPipeHandler([callback](ScopedMessagePipeHandle mp) {
           callback(mp.get().value()); }));
@@ -139,11 +139,13 @@ class MultiprocessTestBase : public testing::Test {
 
 #define CREATE_PIPE(a, b) MojoHandle a, b; CreatePipe(&a, &b);
 
-#define RUN_WITH_CHILD(client_name) RunChild(#client_name,
+#define RUN_WITH_CHILD(client_name) { int result = RunChild(#client_name,
 
 #define ON_PIPE(handlevar) [&](MojoHandle handlevar) {
 
-#define END_CHILD() });
+#define END_CHILD() }); EXPECT_EQ(0, result); }
+
+#define END_CHILD_WITH_EXIT_CODE(code) }); EXPECT_EQ(code, result); }
 
 #define EXPAND_CLIENT_NAMES(client_names...)  client_names
 

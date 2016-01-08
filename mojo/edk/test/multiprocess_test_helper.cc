@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/system/multiprocess_test_helper.h"
+#include "mojo/edk/test/multiprocess_test_helper.h"
 
 #include <sstream>
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/system/multiprocess_test_base.h"
+#include "mojo/edk/test/multiprocess_test_base.h"
 
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -53,7 +53,7 @@ MultiprocessTestBase::MultiprocessTestBase() {}
 
 MultiprocessTestBase::~MultiprocessTestBase() {}
 
-void MultiprocessTestBase::RunChildWithCallback(
+int MultiprocessTestBase::RunChildWithCallback(
     const std::string& client_name,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   test::MultiprocessTestHelper helper;
@@ -66,7 +66,7 @@ void MultiprocessTestBase::RunChildWithCallback(
         run_loop.Quit();
       }));
   run_loop.Run();
-  EXPECT_EQ(0, helper.WaitForChildShutdown());
+  return helper.WaitForChildShutdown();
 }
 
 void MultiprocessTestBase::RunChildrenWithCallback(

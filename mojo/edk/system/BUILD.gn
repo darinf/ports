@@ -132,18 +132,16 @@ test("mojo_system_unittests2") {
     "core_test_base.h",
     "core_unittest.cc",
     #"data_pipe_unittest.cc",
-    "dispatcher_unittest.cc",
-    #"message_in_transit_queue_unittest.cc",
-    #"message_in_transit_test_utils.cc",
-    #"message_in_transit_test_utils.h",
     "message_pipe_test_utils.cc",
     "message_pipe_test_utils.h",
     "message_pipe_unittest.cc",
-    #"multiprocess_message_pipe_unittest.cc",
+    "multiprocess_message_pipe_unittest.cc",
     "new_multiprocess_message_pipe_unittest.cc",
     "options_validation_unittest.cc",
+
+    # TODO: Replace FooDispatcher unit tests with API tests that exercise EDK
+    # API expectations rather than Dispatcher expectations.
     #"platform_handle_dispatcher_unittest.cc",
-    #"raw_channel_unittest.cc",
     #"shared_buffer_dispatcher_unittest.cc",
     #"simple_dispatcher_unittest.cc",
     #"wait_set_dispatcher_unittest.cc",

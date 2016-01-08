@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/perf_time_logger.h"
-#include "mojo/edk/system/multiprocess_test_base.h"
+#include "mojo/edk/test/multiprocess_test_base.h"
 #include "mojo/public/c/system/functions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 

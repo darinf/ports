@@ -135,6 +135,9 @@ int Node::Impl::GetUserData(const PortRef& port_ref,
 }
 
 int Node::Impl::ClosePort(const PortRef& port_ref) {
+  ObserveClosureEventData data;
+  NodeName peer_name;
+
   Port* port = port_ref.port();
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -146,17 +149,17 @@ int Node::Impl::ClosePort(const PortRef& port_ref) {
     // We pass along the sequence number of the last message sent from this
     // port to allow the peer to have the opportunity to consume all inbound
     // messages before notifying the embedder that this port is closed.
-
-    ObserveClosureEventData data;
     data.last_sequence_num = port->next_sequence_num_to_send - 1;
     data.padding = 0;
 
-    delegate_->ForwardMessage(
-        port->peer_node_name,
-        NewInternalMessage(port->peer_port_name,
-                           EventType::kObserveClosure,
-                           data));
+    peer_name = port->peer_node_name;
   }
+
+  delegate_->ForwardMessage(
+      port->peer_node_name,
+      NewInternalMessage(port->peer_port_name, EventType::kObserveClosure,
+                         data));
+
   ErasePort(port_ref.name());
   return OK;
 }
