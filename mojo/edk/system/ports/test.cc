@@ -12,7 +12,8 @@
 #include <sstream>
 
 #include "base/logging.h"
-#include "mojo/edk/system/ports/ports.h"
+#include "mojo/edk/system/ports/node.h"
+#include "mojo/edk/system/ports/node_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
@@ -72,10 +73,10 @@ static std::priority_queue<Task*,
 static Node* node_map[2];
 
 static Node* GetNode(const NodeName& name) {
-  return node_map[name.value_major];
+  return node_map[name.v1];
 }
 static void SetNode(const NodeName& name, Node* node) {
-  node_map[name.value_major] = node;
+  node_map[name.v1] = node;
 }
 
 static void PumpTasks() {
@@ -150,8 +151,8 @@ class TestNodeDelegate : public NodeDelegate {
 
   void GenerateRandomPortName(PortName* port_name) override {
     static uint64_t next_port_name = 1;
-    port_name->value_major = next_port_name++;
-    port_name->value_minor = 0;
+    port_name->v1 = next_port_name++;
+    port_name->v2 = 0;
   }
 
   void AllocMessage(size_t num_header_bytes,

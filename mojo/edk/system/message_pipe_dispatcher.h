@@ -10,7 +10,7 @@
 #include "base/macros.h"
 #include "mojo/edk/system/awakable_list.h"
 #include "mojo/edk/system/dispatcher.h"
-#include "mojo/edk/system/ports/ports.h"
+#include "mojo/edk/system/ports/port_ref.h"
 
 namespace mojo {
 namespace edk {

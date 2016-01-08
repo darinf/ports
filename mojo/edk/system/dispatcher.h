@@ -18,7 +18,7 @@
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/system/handle_signals_state.h"
-#include "mojo/edk/system/ports/ports.h"
+#include "mojo/edk/system/ports/name.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/data_pipe.h"
