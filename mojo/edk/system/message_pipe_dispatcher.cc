@@ -174,6 +174,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
                                               uint32_t* num_handles,
                                               MojoReadMessageFlags flags) {
   bool no_space = false;
+  bool may_discard = flags & MOJO_READ_MESSAGE_FLAG_MAY_DISCARD;
 
   // Ensure the provided buffers are large enough to hold the next message.
   // GetMessageIf provides an atomic way to test the next message without
@@ -183,7 +184,8 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
   ports::ScopedMessage ports_message;
   int rv = node_->GetMessageIf(
       port_,
-      [num_bytes, num_handles, &no_space](const ports::Message& next_message) {
+      [num_bytes, num_handles, &no_space, &may_discard](
+          const ports::Message& next_message) {
         const PortsMessage& message =
             static_cast<const PortsMessage&>(next_message);
         DCHECK_GE(message.num_payload_bytes(), sizeof(MessageHeader));
@@ -214,7 +216,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
         if (bytes_to_read < bytes_available ||
             handles_to_read < handles_available) {
           no_space = true;
-          return false;
+          return may_discard;
         }
 
         return true;
