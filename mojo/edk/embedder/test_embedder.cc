@@ -42,10 +42,6 @@ bool Shutdown() {
   delete internal::g_platform_support;
   internal::g_platform_support = nullptr;
 
-  CHECK(internal::g_broker);
-  delete internal::g_broker;
-  internal::g_broker = nullptr;
-
   return rv;
 }
 
