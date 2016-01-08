@@ -102,6 +102,10 @@ int Node::SendMessage(const ports::PortRef& port,
   return node_->SendMessage(port, std::move(ports_message));
 }
 
+int Node::GetStatus(const ports::PortRef& port_ref, ports::PortStatus* status) {
+  return node_->GetStatus(port_ref, status);
+}
+
 void Node::ClosePort(const ports::PortRef& port) {
   int rv = node_->ClosePort(port);
   DCHECK_EQ(rv, ports::OK) << "ClosePort failed: " << rv;
@@ -322,13 +326,13 @@ void Node::ForwardMessage(const ports::NodeName& node,
   }
 }
 
-void Node::MessagesAvailable(const ports::PortRef& port) {
+void Node::PortStatusChanged(const ports::PortRef& port) {
   std::shared_ptr<ports::UserData> user_data;
   node_->GetUserData(port, &user_data);
 
   PortObserver* observer = static_cast<PortObserver*>(user_data.get());
   if (observer)
-    observer->OnMessagesAvailable();
+    observer->OnPortStatusChanged();
 }
 
 void Node::OnAcceptChild(const ports::NodeName& from_node,
