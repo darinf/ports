@@ -538,10 +538,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipePassing) {
     read_buffer.resize(read_buffer_size);
     CHECK_EQ(read_buffer, std::string("world"));
 
-    LOG(ERROR) << "Life goes on.";
     MojoClose(mp1);
     MojoClose(h);
-    LOG(ERROR) << "Life goes on.";
   END_CHILD()
 }
 

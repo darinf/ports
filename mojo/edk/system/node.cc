@@ -509,9 +509,13 @@ void Node::OnIntroduce(const ports::NodeName& from_node,
 }
 
 void Node::OnChannelError(const ports::NodeName& from_node) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
-
-  DropPeer(from_node);
+  if (core_->io_task_runner()->RunsTasksOnCurrentThread()) {
+    DropPeer(from_node);
+  } else {
+    core_->io_task_runner()->PostTask(
+        FROM_HERE,
+        base::Bind(&Node::DropPeer, base::Unretained(this), from_node));
+  }
 }
 
 }  // namespace edk
