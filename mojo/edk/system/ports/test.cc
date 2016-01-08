@@ -27,9 +27,9 @@ static void LogMessage(const Message* message) {
       ports << ",";
     ports << message->ports()[i];
   }
-  DLOG(INFO) << "message: \""
-             << static_cast<const char*>(message->payload_bytes())
-             << "\" ports=[" << ports.str() << "]";
+  DVLOG(1) << "message: \""
+           << static_cast<const char*>(message->payload_bytes())
+           << "\" ports=[" << ports.str() << "]";
 }
 
 class TestMessage : public Message {
@@ -165,17 +165,17 @@ class TestNodeDelegate : public NodeDelegate {
   void ForwardMessage(const NodeName& node_name,
                       ScopedMessage message) override {
     if (drop_messages_) {
-      DLOG(INFO) << "Dropping ForwardMessage from node "
-                 << node_name_ << " to " << node_name;
+      DVLOG(1) << "Dropping ForwardMessage from node "
+               << node_name_ << " to " << node_name;
       return;
     }
-    DLOG(INFO) << "ForwardMessage from node "
-               << node_name_ << " to " << node_name;
+    DVLOG(1) << "ForwardMessage from node "
+             << node_name_ << " to " << node_name;
     task_queue.push(new Task(node_name, std::move(message)));
   }
 
   void PortStatusChanged(const PortRef& port) override {
-    DLOG(INFO) << "PortStatusChanged for " << port.name() << "@" << node_name_;
+    DVLOG(1) << "PortStatusChanged for " << port.name() << "@" << node_name_;
     if (!read_messages_)
       return;
     Node* node = GetNode(node_name_);
@@ -487,7 +487,7 @@ TEST_F(PortsTest, GetMessage3) {
     EXPECT_EQ(OK, node0.GetMessage(a0, &message));
     ASSERT_TRUE(message);
     EXPECT_EQ(0, strcmp(kStrings[i], ToString(message)));
-    DLOG(INFO) << "got " << kStrings[i];
+    DVLOG(1) << "got " << kStrings[i];
   }
 
   EXPECT_EQ(OK, node0.ClosePort(a0));

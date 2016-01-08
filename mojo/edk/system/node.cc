@@ -174,7 +174,7 @@ void Node::AddPeer(const ports::NodeName& name,
     // This can happen normally if two nodes race to be introduced to each
     // other. The losing pipe will be silently closed and introduction should
     // not be affected.
-    LOG(INFO) << "Ignoring duplicate peer name " << name;
+    DVLOG(1) << "Ignoring duplicate peer name " << name;
     return;
   }
 
