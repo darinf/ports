@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/simple_platform_support.h"
 #include "mojo/edk/system/core.h"
 #include "mojo/edk/system/ports/ports.h"
@@ -19,7 +20,7 @@ class PlatformSupport;
 namespace internal {
 
 Core* g_core;
-scoped_refptr<base::TaskRunner> g_io_thread_task_runner;
+base::TaskRunner* g_io_thread_task_runner;
 
 PlatformSupport* g_platform_support;
 
@@ -80,7 +81,11 @@ void InitIPCSupport(ProcessDelegate* process_delegate,
                     scoped_refptr<base::TaskRunner> io_thread_task_runner) {
   CHECK(internal::g_core);
   CHECK(!internal::g_io_thread_task_runner);
-  internal::g_io_thread_task_runner = io_thread_task_runner;
+
+  // TODO: Get rid of this global. At worst, it's still accessible from g_core.
+  internal::g_io_thread_task_runner = io_thread_task_runner.get();
+  internal::g_io_thread_task_runner->AddRef();
+
   internal::g_core->SetIOTaskRunner(io_thread_task_runner);
 }
 
