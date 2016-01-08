@@ -74,13 +74,10 @@ int Node::InitializePort(const PortRef& port_ref,
   Port* port = port_ref.port();
 
   std::lock_guard<std::mutex> guard(port->lock);
-  if (port->state != Port::kReceiving)
+  if (port->state != Port::kUninitialized)
     return ERROR_PORT_STATE_UNEXPECTED;
 
-  if (port->peer_node_name != kInvalidNodeName ||
-      port->peer_port_name != kInvalidPortName)
-    return ERROR_PORT_ALREADY_INITIALIZED;
-
+  port->state = Port::kReceiving;
   port->peer_node_name = peer_node_name;
   port->peer_port_name = peer_port_name;
   return OK;
@@ -676,6 +673,7 @@ int Node::AcceptPort(const PortName& port_name,
   std::shared_ptr<Port> port =
       std::make_shared<Port>(port_descriptor.next_sequence_num_to_send,
                              port_descriptor.next_sequence_num_to_receive);
+  port->state = Port::kReceiving;
   port->peer_node_name = port_descriptor.peer_node_name;
   port->peer_port_name = port_descriptor.peer_port_name;
 

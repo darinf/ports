@@ -19,6 +19,7 @@ namespace ports {
 class Port {
  public:
   enum State {
+    kUninitialized,
     kReceiving,
     kBuffering,
     kProxying,
