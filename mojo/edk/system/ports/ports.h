@@ -59,12 +59,6 @@ class UserData {
   virtual ~UserData() {}
 };
 
-class MessageSelector {
- public:
-  // Returns true to select the given message.
-  virtual bool Select(const Message& message) = 0;
-};
-
 // Implemented by the embedder.
 class NodeDelegate {
  public:

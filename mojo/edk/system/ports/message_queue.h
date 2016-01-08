@@ -5,11 +5,11 @@
 #ifndef MOJO_EDK_SYSTEM_PORTS_MESSAGE_QUEUE_H_
 #define MOJO_EDK_SYSTEM_PORTS_MESSAGE_QUEUE_H_
 
-#include <functional>
-#include <memory>
+#include <stdint.h>
+
 #include <vector>
 
-#include "mojo/edk/system/ports/ports.h"
+#include "mojo/edk/system/ports/message.h"
 
 namespace mojo {
 namespace edk {

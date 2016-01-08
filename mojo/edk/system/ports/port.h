@@ -8,9 +8,9 @@
 #include <memory>
 #include <mutex>
 #include <utility>
-#include <vector>
 
 #include "mojo/edk/system/ports/message_queue.h"
+#include "mojo/edk/system/ports/ports.h"
 
 namespace mojo {
 namespace edk {
