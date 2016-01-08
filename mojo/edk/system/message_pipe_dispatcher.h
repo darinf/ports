@@ -56,8 +56,6 @@ class MessagePipeDispatcher : public Dispatcher {
   ~MessagePipeDispatcher() override;
 
   HandleSignalsState GetHandleSignalsStateNoLock() const;
-  bool UpdateSignalsStateNoLock();
-
   void OnPortStatusChanged();
 
   // These are safe to access from any thread without locking.
@@ -67,9 +65,7 @@ class MessagePipeDispatcher : public Dispatcher {
   // Guards access to all the fields below.
   mutable base::Lock signal_lock_;
 
-  bool peer_closed_ = false;
   bool port_transferred_ = false;
-  bool port_readable_ = false;
   bool port_closed_ = false;
   AwakableList awakables_;
 

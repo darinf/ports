@@ -162,7 +162,6 @@ MojoResult MessagePipeDispatcher::WriteMessage(
 
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
       base::AutoLock lock(signal_lock_);
-      peer_closed_ = true;
       awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
       return MOJO_RESULT_FAILED_PRECONDITION;
     }
@@ -242,16 +241,12 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   if (!ports_message) {
-    if (rv == ports::OK) {
-      base::AutoLock lock(signal_lock_);
-      port_readable_ = false;
+    if (rv == ports::OK)
       return MOJO_RESULT_SHOULD_WAIT;
-    }
 
     // Peer is closed and there are no more messages to read.
     DCHECK_EQ(rv, ports::ERROR_PORT_PEER_CLOSED);
     base::AutoLock lock(signal_lock_);
-    peer_closed_ = true;
     awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
     return MOJO_RESULT_FAILED_PRECONDITION;
   }
@@ -352,7 +347,6 @@ MojoResult MessagePipeDispatcher::AddAwakable(
     HandleSignalsState* signals_state) {
   base::AutoLock lock(signal_lock_);
 
-  UpdateSignalsStateNoLock();
   HandleSignalsState state = GetHandleSignalsStateNoLock();
   if (state.satisfies(signals)) {
     if (signals_state)
@@ -404,12 +398,18 @@ MessagePipeDispatcher::~MessagePipeDispatcher() {
 }
 
 HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
+  ports::PortStatus port_status;
+  if (node_->GetStatus(port_, &port_status) != ports::OK) {
+    CHECK(port_transferred_ || port_closed_);
+    return HandleSignalsState();
+  }
+
   HandleSignalsState rv;
-  if (port_readable_) {
+  if (port_status.has_messages) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
   }
-  if (!peer_closed_) {
+  if (!port_status.peer_closed) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
@@ -420,32 +420,9 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
   return rv;
 }
 
-bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
-  ports::PortStatus status;
-  int rv = node_->GetStatus(port_, &status);
-  CHECK(rv == ports::OK || port_transferred_ || port_closed_);
-  if (port_transferred_ || port_closed_)
-    return false;
-
-  // Awakables will not be interested in this becoming unreadable.
-  bool awakable_change = false;
-
-  if (status.has_messages && !port_readable_)
-    awakable_change = true;
-  port_readable_ = status.has_messages;
-
-  if (status.peer_closed && !peer_closed_) {
-    peer_closed_ = true;
-    awakable_change = true;
-  }
-
-  return awakable_change;
-}
-
 void MessagePipeDispatcher::OnPortStatusChanged() {
   base::AutoLock lock(signal_lock_);
-  if (UpdateSignalsStateNoLock())
-    awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
+  awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
 }
 
 }  // namespace edk
