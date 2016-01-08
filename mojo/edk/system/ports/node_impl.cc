@@ -698,8 +698,12 @@ int Node::Impl::AcceptPort(const PortName& port_name,
 int Node::Impl::SendMessage_Locked(Port* port,
                                    const PortName& port_name,
                                    ScopedMessage message) {
-  GetMutableEventData<UserEventData>(message)->sequence_num =
-      port->next_sequence_num_to_send++;
+  // Messages may already have a sequence number if they're being forwarded
+  // by a proxy. Otherwise, use the next outgoing sequence number.
+  uint32_t* sequence_num =
+      &GetMutableEventData<UserEventData>(message)->sequence_num;
+  if (*sequence_num == 0)
+    *sequence_num = port->next_sequence_num_to_send++;
 
 #ifndef NDEBUG
   std::ostringstream ports_buf;
