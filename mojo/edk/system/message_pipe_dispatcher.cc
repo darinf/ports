@@ -423,7 +423,9 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
 bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
   ports::PortStatus status;
   int rv = node_->GetStatus(port_, &status);
-  CHECK_EQ(ports::OK, rv);
+  CHECK(rv == ports::OK || port_transferred_ || port_closed_);
+  if (port_transferred_ || port_closed_)
+    return false;
 
   // Awakables will not be interested in this becoming unreadable.
   bool awakable_change = false;
