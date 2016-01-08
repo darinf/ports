@@ -1,9 +1,9 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PORTS_MOJO_SYSTEM_CORE_H_
-#define PORTS_MOJO_SYSTEM_CORE_H_
+#ifndef MOJO_EDK_SYSTEM_CORE_H_
+#define MOJO_EDK_SYSTEM_CORE_H_
 
 #include <vector>
 
@@ -211,4 +211,4 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
 }  // namespace edk
 }  // namespace mojo
 
-#endif  // PORTS_MOJO_SYSTEM_CORE_H_
+#endif  // MOJO_EDK_SYSTEM_CORE_H_

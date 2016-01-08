@@ -1,9 +1,9 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PORTS_MOJO_SYSTEM_MESSAGE_PIPE_DISPATCHER_H_
-#define PORTS_MOJO_SYSTEM_MESSAGE_PIPE_DISPATCHER_H_
+#ifndef MOJO_EDK_SYSTEM_MESSAGE_PIPE_DISPATCHER_H_
+#define MOJO_EDK_SYSTEM_MESSAGE_PIPE_DISPATCHER_H_
 
 #include <queue>
 
@@ -75,4 +75,4 @@ class MessagePipeDispatcher : public Dispatcher {
 }  // namespace edk
 }  // namespace mojo
 
-#endif  // PORTS_MOJO_SYSTEM_MESSAGE_PIPE_DISPATCHER_H_
+#endif  // MOJO_EDK_SYSTEM_MESSAGE_PIPE_DISPATCHER_H_

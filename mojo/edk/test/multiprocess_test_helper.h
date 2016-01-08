@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PORTS_MOJO_SYSTEM_MULTIPROCESS_TEST_HELPER_H_
-#define PORTS_MOJO_SYSTEM_MULTIPROCESS_TEST_HELPER_H_
+#ifndef MOJO_EDK_TEST_MULTIPROCESS_TEST_HELPER_H_
+#define MOJO_EDK_TEST_MULTIPROCESS_TEST_HELPER_H_
 
 #include <string>
 
@@ -93,4 +93,4 @@ class MultiprocessTestHelper {
 }  // namespace edk
 }  // namespace mojo
 
-#endif  // PORTS_MOJO_SYSTEM_MULTIPROCESS_TEST_HELPER_H_
+#endif  // MOJO_EDK_TEST_MULTIPROCESS_TEST_HELPER_H_
