@@ -186,7 +186,7 @@ int Node::Impl::GetMessageIf(const PortRef& port_ref,
                              ScopedMessage* message) {
   *message = nullptr;
 
-  DLOG(INFO) << "GetMessageIf for " << port_ref.name() << "@" << name_;
+  DVLOG(1) << "GetMessageIf for " << port_ref.name() << "@" << name_;
 
   Port* port = port_ref.port();
   {
@@ -289,8 +289,8 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
   // We can no longer send events to the given node. We also can't expect any
   // PortAccepted events.
 
-  DLOG(INFO) << "Observing lost connection from node " << name_
-             << " to node " << node_name;
+  DVLOG(1) << "Observing lost connection from node " << name_
+           << " to node " << node_name;
 
   std::vector<PortRef> ports_to_notify;
 
@@ -324,7 +324,7 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
       }
 
       if (remove_port) {
-        DLOG(INFO) << "Deleted port " << iter->first << "@" << name_;
+        DVLOG(1) << "Deleted port " << iter->first << "@" << name_;
         iter = ports_.erase(iter);
       } else {
         ++iter;
@@ -350,7 +350,7 @@ int Node::Impl::OnUserMessage(ScopedMessage message) {
     ports_buf << message->ports()[i];
   }
 
-  DLOG(INFO) << "AcceptMessage " << event->sequence_num
+  DVLOG(1) << "AcceptMessage " << event->sequence_num
              << " [ports=" << ports_buf.str() << "] at "
              << port_name << "@" << name_;
 #endif
@@ -400,7 +400,7 @@ int Node::Impl::OnUserMessage(ScopedMessage message) {
   }
 
   if (!message_accepted) {
-    DLOG(INFO) << "Message not accepted!\n";
+    DVLOG(1) << "Message not accepted!\n";
     // Close all newly accepted ports as they are effectively orphaned.
     for (size_t i = 0; i < message->num_ports(); ++i) {
       PortRef port_ref;
@@ -426,9 +426,9 @@ int Node::Impl::OnPortAccepted(const PortName& port_name) {
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    DLOG(INFO) << "PortAccepted at " << port_name << "@" << name_
-               << " pointing to "
-               << port->peer_port_name << "@" << port->peer_node_name;
+    DVLOG(1) << "PortAccepted at " << port_name << "@" << name_
+             << " pointing to "
+             << port->peer_port_name << "@" << port->peer_node_name;
 
     if (port->state != Port::kBuffering)
       return OOPS(ERROR_PORT_STATE_UNEXPECTED);
@@ -459,15 +459,15 @@ int Node::Impl::OnObserveProxy(const PortName& port_name,
   // We can then silently ignore this message.
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port) {
-    DLOG(INFO) << "ObserveProxy: " << port_name << "@" << name_ << " not found";
+    DVLOG(1) << "ObserveProxy: " << port_name << "@" << name_ << " not found";
     return OK;
   }
 
-  DLOG(INFO) << "ObserveProxy at " << port_name << "@" << name_ << ", proxy at "
-             << event.proxy_port_name << "@"
-             << event.proxy_node_name << " pointing to "
-             << event.proxy_to_port_name << "@"
-             << event.proxy_to_node_name;
+  DVLOG(1) << "ObserveProxy at " << port_name << "@" << name_ << ", proxy at "
+           << event.proxy_port_name << "@"
+           << event.proxy_node_name << " pointing to "
+           << event.proxy_to_port_name << "@"
+           << event.proxy_to_node_name;
 
   {
     std::lock_guard<std::mutex> guard(port->lock);
@@ -498,8 +498,8 @@ int Node::Impl::OnObserveProxy(const PortName& port_name,
         // Otherwise, we might just find ourselves back here again, which
         // would be akin to a busy loop.
 
-        DLOG(INFO) << "Delaying ObserveProxyAck to "
-                   << event.proxy_port_name << "@" << event.proxy_node_name;
+        DVLOG(1) << "Delaying ObserveProxyAck to "
+                 << event.proxy_port_name << "@" << event.proxy_node_name;
 
         ObserveProxyAckEventData ack;
         ack.last_sequence_num = kInvalidSequenceNum;
@@ -527,8 +527,8 @@ int Node::Impl::OnObserveProxy(const PortName& port_name,
 
 int Node::Impl::OnObserveProxyAck(const PortName& port_name,
                                   uint32_t last_sequence_num) {
-  DLOG(INFO) << "ObserveProxyAck at " << port_name << "@" << name_
-             << " (last_sequence_num=" << last_sequence_num << ")";
+  DVLOG(1) << "ObserveProxyAck at " << port_name << "@" << name_
+           << " (last_sequence_num=" << last_sequence_num << ")";
 
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -576,10 +576,10 @@ int Node::Impl::OnObserveClosure(const PortName& port_name,
     port->peer_closed = true;
     port->last_sequence_num_to_receive = last_sequence_num;
 
-    DLOG(INFO) << "ObserveClosure at " << port_name << "@" << name_
-               << " (state=" << port->state << ") pointing to "
-               << port->peer_port_name << "@" << port->peer_node_name
-               << " (last_sequence_num=" << last_sequence_num << ")";
+    DVLOG(1) << "ObserveClosure at " << port_name << "@" << name_
+             << " (state=" << port->state << ") pointing to "
+             << port->peer_port_name << "@" << port->peer_node_name
+             << " (last_sequence_num=" << last_sequence_num << ")";
 
     if (port->state == Port::kReceiving) {
       notify_delegate = true;
@@ -621,7 +621,7 @@ int Node::Impl::AddPortWithName(const PortName& port_name,
   if (!ports_.insert(std::make_pair(port_name, port)).second)
     return OOPS(ERROR_PORT_EXISTS);  // Suggests a bad UUID generator.
 
-  DLOG(INFO) << "Created port " << port_name << "@" << name_;
+  DVLOG(1) << "Created port " << port_name << "@" << name_;
   return OK;
 }
 
@@ -629,7 +629,7 @@ void Node::Impl::ErasePort(const PortName& port_name) {
   std::lock_guard<std::mutex> guard(ports_lock_);
 
   ports_.erase(port_name);
-  DLOG(INFO) << "Deleted port " << port_name << "@" << name_;
+  DVLOG(1) << "Deleted port " << port_name << "@" << name_;
 }
 
 std::shared_ptr<Port> Node::Impl::GetPort(const PortName& port_name) {
@@ -753,11 +753,11 @@ int Node::Impl::SendMessage_Locked(Port* port,
   }
 
 #ifndef NDEBUG
-  DLOG(INFO) << "Sending message "
-             << GetEventData<UserEventData>(message)->sequence_num
-             << " [ports=" << ports_buf.str() << "]"
-             << " from " << port_name << "@" << name_
-             << " to " << port->peer_port_name << "@" << port->peer_node_name;
+  DVLOG(1) << "Sending message "
+           << GetEventData<UserEventData>(message)->sequence_num
+           << " [ports=" << ports_buf.str() << "]"
+           << " from " << port_name << "@" << name_
+           << " to " << port->peer_port_name << "@" << port->peer_node_name;
 #endif
 
   GetMutableEventHeader(message)->port_name = port->peer_port_name;
@@ -816,8 +816,8 @@ void Node::Impl::MaybeRemoveProxy_Locked(Port* port,
       delegate_->ForwardMessage(to_node, std::move(message));
     }
   } else {
-    DLOG(INFO) << "Cannot remove port " << port_name << "@" << name_
-               << " now; waiting for more messages";
+    DVLOG(1) << "Cannot remove port " << port_name << "@" << name_
+             << " now; waiting for more messages";
   }
 }
 

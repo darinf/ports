@@ -35,7 +35,7 @@ void OnRemotePeerConnected(
     Core* core,
     const ports::PortName& local_port_name,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
-  DLOG(INFO) << "Remote peer connected for " << local_port_name;
+  DVLOG(1) << "Remote peer connected for " << local_port_name;
 
   ports::PortRef local_port;
   core->node()->GetPort(local_port_name, &local_port);

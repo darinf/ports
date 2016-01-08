@@ -42,7 +42,7 @@ Node::Node(Core* core)
     : core_(core),
       name_(GetRandomNodeName()),
       node_(new ports::Node(name_, this)) {
-  DLOG(INFO) << "Initializing node " << name_;
+  DVLOG(1) << "Initializing node " << name_;
 }
 
 void Node::ConnectToChild(ScopedPlatformHandle platform_handle) {
@@ -178,7 +178,7 @@ void Node::AddPeer(const ports::NodeName& name,
     return;
   }
 
-  DLOG(INFO) << "Accepting new peer " << name << " on node " << name_;
+  DVLOG(1) << "Accepting new peer " << name << " on node " << name_;
 
   if (start_channel)
     channel->Start();
@@ -210,7 +210,7 @@ void Node::DropPeer(const ports::NodeName& name) {
     if (it != peers_.end()) {
       ports::NodeName peer = it->first;
       peers_.erase(it);
-      DLOG(INFO) << "Dropped peer " << peer;
+      DVLOG(1) << "Dropped peer " << peer;
     }
 
     pending_peer_messages_.erase(name);
@@ -231,7 +231,7 @@ void Node::SendPeerMessage(const ports::NodeName& name,
   }
 
   if (parent_name_ == ports::kInvalidNodeName) {
-    DLOG(INFO) << "Dropping message for unknown peer: " << name;
+    DVLOG(1) << "Dropping message for unknown peer: " << name;
     return;
   }
 
@@ -355,7 +355,7 @@ void Node::OnAcceptChild(const ports::NodeName& from_node,
   for (const PendingTokenConnection& c : pending_token_connections_)
     ConnectToParentPortByTokenNow(c.token, c.port, c.callback);
 
-  DLOG(INFO) << "Child " << name_ << " accepted parent " << parent_name;
+  DVLOG(1) << "Child " << name_ << " accepted parent " << parent_name;
 }
 
 void Node::OnAcceptParent(const ports::NodeName& from_node,
@@ -493,8 +493,8 @@ void Node::OnIntroduce(const ports::NodeName& from_node,
   DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
 
   if (from_node != parent_name_) {
-    DLOG(INFO) << "Received unexpected Introduce message from node "
-               << from_node;
+    DLOG(ERROR) << "Received unexpected Introduce message from node "
+                << from_node;
     DropPeer(from_node);
     return;
   }
