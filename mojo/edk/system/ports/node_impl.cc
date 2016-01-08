@@ -173,6 +173,7 @@ int Node::Impl::GetMessageIf(const PortRef& port_ref,
   DLOG(INFO) << "GetMessageIf for " << port_ref.name() << "@" << name_;
 
   Port* port = port_ref.port();
+  bool peer_closed = false;
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
@@ -186,6 +187,7 @@ int Node::Impl::GetMessageIf(const PortRef& port_ref,
     if (!CanAcceptMoreMessages(port))
       return ERROR_PORT_PEER_CLOSED;
 
+    peer_closed = port->peer_closed;
     port->message_queue.GetNextMessageIf(selector, message);
   }
 
@@ -204,7 +206,8 @@ int Node::Impl::GetMessageIf(const PortRef& port_ref,
       new_port->message_queue.set_signalable(true);
     }
   }
-  return OK;
+
+  return peer_closed ? ERROR_PORT_PEER_CLOSED : OK;
 }
 
 int Node::Impl::AllocMessage(size_t num_payload_bytes,
@@ -565,8 +568,7 @@ int Node::Impl::OnObserveClosure(const PortName& port_name,
                << " (last_sequence_num=" << last_sequence_num << ")";
 
     if (port->state == Port::kReceiving) {
-      if (!CanAcceptMoreMessages(port.get()))
-        notify_delegate = true;
+      notify_delegate = true;
     } else {
       NodeName next_node_name = port->peer_node_name;
       PortName next_port_name = port->peer_port_name;

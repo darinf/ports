@@ -221,17 +221,10 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
       },
       &ports_message);
 
-  if (rv != ports::OK) {
+  if (rv != ports::OK && rv != ports::ERROR_PORT_PEER_CLOSED) {
     if (rv == ports::ERROR_PORT_UNKNOWN ||
         rv == ports::ERROR_PORT_STATE_UNEXPECTED)
       return MOJO_RESULT_INVALID_ARGUMENT;
-
-    if (rv == ports::ERROR_PORT_PEER_CLOSED) {
-      base::AutoLock lock(signal_lock_);
-      peer_closed_ = true;
-      awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
-      return MOJO_RESULT_FAILED_PRECONDITION;
-    }
 
     NOTREACHED();
     return MOJO_RESULT_UNKNOWN;  // TODO: Add a better error code here?
@@ -241,9 +234,18 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   if (!ports_message) {
+    if (rv == ports::OK) {
+      base::AutoLock lock(signal_lock_);
+      port_readable_ = false;
+      return MOJO_RESULT_SHOULD_WAIT;
+    }
+
+    // Peer is closed and there are no more messages to read.
+    DCHECK_EQ(rv, ports::ERROR_PORT_PEER_CLOSED);
     base::AutoLock lock(signal_lock_);
-    port_readable_ = false;
-    return MOJO_RESULT_SHOULD_WAIT;
+    peer_closed_ = true;
+    awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
+    return MOJO_RESULT_FAILED_PRECONDITION;
   }
 
   scoped_ptr<PortsMessage> message(
@@ -359,6 +361,8 @@ MojoResult MessagePipeDispatcher::AddAwakable(
 void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
                                            HandleSignalsState* signals_state) {
   base::AutoLock lock(signal_lock_);
+  if (signals_state)
+    *signals_state = GetHandleSignalsStateNoLock();
   awakables_.Remove(awakable);
 }
 
@@ -396,8 +400,8 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
   }
   if (!peer_closed_) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
-    rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
+    rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
   } else {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_PEER_CLOSED;
   }
@@ -424,7 +428,7 @@ bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
   // Awakables will not be interested in this becoming unreadable.
   bool awakable_change = false;
 
-  if (rv == ports::OK) {
+  if (rv == ports::OK || rv == ports::ERROR_PORT_PEER_CLOSED) {
     if (has_messages && !port_readable_)
       awakable_change = true;
     port_readable_ = has_messages;

@@ -208,8 +208,9 @@ class Node {
 
   // Returns the next available message on the specified port or returns a null
   // message if there are none available. Returns ERROR_PORT_PEER_CLOSED to
-  // indicate that this port's peer has closed, meaning that no further
-  // messages will be readable from this port.
+  // indicate that this port's peer has closed. In such cases GetMessage may
+  // be until it yields a null message, indicating that no more messages may
+  // be read from the port.
   int GetMessage(const PortRef& port_ref, ScopedMessage* message);
 
   // Like GetMessage, but the caller may optionally supply a MessageSelector
