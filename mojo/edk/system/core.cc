@@ -37,15 +37,15 @@ void OnRemotePeerConnected(
   DVLOG(1) << "Remote peer connected for " << local_port_name;
 
   ports::PortRef local_port;
-  core->node()->GetPort(local_port_name, &local_port);
+  core->node_controller()->GetPort(local_port_name, &local_port);
 
   callback.Run(ScopedMessagePipeHandle(MessagePipeHandle(core->AddDispatcher(
-      new MessagePipeDispatcher(core->node(), local_port)))));
+      new MessagePipeDispatcher(core->node_controller(), local_port)))));
 }
 
 }  // namespace
 
-Core::Core() : node_(this) {}
+Core::Core() : node_controller_(this) {}
 
 Core::~Core() {}
 
@@ -59,11 +59,11 @@ void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
 }
 
 void Core::AddChild(ScopedPlatformHandle platform_handle) {
-  node_.ConnectToChild(std::move(platform_handle));
+  node_controller_.ConnectToChild(std::move(platform_handle));
 }
 
 void Core::InitChild(ScopedPlatformHandle platform_handle) {
-  node_.ConnectToParent(std::move(platform_handle));
+  node_controller_.ConnectToParent(std::move(platform_handle));
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
@@ -76,10 +76,10 @@ bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
   std::vector<Dispatcher::DispatcherInTransit> dispatchers(message.num_ports());
   for (size_t i = 0; i < message.num_ports(); ++i) {
     ports::PortRef port;
-    node_.GetPort(message.ports()[i], &port);
+    node_controller_.GetPort(message.ports()[i], &port);
 
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(&node_, port);
+    d.dispatcher = new MessagePipeDispatcher(&node_controller_, port);
   }
   return AddDispatchersFromTransit(dispatchers, handles);
 }
@@ -105,8 +105,8 @@ void Core::CreateParentMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   ports::PortRef port;
-  node_.CreateUninitializedPort(&port);
-  node_.ReservePortForToken(
+  node_controller_.CreateUninitializedPort(&port);
+  node_controller_.ReservePortForToken(
       port.name(), token,
       base::Bind(&OnRemotePeerConnected, base::Unretained(this), port.name(),
                  callback));
@@ -116,8 +116,8 @@ void Core::CreateChildMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   ports::PortRef port;
-  node_.CreateUninitializedPort(&port);
-  node_.ConnectToParentPortByToken(
+  node_controller_.CreateUninitializedPort(&port);
+  node_controller_.ConnectToParentPortByToken(
       token, port.name(),
       base::Bind(&OnRemotePeerConnected, base::Unretained(this), port.name(),
                  callback));
@@ -270,13 +270,13 @@ MojoResult Core::CreateMessagePipe(
     MojoHandle* message_pipe_handle0,
     MojoHandle* message_pipe_handle1) {
   ports::PortRef port0, port1;
-  node_.CreatePortPair(&port0, &port1);
+  node_controller_.CreatePortPair(&port0, &port1);
   CHECK(message_pipe_handle0);
   CHECK(message_pipe_handle1);
   *message_pipe_handle0 = AddDispatcher(
-      new MessagePipeDispatcher(&node_, port0));
+      new MessagePipeDispatcher(&node_controller_, port0));
   *message_pipe_handle1 = AddDispatcher(
-      new MessagePipeDispatcher(&node_, port1));
+      new MessagePipeDispatcher(&node_controller_, port1));
   return MOJO_RESULT_OK;
 }
 

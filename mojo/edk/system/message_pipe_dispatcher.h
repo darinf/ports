@@ -15,12 +15,12 @@
 namespace mojo {
 namespace edk {
 
-class Node;
+class NodeController;
 
 class MessagePipeDispatcher : public Dispatcher {
  public:
-  // Create a MessagePipeDispatcher for port |port_name| on |node|.
-  MessagePipeDispatcher(Node* node, const ports::PortRef& port);
+  MessagePipeDispatcher(NodeController* node_controller,
+                        const ports::PortRef& port);
 
   const ports::PortName& GetPortName() const { return port_.name(); }
 
@@ -70,7 +70,7 @@ class MessagePipeDispatcher : public Dispatcher {
   void OnPortStatusChanged();
 
   // These are safe to access from any thread without locking.
-  Node* const node_;
+  NodeController* const node_controller_;
   const ports::PortRef port_;
 
   // Guards access to all the fields below.

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MOJO_EDK_SYSTEM_NODE_H_
-#define MOJO_EDK_SYSTEM_NODE_H_
+#ifndef MOJO_EDK_SYSTEM_NODE_CONTROLLER_H_
+#define MOJO_EDK_SYSTEM_NODE_CONTROLLER_H_
 
 #include <queue>
 #include <unordered_map>
@@ -25,9 +25,10 @@ namespace edk {
 class Core;
 class PortsMessage;
 
-// An implementation of ports::Node which facilitates core EDK implementation.
-// All public interface methods are safe to call from any thread.
-class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
+// The owner of ports::Node which facilitates core EDK implementation. All
+// public interface methods are safe to call from any thread.
+class NodeController : public ports::NodeDelegate,
+                       public NodeChannel::Delegate {
  public:
   class PortObserver : public ports::UserData {
    public:
@@ -36,11 +37,12 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   };
 
   // |core| owns and out-lives us.
-  explicit Node(Core* core);
-  ~Node() override;
+  explicit NodeController(Core* core);
+  ~NodeController() override;
 
   const ports::NodeName& name() const { return name_; }
   Core* core() const { return core_; }
+  ports::Node* node() const { return node_.get(); }
 
   // Connects this node to a child node. This node will initiate a handshake.
   void ConnectToChild(ScopedPlatformHandle platform_handle);
@@ -203,10 +205,10 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   std::vector<PendingTokenConnection> pending_token_connections_;
   std::unordered_map<ports::PortName, base::Closure> pending_connection_acks_;
 
-  DISALLOW_COPY_AND_ASSIGN(Node);
+  DISALLOW_COPY_AND_ASSIGN(NodeController);
 };
 
 }  // namespace edk
 }  // namespace mojo
 
-#endif  // MOJO_EDK_SYSTEM_NODE_H_
+#endif  // MOJO_EDK_SYSTEM_NODE_CONTROLLER_H_

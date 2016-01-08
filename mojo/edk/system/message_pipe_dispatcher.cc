@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/core.h"
-#include "mojo/edk/system/node.h"
+#include "mojo/edk/system/node_controller.h"
 #include "mojo/edk/system/ports_message.h"
 #include "mojo/public/c/system/macros.h"
 
@@ -53,14 +53,15 @@ struct SerializedDispatcherInfo {
 
 // A PortObserver which forwards to a MessagePipeDispatcher. This owns a
 // reference to the MPD to ensure it lives as long as the observed port.
-class MessagePipeDispatcher::PortObserverThunk : public Node::PortObserver {
+class MessagePipeDispatcher::PortObserverThunk
+    : public NodeController::PortObserver {
  public:
   explicit PortObserverThunk(scoped_refptr<MessagePipeDispatcher> dispatcher)
       : dispatcher_(dispatcher) {}
   ~PortObserverThunk() override {}
 
  private:
-  // Node::PortObserver:
+  // NodeController::PortObserver:
   void OnPortStatusChanged() override { dispatcher_->OnPortStatusChanged(); }
 
   scoped_refptr<MessagePipeDispatcher> dispatcher_;
@@ -68,13 +69,15 @@ class MessagePipeDispatcher::PortObserverThunk : public Node::PortObserver {
   DISALLOW_COPY_AND_ASSIGN(PortObserverThunk);
 };
 
-MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
+MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
                                              const ports::PortRef& port)
-    : node_(node), port_(port) {
+    : node_controller_(node_controller),
+      port_(port) {
   // OnPortStatusChanged (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
   base::AutoLock lock(signal_lock_);
-  node_->SetPortObserver(port_, std::make_shared<PortObserverThunk>(this));
+  node_controller_->SetPortObserver(port_,
+                                    std::make_shared<PortObserverThunk>(this));
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {
@@ -88,7 +91,7 @@ MojoResult MessagePipeDispatcher::Close() {
 
   port_closed_ = true;
   if (!port_transferred_)
-    node_->ClosePort(port_);
+    node_controller_->ClosePort(port_);
   awakables_.CancelAll();
 
   return MOJO_RESULT_OK;
@@ -115,7 +118,7 @@ MojoResult MessagePipeDispatcher::WriteMessage(
   }
 
   scoped_ptr<PortsMessage> message =
-      node_->AllocMessage(header_size + num_bytes, num_ports);
+      node_controller_->AllocMessage(header_size + num_bytes, num_ports);
   DCHECK(message);
 
   // Populate the message header with information about serialized dispatchers.
@@ -169,7 +172,7 @@ MojoResult MessagePipeDispatcher::WriteMessage(
       static_cast<char*>(message->mutable_payload_bytes()) + header_size);
   memcpy(message_body, bytes, num_bytes);
 
-  int rv = node_->SendMessage(port_, std::move(message));
+  int rv = node_controller_->SendMessage(port_, std::move(message));
 
   if (rv != ports::OK) {
     if (rv == ports::ERROR_PORT_UNKNOWN ||
@@ -203,7 +206,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
   // we are sure we can consume it.
 
   ports::ScopedMessage ports_message;
-  int rv = node_->GetMessageIf(
+  int rv = node_controller_->GetMessageIf(
       port_,
       [num_bytes, num_handles, &no_space, &may_discard](
           const ports::Message& next_message) {
@@ -311,7 +314,8 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
       platform_handle_index += dh.num_platform_handles;
     }
 
-    if (!node_->core()->AddDispatchersFromTransit(dispatchers, handles))
+    if (!node_controller_->core()->AddDispatchersFromTransit(dispatchers,
+                                                             handles))
       return MOJO_RESULT_UNKNOWN;
   }
 
@@ -400,8 +404,8 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
     return nullptr;
 
   ports::PortRef port;
-  internal::g_core->node()->GetPort(ports[0], &port);
-  return new MessagePipeDispatcher(internal::g_core->node(), port);
+  internal::g_core->node_controller()->GetPort(ports[0], &port);
+  return new MessagePipeDispatcher(internal::g_core->node_controller(), port);
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
@@ -409,7 +413,7 @@ MessagePipeDispatcher::~MessagePipeDispatcher() {
 
 HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
   ports::PortStatus port_status;
-  if (node_->GetStatus(port_, &port_status) != ports::OK) {
+  if (node_controller_->GetStatus(port_, &port_status) != ports::OK) {
     CHECK(port_transferred_ || port_closed_);
     return HandleSignalsState();
   }
