@@ -28,6 +28,8 @@ class MessageQueue {
 
   uint32_t next_sequence_num() const { return next_sequence_num_; }
 
+  bool HasNextMessage() const;
+
   // Gives ownership of the message. The selector may be null.
   void GetNextMessageIf(MessageSelector* selector, ScopedMessage* message);
 

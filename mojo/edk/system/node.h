@@ -31,7 +31,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   class PortObserver : public ports::UserData {
    public:
     ~PortObserver() override {}
-    virtual void OnMessagesAvailable() = 0;
+    virtual void OnPortStatusChanged() = 0;
   };
 
   // |core| owns and out-lives us.
@@ -71,6 +71,8 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
   // Sends a message on a port to its peer.
   int SendMessage(const ports::PortRef& port_ref,
                   scoped_ptr<PortsMessage> message);
+
+  int GetStatus(const ports::PortRef& port_ref, ports::PortStatus* status);
 
   // Enable use of lambda functions for selecting messages.
   template <typename Predicate>
@@ -147,7 +149,7 @@ class Node : public ports::NodeDelegate, public NodeChannel::Delegate {
                     ports::ScopedMessage* message) override;
   void ForwardMessage(const ports::NodeName& node,
                       ports::ScopedMessage message) override;
-  void MessagesAvailable(const ports::PortRef& port) override;
+  void PortStatusChanged(const ports::PortRef& port) override;
 
   // NodeChannel::Delegate:
   void OnAcceptChild(const ports::NodeName& from_node,

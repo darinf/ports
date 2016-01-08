@@ -136,6 +136,11 @@ class PortRef {
   std::shared_ptr<Port> port_;
 };
 
+struct PortStatus {
+  bool has_messages;
+  bool peer_closed;
+};
+
 class UserData {
  public:
   virtual ~UserData() {}
@@ -167,9 +172,10 @@ class NodeDelegate {
   // NOT synchronously call any methods on Node.
   virtual void ForwardMessage(const NodeName& node, ScopedMessage message) = 0;
 
-  // Expected to call Node's GetMessage method to access the next available
-  // message. There may be zero or more messages available.
-  virtual void MessagesAvailable(const PortRef& port_ref) = 0;
+  // Indicates that the port's status has changed recently. Use Node::GetStatus
+  // to query the latest status of the port. Note, this event could be spurious
+  // if another thread is simultaneously modifying the status of the port.
+  virtual void PortStatusChanged(const PortRef& port_ref) = 0;
 };
 
 class Node {
@@ -205,6 +211,9 @@ class Node {
   // this port. The port is removed, and the port's peer is notified of the
   // closure after it has consumed all pending messages.
   int ClosePort(const PortRef& port_ref);
+
+  // Returns the current status of the port.
+  int GetStatus(const PortRef& port_ref, PortStatus* port_status);
 
   // Returns the next available message on the specified port or returns a null
   // message if there are none available. Returns ERROR_PORT_PEER_CLOSED to

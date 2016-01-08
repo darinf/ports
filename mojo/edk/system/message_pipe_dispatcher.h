@@ -58,8 +58,7 @@ class MessagePipeDispatcher : public Dispatcher {
   HandleSignalsState GetHandleSignalsStateNoLock() const;
   bool UpdateSignalsStateNoLock();
 
-  // Called by PortObserverThunk when messages are available on the port.
-  void OnMessagesAvailable();
+  void OnPortStatusChanged();
 
   // These are safe to access from any thread without locking.
   Node* const node_;

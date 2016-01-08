@@ -164,6 +164,19 @@ int Node::Impl::ClosePort(const PortRef& port_ref) {
   return OK;
 }
 
+int Node::Impl::GetStatus(const PortRef& port_ref, PortStatus* port_status) {
+  Port* port = port_ref.port();
+
+  std::lock_guard<std::mutex> guard(port->lock);
+
+  if (port->state != Port::kReceiving)
+    return ERROR_PORT_STATE_UNEXPECTED;
+
+  port_status->has_messages = port->message_queue.HasNextMessage();
+  port_status->peer_closed = port->peer_closed;
+  return OK;
+}
+
 int Node::Impl::GetMessage(const PortRef& port_ref, ScopedMessage* message) {
   return GetMessageIf(port_ref, nullptr, message);
 }
@@ -176,7 +189,6 @@ int Node::Impl::GetMessageIf(const PortRef& port_ref,
   DLOG(INFO) << "GetMessageIf for " << port_ref.name() << "@" << name_;
 
   Port* port = port_ref.port();
-  bool peer_closed = false;
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
@@ -190,11 +202,10 @@ int Node::Impl::GetMessageIf(const PortRef& port_ref,
     if (!CanAcceptMoreMessages(port))
       return ERROR_PORT_PEER_CLOSED;
 
-    peer_closed = port->peer_closed;
     port->message_queue.GetNextMessageIf(selector, message);
   }
 
-  // Allow referenced ports to trigger MessagesAvailable calls.
+  // Allow referenced ports to trigger PortStatusChanged calls.
   if (*message) {
     for (size_t i = 0; i < (*message)->num_ports(); ++i) {
       const PortName& new_port_name = (*message)->ports()[i];
@@ -210,7 +221,7 @@ int Node::Impl::GetMessageIf(const PortRef& port_ref,
     }
   }
 
-  return peer_closed ? ERROR_PORT_PEER_CLOSED : OK;
+  return OK;
 }
 
 int Node::Impl::AllocMessage(size_t num_payload_bytes,
@@ -322,7 +333,7 @@ int Node::Impl::LostConnectionToNode(const NodeName& node_name) {
   }
 
   for (size_t i = 0; i < ports_to_notify.size(); ++i)
-    delegate_->MessagesAvailable(ports_to_notify[i]);
+    delegate_->PortStatusChanged(ports_to_notify[i]);
 
   return OK;
 }
@@ -401,7 +412,7 @@ int Node::Impl::OnUserMessage(ScopedMessage message) {
     }
   } else if (has_next_message) {
     PortRef port_ref(port_name, port);
-    delegate_->MessagesAvailable(port_ref);
+    delegate_->PortStatusChanged(port_ref);
   }
 
   return OK;
@@ -598,7 +609,7 @@ int Node::Impl::OnObserveClosure(const PortName& port_name,
   }
   if (notify_delegate) {
     PortRef port_ref(port_name, port);
-    delegate_->MessagesAvailable(port_ref);
+    delegate_->PortStatusChanged(port_ref);
   }
   return OK;
 }

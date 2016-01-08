@@ -48,6 +48,10 @@ int Node::ClosePort(const PortRef& port_ref) {
   return impl_->ClosePort(port_ref);
 }
 
+int Node::GetStatus(const PortRef& port_ref, PortStatus* port_status) {
+  return impl_->GetStatus(port_ref, port_status);
+}
+
 int Node::GetMessage(const PortRef& port_ref, ScopedMessage* message) {
   return impl_->GetMessage(port_ref, message);
 }
