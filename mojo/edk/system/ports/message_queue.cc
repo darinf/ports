@@ -33,27 +33,22 @@ MessageQueue::MessageQueue(uint32_t next_sequence_num)
 MessageQueue::~MessageQueue() {
 }
 
-bool MessageQueue::HasNextMessage() const {
-  return !heap_.empty() && GetSequenceNum(heap_[0]) == next_sequence_num_;
-}
-
 void MessageQueue::GetNextMessageIf(MessageSelector* selector,
                                     ScopedMessage* message) {
-  if (!HasNextMessage()) {
+  if (heap_.empty() || GetSequenceNum(heap_[0]) != next_sequence_num_) {
     message->reset();
-    return;
+  } else {
+    if (selector && !selector->Select(*heap_[0].get())) {
+      message->reset();
+      return;
+    }
+
+    std::pop_heap(heap_.begin(), heap_.end());
+    *message = std::move(heap_.back());
+    heap_.pop_back();
+
+    next_sequence_num_++;
   }
-
-  if (selector && !selector->Select(*heap_[0].get())) {
-    message->reset();
-    return;
-  }
-
-  std::pop_heap(heap_.begin(), heap_.end());
-  *message = std::move(heap_.back());
-  heap_.pop_back();
-
-  next_sequence_num_++;
 }
 
 void MessageQueue::AcceptMessage(ScopedMessage message,

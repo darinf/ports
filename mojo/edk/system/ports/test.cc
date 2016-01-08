@@ -174,8 +174,8 @@ class TestNodeDelegate : public NodeDelegate {
     task_queue.push(new Task(node_name, std::move(message)));
   }
 
-  void PortStatusChanged(const PortRef& port) override {
-    DLOG(INFO) << "PortStatusChanged for " << port.name() << "@" << node_name_;
+  void MessagesAvailable(const PortRef& port) override {
+    DLOG(INFO) << "MessagesAvailable for " << port.name() << "@" << node_name_;
     if (!read_messages_)
       return;
     Node* node = GetNode(node_name_);

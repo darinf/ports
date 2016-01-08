@@ -51,7 +51,7 @@ class MessagePipeDispatcher::PortObserverThunk : public Node::PortObserver {
 
  private:
   // Node::PortObserver:
-  void OnPortStatusChanged() override { dispatcher_->OnPortStatusChanged(); }
+  void OnMessagesAvailable() override { dispatcher_->OnMessagesAvailable(); }
 
   scoped_refptr<MessagePipeDispatcher> dispatcher_;
 
@@ -61,7 +61,7 @@ class MessagePipeDispatcher::PortObserverThunk : public Node::PortObserver {
 MessagePipeDispatcher::MessagePipeDispatcher(Node* node,
                                              const ports::PortRef& port)
     : node_(node), port_(port) {
-  // OnPortStatusChanged (via PortObserverThunk) may be called before this
+  // OnMessagesAvailable (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
   base::AutoLock lock(signal_lock_);
   node_->SetPortObserver(port_, std::make_shared<PortObserverThunk>(this));
@@ -421,18 +421,31 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
 }
 
 bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
-  ports::PortStatus status;
-  int rv = node_->GetStatus(port_, &status);
-  CHECK_EQ(ports::OK, rv);
+  // Peek at the queue. If our selector function runs at all, it's not empty.
+  //
+  // TODO: maybe Node should have an interface for this test?
+  bool has_messages = false;
+  ports::ScopedMessage message;
+  int rv = node_->GetMessageIf(
+      port_,
+      [&has_messages](const ports::Message&) {
+        has_messages = true;
+        return false;  // Don't return the message.
+      },
+      &message);
+
+  DCHECK(rv == ports::OK || ports::ERROR_PORT_PEER_CLOSED);
 
   // Awakables will not be interested in this becoming unreadable.
   bool awakable_change = false;
 
-  if (status.has_messages && !port_readable_)
-    awakable_change = true;
-  port_readable_ = status.has_messages;
+  if (rv == ports::OK || rv == ports::ERROR_PORT_PEER_CLOSED) {
+    if (has_messages && !port_readable_)
+      awakable_change = true;
+    port_readable_ = has_messages;
+  }
 
-  if (status.peer_closed && !peer_closed_) {
+  if (rv == ports::ERROR_PORT_PEER_CLOSED && !peer_closed_) {
     peer_closed_ = true;
     awakable_change = true;
   }
@@ -440,7 +453,7 @@ bool MessagePipeDispatcher::UpdateSignalsStateNoLock() {
   return awakable_change;
 }
 
-void MessagePipeDispatcher::OnPortStatusChanged() {
+void MessagePipeDispatcher::OnMessagesAvailable() {
   base::AutoLock lock(signal_lock_);
   if (UpdateSignalsStateNoLock())
     awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());

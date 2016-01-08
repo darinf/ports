@@ -33,7 +33,6 @@ class Node::Impl {
   int GetUserData(const PortRef& port_ref,
                   std::shared_ptr<UserData>* user_data);
   int ClosePort(const PortRef& port_ref);
-  int GetStatus(const PortRef& port_ref, PortStatus* port_status);
   int GetMessage(const PortRef& port_ref, ScopedMessage* message);
   int GetMessageIf(const PortRef& port_ref,
                    MessageSelector* selector,
