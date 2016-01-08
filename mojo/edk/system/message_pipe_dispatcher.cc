@@ -8,6 +8,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/core.h"
 #include "mojo/edk/system/node.h"
 #include "mojo/edk/system/ports_message.h"
@@ -35,12 +36,16 @@ struct MOJO_ALIGNAS(8) DispatcherHeader {
   // The size of the serialized dispatcher, not including this header.
   uint32_t num_bytes;
 
+  // The number of ports needed to deserialize this dispatcher.
+  uint32_t num_ports;
+
   // The number of platform handles needed to deserialize this dispatcher.
   uint32_t num_platform_handles;
 };
 
 struct SerializedDispatcherInfo {
   uint32_t num_bytes;
+  uint32_t num_ports;
   uint32_t num_handles;
 };
 
@@ -98,14 +103,15 @@ MojoResult MessagePipeDispatcher::WriteMessage(
   size_t header_size = sizeof(MessageHeader) +
       num_dispatchers * sizeof(DispatcherHeader);
   size_t num_ports = 0;
+
   std::vector<SerializedDispatcherInfo> dispatcher_info(num_dispatchers);
   for (size_t i = 0; i < num_dispatchers; ++i) {
     Dispatcher* d = dispatchers[i].dispatcher.get();
-    if (d->GetType() == Type::MESSAGE_PIPE)
-      num_ports++;
     d->StartSerialize(&dispatcher_info[i].num_bytes,
+                      &dispatcher_info[i].num_ports,
                       &dispatcher_info[i].num_handles);
     header_size += dispatcher_info[i].num_bytes;
+    num_ports += dispatcher_info[i].num_ports;
   }
 
   scoped_ptr<PortsMessage> message =
@@ -132,21 +138,25 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     for (size_t i = 0; i < num_dispatchers; ++i) {
       Dispatcher* d = dispatchers[i].dispatcher.get();
 
-      if (d->GetType() == Type::MESSAGE_PIPE) {
-        MessagePipeDispatcher* mpd = static_cast<MessagePipeDispatcher*>(d);
-        DCHECK_NE(mpd, this);
-        message->mutable_ports()[port_index] = mpd->GetPortName();
-        port_index++;
-      }
-
       DispatcherHeader* dh = &dispatcher_headers[i];
       dh->type = static_cast<int32_t>(d->GetType());
       dh->num_bytes = dispatcher_info[i].num_bytes;
+      dh->num_ports = dispatcher_info[i].num_ports;
       dh->num_platform_handles = dispatcher_info[i].num_handles;
-      if (!d->EndSerializeAndClose(dispatcher_data, handles.get())) {
+
+      std::vector<ports::PortName> ports(dispatcher_info[i].num_ports);
+      if (!d->EndSerializeAndClose(dispatcher_data, ports.data(),
+                                   handles.get())) {
         // TODO: fail in a more useful manner?
         LOG(ERROR) << "Failed to serialize dispatcher.";
       }
+
+      if (!ports.empty()) {
+        std::copy(ports.begin(), ports.end(),
+                  message->mutable_ports() + port_index);
+        port_index += ports.size();
+      }
+
       dispatcher_data = static_cast<void*>(
           static_cast<char*>(dispatcher_data) + dh->num_bytes);
     }
@@ -272,63 +282,37 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
 
   const void* dispatcher_data = &dispatcher_headers[header->num_dispatchers];
 
-  // Deserialize pipes as new ports.
-  std::vector<MojoHandle> pipe_handles(message->num_ports());
-  if (!node_->core()->AddDispatchersForReceivedPorts(*message,
-                                                     pipe_handles.data())) {
-    // TODO: Close all of the received ports.
-    return MOJO_RESULT_UNKNOWN;  // TODO: Add a better error code here?
-  }
-
-  // Deserialize all other types of dispatchers.
-  std::vector<MojoHandle> other_handles;
+  // Deserialize dispatchers.
   if (header->num_dispatchers > 0) {
-    std::vector<DispatcherInTransit> dispatchers(
-        header->num_dispatchers - message->num_ports());
+    CHECK(handles);
+    std::vector<DispatcherInTransit> dispatchers(header->num_dispatchers);
+    size_t port_index = 0;
     size_t platform_handle_index = 0;
-    for (size_t i = 0, dispatcher_index = 0; i < header->num_dispatchers; ++i) {
+    for (size_t i = 0; i < header->num_dispatchers; ++i) {
       const DispatcherHeader& dh = dispatcher_headers[i];
       Type type = static_cast<Type>(dh.type);
-      if (type == Type::MESSAGE_PIPE) {
-        // Pipes have already been deserialized as ports above.
-        continue;
-      }
 
+      DCHECK_GE(message->num_ports(),
+                port_index + dh.num_ports);
       DCHECK_GE(message->num_handles(),
                 platform_handle_index + dh.num_platform_handles);
-      dispatchers[dispatcher_index].dispatcher = Dispatcher::Deserialize(
-          type, dispatcher_data, dh.num_bytes,
-          &(message->handles()[platform_handle_index]),
-          dh.num_platform_handles);
-      if (!dispatchers[dispatcher_index].dispatcher)
+
+      PlatformHandle* out_handles =
+          message->num_handles() ? message->handles() + platform_handle_index
+                                 : nullptr;
+      dispatchers[i].dispatcher = Dispatcher::Deserialize(
+          type, dispatcher_data, dh.num_bytes, message->ports() + port_index,
+          dh.num_ports, out_handles, dh.num_platform_handles);
+      if (!dispatchers[i].dispatcher)
         return MOJO_RESULT_UNKNOWN;
+
       header_size += dh.num_bytes;
+      port_index += dh.num_ports;
       platform_handle_index += dh.num_platform_handles;
-      dispatcher_index++;
     }
 
-    other_handles.resize(dispatchers.size());
-    if (!node_->core()->AddDispatchersFromTransit(dispatchers,
-                                                  other_handles.data())) {
+    if (!node_->core()->AddDispatchersFromTransit(dispatchers, handles))
       return MOJO_RESULT_UNKNOWN;
-    }
-  }
-
-  if (header->num_dispatchers)
-    CHECK(handles);
-
-  // Copy handles from all the new dispatchers.
-  size_t pipe_handle_index = 0;
-  size_t other_handle_index = 0;
-  for (size_t i = 0; i < header->num_dispatchers; ++i) {
-    const DispatcherHeader& dh = dispatcher_headers[i];
-    if (static_cast<Type>(dh.type) == Type::MESSAGE_PIPE) {
-      DCHECK_LT(pipe_handle_index, pipe_handles.size());
-      handles[i] = pipe_handles[pipe_handle_index++];
-    } else {
-      DCHECK_LT(other_handle_index, other_handles.size());
-      handles[i] = other_handles[other_handle_index++];
-    }
   }
 
   // Copy message bytes.
@@ -378,15 +362,18 @@ void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
 }
 
 void MessagePipeDispatcher::StartSerialize(uint32_t* num_bytes,
+                                           uint32_t* num_ports,
                                            uint32_t* num_handles) {
   *num_bytes = 0;
+  *num_ports = 1;
   *num_handles = 0;
 }
 
 bool MessagePipeDispatcher::EndSerializeAndClose(
     void* destination,
+    ports::PortName* ports,
     PlatformHandleVector* handles) {
-  // Nothing to do. Pipes are serialied as ports.
+  *ports = GetPortName();
   return true;
 }
 
@@ -399,6 +386,22 @@ void MessagePipeDispatcher::CompleteTransit() {
   // port_ has been closed by virtue of having been transferred. This
   // dispatcher needs to be closed as well.
   Close();
+}
+
+// static
+scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
+    const void* data,
+    size_t num_bytes,
+    const ports::PortName* ports,
+    size_t num_ports,
+    PlatformHandle* handles,
+    size_t num_handles) {
+  if (num_ports != 1 || num_handles || num_bytes)
+    return nullptr;
+
+  ports::PortRef port;
+  internal::g_core->node()->GetPort(ports[0], &port);
+  return new MessagePipeDispatcher(internal::g_core->node(), port);
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {

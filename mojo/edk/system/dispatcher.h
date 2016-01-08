@@ -176,16 +176,19 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
                               HandleSignalsState* signals_state);
 
   // Informs the caller of the total serialized size (in bytes) and the total
-  // number of platform handles needed to transfer this dispatcher across
-  // a message pipe.
+  // number of platform handles and ports needed to transfer this dispatcher
+  // across a message pipe.
   //
   // Must eventually be followed by a call to EndSerializeAndClose().
   virtual void StartSerialize(uint32_t* num_bytes,
+                              uint32_t* num_ports,
                               uint32_t* num_platform_handles);
 
-  // Serializes this dispatcher into |destination| and |handles|. Returns true
-  // iff successful, false otherwise. In either case the dispatcher will close.
+  // Serializes this dispatcher into |destination|, |ports|, and |handles|.
+  // Returns true iff successful, false otherwise. In either case the dispatcher
+  // will close.
   virtual bool EndSerializeAndClose(void* destination,
+                                    ports::PortName* ports,
                                     PlatformHandleVector* handles);
 
   // Does whatever is necessary to begin transit of the dispatcher.  This
@@ -208,6 +211,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
       Type type,
       const void* bytes,
       size_t num_bytes,
+      const ports::PortName* ports,
+      size_t num_ports,
       PlatformHandle* platform_handles,
       size_t num_platform_handles);
 

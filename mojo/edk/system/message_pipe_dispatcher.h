@@ -44,10 +44,21 @@ class MessagePipeDispatcher : public Dispatcher {
                          HandleSignalsState* signals_state) override;
   void RemoveAwakable(Awakable* awakable,
                       HandleSignalsState* signals_state) override;
-  void StartSerialize(uint32_t* num_bytes, uint32_t* num_handles) override;
+  void StartSerialize(uint32_t* num_bytes,
+                      uint32_t* num_ports,
+                      uint32_t* num_handles) override;
   bool EndSerializeAndClose(void* destination,
+                            ports::PortName* ports,
                             PlatformHandleVector* handles) override;
   void CompleteTransit() override;
+
+  static scoped_refptr<Dispatcher> Deserialize(
+      const void* data,
+      size_t num_bytes,
+      const ports::PortName* ports,
+      size_t num_ports,
+      PlatformHandle* handles,
+      size_t num_handles);
 
  private:
   class PortObserverThunk;

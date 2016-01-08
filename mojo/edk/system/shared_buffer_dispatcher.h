@@ -51,6 +51,8 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
   static scoped_refptr<SharedBufferDispatcher> Deserialize(
       const void* bytes,
       size_t num_bytes,
+      const ports::PortName* ports,
+      size_t num_ports,
       PlatformHandle* platform_handles,
       size_t num_platform_handles);
 
@@ -66,8 +68,10 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
       MojoMapBufferFlags flags,
       scoped_ptr<PlatformSharedBufferMapping>* mapping) override;
   void StartSerialize(uint32_t* num_bytes,
+                      uint32_t* num_ports,
                       uint32_t* num_platform_handles) override;
   bool EndSerializeAndClose(void* destination,
+                            ports::PortName* ports,
                             PlatformHandleVector* handles) override;
 
  private:

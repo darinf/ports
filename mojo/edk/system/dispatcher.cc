@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "mojo/edk/system/configuration.h"
+#include "mojo/edk/system/message_pipe_dispatcher.h"
 #include "mojo/edk/system/platform_handle_dispatcher.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
 
@@ -114,12 +115,15 @@ void Dispatcher::RemoveAwakable(Awakable* awakable,
 }
 
 void Dispatcher::StartSerialize(uint32_t* num_bytes,
+                                uint32_t* num_ports,
                                 uint32_t* num_platform_handles) {
   *num_bytes = 0;
+  *num_ports = 0;
   *num_platform_handles = 0;
 }
 
 bool Dispatcher::EndSerializeAndClose(void* destination,
+                                      ports::PortName* ports,
                                       PlatformHandleVector* handles) {
   LOG(ERROR) << "Attempting to serialize a non-transferrable dispatcher.";
   return true;
@@ -138,15 +142,23 @@ scoped_refptr<Dispatcher> Dispatcher::Deserialize(
     Type type,
     const void* bytes,
     size_t num_bytes,
+    const ports::PortName* ports,
+    size_t num_ports,
     PlatformHandle* platform_handles,
     size_t num_platform_handles) {
   switch (type) {
+    case Type::MESSAGE_PIPE:
+      return MessagePipeDispatcher::Deserialize(
+          bytes, num_bytes, ports, num_ports, platform_handles,
+          num_platform_handles);
     case Type::SHARED_BUFFER:
       return SharedBufferDispatcher::Deserialize(
-          bytes, num_bytes, platform_handles, num_platform_handles);
+          bytes, num_bytes, ports, num_ports, platform_handles,
+          num_platform_handles);
     case Type::PLATFORM_HANDLE:
       return PlatformHandleDispatcher::Deserialize(
-          bytes, num_bytes, platform_handles, num_platform_handles);
+          bytes, num_bytes, ports, num_ports, platform_handles,
+          num_platform_handles);
     default:
       LOG(ERROR) << "Deserializing invalid dispatcher type.";
       return nullptr;

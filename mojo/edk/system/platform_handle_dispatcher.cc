@@ -34,13 +34,16 @@ MojoResult PlatformHandleDispatcher::Close() {
 }
 
 void PlatformHandleDispatcher::StartSerialize(uint32_t* num_bytes,
+                                              uint32_t* num_ports,
                                               uint32_t* num_handles) {
   *num_bytes = 0;
+  *num_ports = 0;
   *num_handles = 1;
 }
 
 bool PlatformHandleDispatcher::EndSerializeAndClose(
     void* destination,
+    ports::PortName* ports,
     PlatformHandleVector* handles) {
   base::AutoLock lock(lock_);
   if (is_closed_)
@@ -54,11 +57,11 @@ bool PlatformHandleDispatcher::EndSerializeAndClose(
 scoped_refptr<PlatformHandleDispatcher> PlatformHandleDispatcher::Deserialize(
     const void* bytes,
     size_t num_bytes,
+    const ports::PortName* ports,
+    size_t num_ports,
     PlatformHandle* handles,
     size_t num_handles) {
-  if (num_bytes)
-    return nullptr;
-  if (num_handles != 1)
+  if (num_bytes || num_ports || num_handles != 1)
     return nullptr;
 
   PlatformHandle handle;

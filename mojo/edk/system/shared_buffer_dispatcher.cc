@@ -87,6 +87,8 @@ MojoResult SharedBufferDispatcher::Create(
 scoped_refptr<SharedBufferDispatcher> SharedBufferDispatcher::Deserialize(
     const void* bytes,
     size_t num_bytes,
+    const ports::PortName* ports,
+    size_t num_ports,
     PlatformHandle* platform_handles,
     size_t num_platform_handles) {
   if (num_bytes != sizeof(SerializedSharedBufferDispatcher)) {
@@ -102,7 +104,7 @@ scoped_refptr<SharedBufferDispatcher> SharedBufferDispatcher::Deserialize(
     return nullptr;
   }
 
-  if (!platform_handles || num_platform_handles != 1) {
+  if (!platform_handles || num_platform_handles != 1 || num_ports) {
     LOG(ERROR)
         << "Invalid serialized shared buffer dispatcher (missing handles)";
     return nullptr;
@@ -181,13 +183,16 @@ MojoResult SharedBufferDispatcher::MapBuffer(
 }
 
 void SharedBufferDispatcher::StartSerialize(uint32_t* num_bytes,
+                                            uint32_t* num_ports,
                                             uint32_t* num_platform_handles) {
   *num_bytes = sizeof(SerializedSharedBufferDispatcher);
+  *num_ports = 0;
   *num_platform_handles = 1;
 }
 
 bool SharedBufferDispatcher::EndSerializeAndClose(
     void* destination,
+    ports::PortName* ports,
     PlatformHandleVector* handles) {
   SerializedSharedBufferDispatcher* serialization =
       static_cast<SerializedSharedBufferDispatcher*>(destination);

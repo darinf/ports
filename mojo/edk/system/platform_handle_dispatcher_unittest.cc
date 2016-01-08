@@ -78,14 +78,16 @@ TEST(PlatformHandleDispatcherTest, Serialization) {
           test::PlatformHandleFromFILE(std::move(fp)));
 
   uint32_t num_bytes = 0;
+  uint32_t num_ports = 0;
   uint32_t num_handles = 0;
-  dispatcher->StartSerialize(&num_bytes, &num_handles);
+  dispatcher->StartSerialize(&num_bytes, &num_ports, &num_handles);
 
   EXPECT_EQ(0u, num_bytes);
+  EXPECT_EQ(0u, num_ports);
   EXPECT_EQ(1u, num_handles);
 
   ScopedPlatformHandleVectorPtr handles(new PlatformHandleVector);
-  dispatcher->EndSerializeAndClose(nullptr, handles.get());
+  dispatcher->EndSerializeAndClose(nullptr, nullptr, handles.get());
 
   EXPECT_TRUE(handles->at(0).is_valid());
 
@@ -96,7 +98,8 @@ TEST(PlatformHandleDispatcherTest, Serialization) {
 
   dispatcher = static_cast<PlatformHandleDispatcher*>(
       Dispatcher::Deserialize(Dispatcher::Type::PLATFORM_HANDLE, nullptr,
-                              num_bytes, handles->data(), 1).get());
+                              num_bytes, nullptr, num_ports, handles->data(),
+                              1).get());
 
   EXPECT_FALSE(handles->at(0).is_valid());
   EXPECT_TRUE(dispatcher->GetType() == Dispatcher::Type::PLATFORM_HANDLE);
