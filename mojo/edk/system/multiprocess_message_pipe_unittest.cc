@@ -118,8 +118,6 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_Basic) {
     read_buffer.resize(read_buffer_size);
     VLOG(2) << "Parent got: " << read_buffer;
     ASSERT_EQ(hello + hello, read_buffer);
-
-    MojoClose(h);
   // We sent one message.
   END_CHILD_WITH_EXIT_CODE(1 % 100)
 }
@@ -333,8 +331,6 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
                        &hss));
     ASSERT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfied_signals);
     ASSERT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfiable_signals);
-
-    MojoClose(h);
   END_CHILD()
 }
 
@@ -358,7 +354,6 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CheckPlatformHandleFile,
   CHECK_EQ(MojoReadMessage(h, &read_buffer[0], &num_bytes, &handles[0],
                            &num_handlers, MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
-  MojoClose(h);
 
   read_buffer.resize(num_bytes);
   char hello[32];
@@ -539,7 +534,6 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipePassing) {
     CHECK_EQ(read_buffer, std::string("world"));
 
     MojoClose(mp1);
-    MojoClose(h);
   END_CHILD()
 }
 
@@ -582,8 +576,6 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipeTwoPassing) {
              MOJO_RESULT_OK);
     read_buffer.resize(read_buffer_size);
     CHECK_EQ(read_buffer, std::string("world"));
-
-    MojoClose(h);
   END_CHILD()
 }
 /*
