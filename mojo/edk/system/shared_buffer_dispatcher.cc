@@ -132,10 +132,13 @@ Dispatcher::Type SharedBufferDispatcher::GetType() const {
   return Type::SHARED_BUFFER;
 }
 
-void SharedBufferDispatcher::Close() {
+MojoResult SharedBufferDispatcher::Close() {
   base::AutoLock lock(lock_);
-  DCHECK(shared_buffer_);
+  if (!shared_buffer_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   shared_buffer_ = nullptr;
+  return MOJO_RESULT_OK;
 }
 
 MojoResult SharedBufferDispatcher::DuplicateBufferHandle(

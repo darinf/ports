@@ -56,7 +56,7 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
 
   // Dispatcher:
   Type GetType() const override;
-  void Close() override;
+  MojoResult Close() override;
   MojoResult DuplicateBufferHandle(
       const MojoDuplicateBufferHandleOptions* options,
       scoped_refptr<Dispatcher>* new_dispatcher) override;

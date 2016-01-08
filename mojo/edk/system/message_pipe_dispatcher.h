@@ -26,7 +26,7 @@ class MessagePipeDispatcher : public Dispatcher {
 
   // Dispatcher:
   Type GetType() const override;
-  void Close() override;
+  MojoResult Close() override;
   MojoResult WriteMessage(const void* bytes,
                           uint32_t num_bytes,
                           const DispatcherInTransit* dispatchers,

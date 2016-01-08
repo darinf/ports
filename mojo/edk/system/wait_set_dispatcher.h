@@ -27,7 +27,7 @@ class MOJO_SYSTEM_IMPL_EXPORT WaitSetDispatcher : public Dispatcher {
 
   // Dispatcher:
   Type GetType() const override;
-  void Close() override;
+  MojoResult Close() override;
   MojoResult AddWaitingDispatcher(const scoped_refptr<Dispatcher>& dispatcher,
                                   MojoHandleSignals signals,
                                   uintptr_t context) override;

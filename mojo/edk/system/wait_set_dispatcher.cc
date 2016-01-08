@@ -43,10 +43,11 @@ Dispatcher::Type WaitSetDispatcher::GetType() const {
   return Type::WAIT_SET;
 }
 
-void WaitSetDispatcher::Close() {
+MojoResult WaitSetDispatcher::Close() {
   {
     base::AutoLock lock(lock_);
-    DCHECK(!is_closed_);
+    if (is_closed_)
+      return MOJO_RESULT_INVALID_ARGUMENT;
     is_closed_ = true;
   }
 
@@ -65,6 +66,8 @@ void WaitSetDispatcher::Close() {
   base::AutoLock locker(awoken_lock_);
   awoken_queue_.clear();
   processed_dispatchers_.clear();
+
+  return MOJO_RESULT_OK;
 }
 
 MojoResult WaitSetDispatcher::AddWaitingDispatcher(

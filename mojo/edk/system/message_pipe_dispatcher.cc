@@ -71,13 +71,17 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
   return Type::MESSAGE_PIPE;
 }
 
-void MessagePipeDispatcher::Close() {
+MojoResult MessagePipeDispatcher::Close() {
   base::AutoLock lock(signal_lock_);
-  DCHECK(!port_closed_);
+  if (port_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
   port_closed_ = true;
   if (!port_transferred_)
     node_->ClosePort(port_);
   awakables_.CancelAll();
+
+  return MOJO_RESULT_OK;
 }
 
 MojoResult MessagePipeDispatcher::WriteMessage(

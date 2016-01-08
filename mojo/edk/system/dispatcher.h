@@ -61,7 +61,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // All Dispatchers must minimally implement these methods.
 
   virtual Type GetType() const = 0;
-  virtual void Close() = 0;
+  virtual MojoResult Close() = 0;
 
   ///////////// Message pipe API /////////////
 

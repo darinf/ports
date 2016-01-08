@@ -34,7 +34,10 @@ class MockDispatcher : public Dispatcher {
   // Dispatcher:
   Type GetType() const override { return Type::UNKNOWN; }
 
-  void Close() override { info_->IncrementCloseCallCount(); }
+  MojoResult Close() override {
+    info_->IncrementCloseCallCount();
+    return MOJO_RESULT_OK;
+  }
 
   MojoResult WriteMessage(
       const void* bytes,
