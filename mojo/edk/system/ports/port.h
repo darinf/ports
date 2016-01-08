@@ -10,7 +10,7 @@
 #include <utility>
 
 #include "mojo/edk/system/ports/message_queue.h"
-#include "mojo/edk/system/ports/ports.h"
+#include "mojo/edk/system/ports/user_data.h"
 
 namespace mojo {
 namespace edk {

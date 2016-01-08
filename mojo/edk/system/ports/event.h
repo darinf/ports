@@ -6,9 +6,9 @@
 #define MOJO_EDK_SYSTEM_PORTS_EVENT_H_
 
 #include <stdint.h>
-#include <string.h>
 
-#include "mojo/edk/system/ports/ports.h"
+#include "mojo/edk/system/ports/message.h"
+#include "mojo/edk/system/ports/name.h"
 
 namespace mojo {
 namespace edk {
