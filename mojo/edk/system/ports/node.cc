@@ -267,8 +267,38 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
     }
   }
 
-  // This is a local message. We can accept it immediately.
-  return AcceptMessage(std::move(message));
+  bool deliver_local_messages = false;
+  {
+    std::lock_guard<std::mutex> guard(local_message_lock_);
+    if (!is_delivering_local_messages_)
+      deliver_local_messages = is_delivering_local_messages_ = true;
+    local_messages_.emplace(std::move(message));
+  }
+
+  if (deliver_local_messages) {
+    // Flush the local message queue. Note that any given call to AcceptMessage
+    // may result in further calls to SendMessage. Re-entrancy into SendMessage
+    // is allowed because we prevent re-entrancy into this specific code path.
+    ports::ScopedMessage next_message;
+    for(;;) {
+      {
+        std::lock_guard<std::mutex> guard(local_message_lock_);
+        if (local_messages_.empty()) {
+          is_delivering_local_messages_ = false;
+          return OK;
+        }
+
+        next_message = std::move(local_messages_.front());
+        local_messages_.pop();
+      }
+
+      int rv = AcceptMessage(std::move(next_message));
+      if (rv != OK)
+        return rv;
+    }
+  }
+
+  return OK;
 }
 
 int Node::AcceptMessage(ScopedMessage message) {

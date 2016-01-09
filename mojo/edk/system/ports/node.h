@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include <mutex>
+#include <queue>
 #include <unordered_map>
 
 #include "base/macros.h"
@@ -160,10 +161,17 @@ class Node {
   NodeName name_;
   NodeDelegate* delegate_;
 
+  // Guards |ports_|.
   std::mutex ports_lock_;
   std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
 
+  // Guards multiple threads from sending ports simultaneously.
   std::mutex send_with_ports_lock_;
+
+  // Guards the fields below.
+  std::mutex local_message_lock_;
+  bool is_delivering_local_messages_;
+  std::queue<ScopedMessage> local_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };
