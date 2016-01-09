@@ -332,6 +332,12 @@ MojoResult MessagePipeDispatcher::AddAwakable(
     HandleSignalsState* signals_state) {
   base::AutoLock lock(signal_lock_);
 
+  if (port_closed_) {
+    if (signals_state)
+      *signals_state = HandleSignalsState();
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  }
+
   HandleSignalsState state = GetHandleSignalsStateNoLock();
   if (state.satisfies(signals)) {
     if (signals_state)
@@ -351,6 +357,12 @@ MojoResult MessagePipeDispatcher::AddAwakable(
 void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
                                            HandleSignalsState* signals_state) {
   base::AutoLock lock(signal_lock_);
+  if (port_closed_) {
+    if (signals_state)
+      *signals_state = HandleSignalsState();
+    return;
+  }
+
   if (signals_state)
     *signals_state = GetHandleSignalsStateNoLock();
   awakables_.Remove(awakable);
@@ -410,11 +422,12 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   port_closed_ = true;
+  awakables_.CancelAll();
+
   if (!port_transferred_) {
     int rv = node_controller_->node()->ClosePort(port_);
     DCHECK_EQ(ports::OK, rv);
   }
-  awakables_.CancelAll();
 
   return MOJO_RESULT_OK;
 }
