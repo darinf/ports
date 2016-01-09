@@ -15,12 +15,12 @@ namespace ports {
 
 namespace {
 
-int DebugError(const char* message, int error_code, const char* func) {
-  CHECK(false) << "Oops: " << message << " @ " << func;
+int DebugError(const char* message, int error_code) {
+  CHECK(false) << "Oops: " << message;
   return error_code;
 }
 
-#define OOPS(x) DebugError(#x, x, __func__)
+#define OOPS(x) DebugError(#x, x)
 
 bool CanAcceptMoreMessages(const Port* port) {
   // Have we already doled out the last message (i.e., do we expect to NOT
@@ -235,7 +235,8 @@ int Node::AllocMessage(size_t num_payload_bytes,
   memset((*message)->mutable_header_bytes(), 0, (*message)->num_header_bytes());
 
   GetMutableEventHeader(*message)->type = EventType::kUser;
-  GetMutableEventData<UserEventData>(*message)->num_ports = num_ports;
+  GetMutableEventData<UserEventData>(*message)->num_ports =
+      static_cast<uint32_t>(num_ports);
 
   return OK;
 }

@@ -219,23 +219,22 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
             static_cast<const MessageHeader*>(message.payload_bytes());
         DCHECK_LE(header->header_size, message.num_payload_bytes());
 
-        size_t bytes_to_read = 0;
-        size_t bytes_available =
-            message.num_payload_bytes() - header->header_size;
+        uint32_t bytes_to_read = 0;
+        uint32_t bytes_available =
+            static_cast<uint32_t>(message.num_payload_bytes()) -
+            header->header_size;
         if (num_bytes) {
-          bytes_to_read = std::min(static_cast<size_t>(*num_bytes),
-                                   bytes_available);
+          bytes_to_read = std::min(*num_bytes, bytes_available);
           *num_bytes = bytes_available;
         }
 
         DCHECK_EQ(header->num_dispatchers,
                   message.num_ports() + message.num_handles());
 
-        size_t handles_to_read = 0;
-        size_t handles_available = header->num_dispatchers;
+        uint32_t handles_to_read = 0;
+        uint32_t handles_available = header->num_dispatchers;
         if (num_handles) {
-          handles_to_read = std::min(static_cast<size_t>(*num_handles),
-                                     handles_available);
+          handles_to_read = std::min(*num_handles, handles_available);
           *num_handles = handles_available;
         }
 

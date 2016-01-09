@@ -88,7 +88,8 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient, PipesTest, h) {
   std::vector<MojoHandleSignals> signals(2, MOJO_HANDLE_SIGNAL_READABLE);
   for (;;) {
     uint32_t index;
-    CHECK_EQ(MojoWaitMany(handles.data(), signals.data(), handles.size(),
+    CHECK_EQ(MojoWaitMany(handles.data(), signals.data(),
+                          static_cast<uint32_t>(handles.size()),
                           MOJO_DEADLINE_INDEFINITE, &index, nullptr),
              MOJO_RESULT_OK);
     DCHECK_LE(index, handles.size());

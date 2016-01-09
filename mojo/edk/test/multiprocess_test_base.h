@@ -147,12 +147,12 @@ class MultiprocessTestBase : public testing::Test {
 
 #define END_CHILD_WITH_EXIT_CODE(code) }); EXPECT_EQ(code, result); }
 
-#define EXPAND_CLIENT_NAMES(client_names...)  client_names
+#define EXPAND_CLIENT_NAMES(...)  __VA_ARGS__
 
-#define RUN_WITH_CHILDREN(client_names...)                       \
+#define RUN_WITH_CHILDREN(...)                                   \
     {                                                            \
        std::vector<std::string> client_names_ {                  \
-            EXPAND_CLIENT_NAMES(client_names) };                 \
+            EXPAND_CLIENT_NAMES(__VA_ARGS__) };                  \
        RunChildren(client_names_,
 
 #define ON_PIPES(handlearray) [&](const MojoHandle* handlearray) {
