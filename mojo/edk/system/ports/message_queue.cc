@@ -14,7 +14,7 @@ namespace edk {
 namespace ports {
 
 inline uint32_t GetSequenceNum(const ScopedMessage& message) {
-  return GetEventData<UserEventData>(message)->sequence_num;
+  return GetEventData<UserEventData>(*message)->sequence_num;
 }
 
 // Used by std::{push,pop}_heap functions
@@ -54,7 +54,7 @@ void MessageQueue::GetNextMessageIf(
 
 void MessageQueue::AcceptMessage(ScopedMessage message,
                                  bool* has_next_message) {
-  DCHECK(GetEventHeader(message)->type == EventType::kUser);
+  DCHECK(GetEventHeader(*message)->type == EventType::kUser);
 
   // TODO: Handle sequence number roll-over.
 

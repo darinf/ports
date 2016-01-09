@@ -61,22 +61,22 @@ struct ObserveClosureEventData {
   uint32_t padding;
 };
 
-inline const EventHeader* GetEventHeader(const ScopedMessage& message) {
-  return static_cast<const EventHeader*>(message->header_bytes());
+inline const EventHeader* GetEventHeader(const Message& message) {
+  return static_cast<const EventHeader*>(message.header_bytes());
 }
 
-inline EventHeader* GetMutableEventHeader(ScopedMessage& message) {
+inline EventHeader* GetMutableEventHeader(Message* message) {
   return static_cast<EventHeader*>(message->mutable_header_bytes());
 }
 
 template <typename EventData>
-inline const EventData* GetEventData(const ScopedMessage& message) {
+inline const EventData* GetEventData(const Message& message) {
   return reinterpret_cast<const EventData*>(
       reinterpret_cast<const char*>(GetEventHeader(message) + 1));
 }
 
 template <typename EventData>
-inline EventData* GetMutableEventData(ScopedMessage& message) {
+inline EventData* GetMutableEventData(Message* message) {
   return reinterpret_cast<EventData*>(
       reinterpret_cast<char*>(GetMutableEventHeader(message) + 1));
 }

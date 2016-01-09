@@ -32,7 +32,7 @@ executable("mojo_system_ports_unittests") {
   testonly = true
 
   sources = [
-    "test.cc",
+    "ports_unittest.cc",
   ]
 
   deps = [

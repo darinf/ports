@@ -446,11 +446,7 @@ TEST_F(PortsTest, GetMessage2) {
 
   ScopedMessage message;
   EXPECT_EQ(OK, node0.GetMessage(a0, &message));
-  EXPECT_FALSE(message);
 
-  PumpTasks();
-
-  EXPECT_EQ(OK, node0.GetMessage(a0, &message));
   ASSERT_TRUE(message);
   EXPECT_EQ(0, strcmp("1", ToString(message)));
 
@@ -479,11 +475,6 @@ TEST_F(PortsTest, GetMessage3) {
     EXPECT_EQ(OK, node0.SendMessage(a1, NewStringMessage(kStrings[i])));
 
   ScopedMessage message;
-  EXPECT_EQ(OK, node0.GetMessage(a0, &message));
-  EXPECT_FALSE(message);
-
-  PumpTasks();
-
   for (size_t i = 0; i < sizeof(kStrings)/sizeof(kStrings[0]); ++i) {
     EXPECT_EQ(OK, node0.GetMessage(a0, &message));
     ASSERT_TRUE(message);
@@ -593,11 +584,11 @@ TEST_F(PortsTest, Delegation2) {
     PortRef E, F;
     EXPECT_EQ(OK, node0.CreatePortPair(&E, &F));
 
-    // Pass F over C to D.
-    EXPECT_EQ(OK, node0.SendMessage(C, NewStringMessageWithPort("1", F)));
-
     // Pass D over A to B.
     EXPECT_EQ(OK, node0.SendMessage(A, NewStringMessageWithPort("1", D)));
+
+    // Pass F over C to D.
+    EXPECT_EQ(OK, node0.SendMessage(C, NewStringMessageWithPort("1", F)));
 
     // This message should find its way to node1.
     EXPECT_EQ(OK, node0.SendMessage(E, NewStringMessage("hello")));

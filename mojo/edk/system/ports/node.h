@@ -101,7 +101,9 @@ class Node {
                    size_t num_ports,
                    ScopedMessage* message);
 
-  // Sends a message from the specified port to its peer.
+  // Sends a message from the specified port to its peer. Note that the message
+  // notification may arrive synchronously (via PortStatusChanged() on the
+  // delegate) if the peer is local to this Node.
   int SendMessage(const PortRef& port_ref, ScopedMessage message);
 
   // Corresponding to NodeDelegate::ForwardMessage.
@@ -131,9 +133,9 @@ class Node {
   int AcceptPort(const PortName& port_name,
                  const PortDescriptor& port_descriptor);
 
-  int SendMessage_Locked(Port* port,
-                         const PortName& port_name,
-                         ScopedMessage message);
+  int WillSendMessage_Locked(Port* port,
+                             const PortName& port_name,
+                             Message* message);
   int ForwardMessages_Locked(Port* port, const PortName& port_name);
   void InitiateProxyRemoval_Locked(Port* port, const PortName& port_name);
   void MaybeRemoveProxy_Locked(Port* port, const PortName& port_name);

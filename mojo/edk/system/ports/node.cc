@@ -234,8 +234,8 @@ int Node::AllocMessage(size_t num_payload_bytes,
 
   memset((*message)->mutable_header_bytes(), 0, (*message)->num_header_bytes());
 
-  GetMutableEventHeader(*message)->type = EventType::kUser;
-  GetMutableEventData<UserEventData>(*message)->num_ports =
+  GetMutableEventHeader(message->get())->type = EventType::kUser;
+  GetMutableEventData<UserEventData>(message->get())->num_ports =
       static_cast<uint32_t>(num_ports);
 
   return OK;
@@ -248,20 +248,31 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
   }
 
   Port* port = port_ref.port();
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
 
-  std::lock_guard<std::mutex> guard(port->lock);
+    if (port->state != Port::kReceiving)
+      return ERROR_PORT_STATE_UNEXPECTED;
 
-  if (port->state != Port::kReceiving)
-    return ERROR_PORT_STATE_UNEXPECTED;
+    if (port->peer_closed)
+      return ERROR_PORT_PEER_CLOSED;
 
-  if (port->peer_closed)
-    return ERROR_PORT_PEER_CLOSED;
+    int rv = WillSendMessage_Locked(port, port_ref.name(), message.get());
+    if (rv != OK)
+      return rv;
 
-  return SendMessage_Locked(port, port_ref.name(), std::move(message));
+    if (port->peer_node_name != name_) {
+      delegate_->ForwardMessage(port->peer_node_name, std::move(message));
+      return OK;
+    }
+  }
+
+  // This is a local message. We can accept it immediately.
+  return AcceptMessage(std::move(message));
 }
 
 int Node::AcceptMessage(ScopedMessage message) {
-  const EventHeader* header = GetEventHeader(message);
+  const EventHeader* header = GetEventHeader(*message);
   switch (header->type) {
     case EventType::kUser:
       return OnUserMessage(std::move(message));
@@ -270,15 +281,15 @@ int Node::AcceptMessage(ScopedMessage message) {
     case EventType::kObserveProxy:
       return OnObserveProxy(
           header->port_name,
-          *GetEventData<ObserveProxyEventData>(message));
+          *GetEventData<ObserveProxyEventData>(*message));
     case EventType::kObserveProxyAck:
       return OnObserveProxyAck(
           header->port_name,
-          GetEventData<ObserveProxyAckEventData>(message)->last_sequence_num);
+          GetEventData<ObserveProxyAckEventData>(*message)->last_sequence_num);
     case EventType::kObserveClosure:
       return OnObserveClosure(
           header->port_name,
-          GetEventData<ObserveClosureEventData>(message)->last_sequence_num);
+          GetEventData<ObserveClosureEventData>(*message)->last_sequence_num);
   }
   return OOPS(ERROR_NOT_IMPLEMENTED);
 }
@@ -337,8 +348,8 @@ int Node::LostConnectionToNode(const NodeName& node_name) {
 }
 
 int Node::OnUserMessage(ScopedMessage message) {
-  PortName port_name = GetEventHeader(message)->port_name;
-  const auto* event = GetEventData<UserEventData>(message);
+  PortName port_name = GetEventHeader(*message)->port_name;
+  const auto* event = GetEventData<UserEventData>(*message);
 
 #ifndef NDEBUG
   std::ostringstream ports_buf;
@@ -694,9 +705,11 @@ int Node::AcceptPort(const PortName& port_name,
   return OK;
 }
 
-int Node::SendMessage_Locked(Port* port,
-                             const PortName& port_name,
-                             ScopedMessage message) {
+int Node::WillSendMessage_Locked(Port* port,
+                                 const PortName& port_name,
+                                 Message* message) {
+  DCHECK(message);
+
   // Messages may already have a sequence number if they're being forwarded
   // by a proxy. Otherwise, use the next outgoing sequence number.
   uint32_t* sequence_num =
@@ -753,14 +766,13 @@ int Node::SendMessage_Locked(Port* port,
 
 #ifndef NDEBUG
   DVLOG(1) << "Sending message "
-           << GetEventData<UserEventData>(message)->sequence_num
+           << GetEventData<UserEventData>(*message)->sequence_num
            << " [ports=" << ports_buf.str() << "]"
            << " from " << port_name << "@" << name_
            << " to " << port->peer_port_name << "@" << port->peer_node_name;
 #endif
 
   GetMutableEventHeader(message)->port_name = port->peer_port_name;
-  delegate_->ForwardMessage(port->peer_node_name, std::move(message));
   return OK;
 }
 
@@ -771,9 +783,11 @@ int Node::ForwardMessages_Locked(Port* port, const PortName &port_name) {
     if (!message)
       break;
 
-    int rv = SendMessage_Locked(port, port_name, std::move(message));
+    int rv = WillSendMessage_Locked(port, port_name, message.get());
     if (rv != OK)
       return rv;
+
+    delegate_->ForwardMessage(port->peer_node_name, std::move(message));
   }
   return OK;
 }
@@ -827,7 +841,7 @@ ScopedMessage Node::NewInternalMessage_Helper(const PortName& port_name,
   ScopedMessage message;
   delegate_->AllocMessage(sizeof(EventHeader) + num_data_bytes, 0, 0, &message);
 
-  EventHeader* header = GetMutableEventHeader(message);
+  EventHeader* header = GetMutableEventHeader(message.get());
   header->port_name = port_name;
   header->type = type;
   header->padding = 0;

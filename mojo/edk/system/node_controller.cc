@@ -89,13 +89,7 @@ scoped_ptr<PortsMessage> NodeController::AllocMessage(size_t num_payload_bytes,
 int NodeController::SendMessage(const ports::PortRef& port,
                                 scoped_ptr<PortsMessage> message) {
   ports::ScopedMessage ports_message(message.release());
-  int rv = node_->SendMessage(port, std::move(ports_message));
-
-  // Flush the incoming message queue in case the call to SendMessage queued
-  // any messages locally.
-  AcceptIncomingMessages();
-
-  return rv;
+  return node_->SendMessage(port, std::move(ports_message));
 }
 
 void NodeController::ReservePortForToken(const ports::PortName& port_name,
