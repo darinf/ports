@@ -86,17 +86,7 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
 
 MojoResult MessagePipeDispatcher::Close() {
   base::AutoLock lock(signal_lock_);
-  if (port_closed_)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-
-  port_closed_ = true;
-  if (!port_transferred_) {
-    int rv = node_controller_->node()->ClosePort(port_);
-    DCHECK_EQ(ports::OK, rv);
-  }
-  awakables_.CancelAll();
-
-  return MOJO_RESULT_OK;
+  return CloseNoLock();
 }
 
 MojoResult MessagePipeDispatcher::WriteMessage(
@@ -378,19 +368,19 @@ bool MessagePipeDispatcher::EndSerializeAndClose(
     void* destination,
     ports::PortName* ports,
     PlatformHandleVector* handles) {
-  *ports = GetPortName();
+  *ports = port_.name();
+  port_transferred_ = true;
+  CloseNoLock();
+  return true;
+}
+
+bool MessagePipeDispatcher::BeginTransit() {
+  signal_lock_.Acquire();
   return true;
 }
 
 void MessagePipeDispatcher::CompleteTransit() {
-  {
-    base::AutoLock lock(signal_lock_);
-    port_transferred_ = true;
-  }
-
-  // port_ has been closed by virtue of having been transferred. This
-  // dispatcher needs to be closed as well.
-  Close();
+  signal_lock_.Release();
 }
 
 // static
@@ -412,6 +402,21 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
+}
+
+MojoResult MessagePipeDispatcher::CloseNoLock() {
+  signal_lock_.AssertAcquired();
+  if (port_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  port_closed_ = true;
+  if (!port_transferred_) {
+    int rv = node_controller_->node()->ClosePort(port_);
+    DCHECK_EQ(ports::OK, rv);
+  }
+  awakables_.CancelAll();
+
+  return MOJO_RESULT_OK;
 }
 
 HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {

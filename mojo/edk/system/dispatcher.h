@@ -202,10 +202,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // Does whatever is necessary to cancel transit of the dispatcher.
   virtual void CancelTransit();
 
-  // May be used by a dispatcher to indicate that it's currently in a
-  // non-transferrable state.
-  virtual bool IsBusy();
-
   // Deserializes a specific dispatcher type from an incoming message.
   static scoped_refptr<Dispatcher> Deserialize(
       Type type,

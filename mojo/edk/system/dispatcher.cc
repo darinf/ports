@@ -6,6 +6,8 @@
 
 #include "base/logging.h"
 #include "mojo/edk/system/configuration.h"
+#include "mojo/edk/system/data_pipe_consumer_dispatcher.h"
+#include "mojo/edk/system/data_pipe_producer_dispatcher.h"
 #include "mojo/edk/system/message_pipe_dispatcher.h"
 #include "mojo/edk/system/platform_handle_dispatcher.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
@@ -135,8 +137,6 @@ void Dispatcher::CompleteTransit() {}
 
 void Dispatcher::CancelTransit() {}
 
-bool Dispatcher::IsBusy() { return false; }
-
 // static
 scoped_refptr<Dispatcher> Dispatcher::Deserialize(
     Type type,
@@ -153,6 +153,14 @@ scoped_refptr<Dispatcher> Dispatcher::Deserialize(
           num_platform_handles);
     case Type::SHARED_BUFFER:
       return SharedBufferDispatcher::Deserialize(
+          bytes, num_bytes, ports, num_ports, platform_handles,
+          num_platform_handles);
+    case Type::DATA_PIPE_CONSUMER:
+      return DataPipeConsumerDispatcher::Deserialize(
+          bytes, num_bytes, ports, num_ports, platform_handles,
+          num_platform_handles);
+    case Type::DATA_PIPE_PRODUCER:
+      return DataPipeProducerDispatcher::Deserialize(
           bytes, num_bytes, ports, num_ports, platform_handles,
           num_platform_handles);
     case Type::PLATFORM_HANDLE:
