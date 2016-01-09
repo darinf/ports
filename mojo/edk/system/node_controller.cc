@@ -4,6 +4,8 @@
 
 #include "mojo/edk/system/node_controller.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -274,8 +276,17 @@ void NodeController::ConnectToParentPortByTokenNow(
   it->second->ConnectToPort(token, local_port);
 }
 
-void NodeController::AcceptMessageOnIOThread(ports::ScopedMessage message) {
-  node_->AcceptMessage(std::move(message));
+void NodeController::AcceptIncomingMessages() {
+  std::queue<ports::ScopedMessage> messages;
+  {
+    base::AutoLock lock(messages_lock_);
+    std::swap(messages, incoming_messages_);
+  }
+
+  while (!messages.empty()) {
+    node_->AcceptMessage(std::move(messages.front()));
+    messages.pop();
+  }
 }
 
 void NodeController::GenerateRandomPortName(ports::PortName* port_name) {
@@ -293,12 +304,23 @@ void NodeController::AllocMessage(size_t num_header_bytes,
 void NodeController::ForwardMessage(const ports::NodeName& node,
                                     ports::ScopedMessage message) {
   if (node == name_) {
-    // NOTE: It isn't critical that we accept the message on the IO thread.
-    // Rather, we just need to avoid re-entering the Node instance.
-    io_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&NodeController::AcceptMessageOnIOThread,
-                   base::Unretained(this), base::Passed(&message)));
+    // NOTE: It isn't critical that we accept messages on the IO thread.
+    // Rather, we just need to avoid re-entering the Node instance within
+    // ForwardMessage.
+
+    bool queue_was_empty = false;
+    {
+      base::AutoLock lock(messages_lock_);
+      queue_was_empty = incoming_messages_.empty();
+      incoming_messages_.emplace(std::move(message));
+    }
+
+    if (queue_was_empty) {
+      io_task_runner_->PostTask(
+          FROM_HERE,
+          base::Bind(&NodeController::AcceptIncomingMessages,
+                     base::Unretained(this)));
+    }
   } else {
     SendPeerMessage(node, std::move(message));
   }

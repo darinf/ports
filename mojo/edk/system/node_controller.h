@@ -7,6 +7,7 @@
 
 #include <queue>
 #include <unordered_map>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/macros.h"
@@ -17,6 +18,7 @@
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/node_channel.h"
 #include "mojo/edk/system/ports/hash_functions.h"
+#include "mojo/edk/system/ports/name.h"
 #include "mojo/edk/system/ports/node.h"
 #include "mojo/edk/system/ports/node_delegate.h"
 
@@ -113,7 +115,7 @@ class NodeController : public ports::NodeDelegate,
   void ConnectToParentPortByTokenNow(const std::string& token,
                                      const ports::PortName& local_port,
                                      const base::Closure& on_connect);
-  void AcceptMessageOnIOThread(ports::ScopedMessage message);
+  void AcceptIncomingMessages();
 
   // ports::NodeDelegate:
   void GenerateRandomPortName(ports::PortName* port_name) override;
@@ -189,6 +191,10 @@ class NodeController : public ports::NodeDelegate,
   // This tracks pending outgoing connection request for named ports.
   std::vector<PendingTokenConnection> pending_token_connections_;
   std::unordered_map<ports::PortName, base::Closure> pending_connection_acks_;
+
+  // Guards |incoming_messages_|.
+  base::Lock messages_lock_;
+  std::queue<ports::ScopedMessage> incoming_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(NodeController);
 };
