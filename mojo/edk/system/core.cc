@@ -16,6 +16,8 @@
 #include "mojo/edk/system/async_waiter.h"
 #include "mojo/edk/system/channel.h"
 #include "mojo/edk/system/configuration.h"
+#include "mojo/edk/system/data_pipe_consumer_dispatcher.h"
+#include "mojo/edk/system/data_pipe_producer_dispatcher.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/message_pipe_dispatcher.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
@@ -278,8 +280,18 @@ MojoResult Core::CreateMessagePipe(
   CHECK(message_pipe_handle1);
   *message_pipe_handle0 = AddDispatcher(
       new MessagePipeDispatcher(&node_controller_, port0));
+  if (*message_pipe_handle0 == MOJO_HANDLE_INVALID)
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+
   *message_pipe_handle1 = AddDispatcher(
       new MessagePipeDispatcher(&node_controller_, port1));
+  if (*message_pipe_handle1 == MOJO_HANDLE_INVALID) {
+    scoped_refptr<Dispatcher> unused;
+    unused->Close();
+    handles_.GetAndRemoveDispatcher(*message_pipe_handle0, &unused);
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+
   return MOJO_RESULT_OK;
 }
 
@@ -350,51 +362,38 @@ MojoResult Core::CreateDataPipe(
     const MojoCreateDataPipeOptions* options,
     MojoHandle* data_pipe_producer_handle,
     MojoHandle* data_pipe_consumer_handle) {
-/*  MojoCreateDataPipeOptions validated_options = {};
-  MojoResult result =
-      DataPipe::ValidateCreateOptions(options, &validated_options);
-  if (result != MOJO_RESULT_OK)
-    return result;
+  // TODO: Use the new data pipe impl when it's ready.
 
-  scoped_refptr<DataPipeProducerDispatcher> producer_dispatcher =
-      DataPipeProducerDispatcher::Create(validated_options);
-  scoped_refptr<DataPipeConsumerDispatcher> consumer_dispatcher =
-      DataPipeConsumerDispatcher::Create(validated_options);
+  MojoCreateDataPipeOptions default_options;
+  default_options.struct_size = sizeof(MojoCreateDataPipeOptions);
+  default_options.flags = 0;
+  default_options.element_num_bytes = 1;
+  default_options.capacity_num_bytes = 64 * 1024;
 
-  std::pair<MojoHandle, MojoHandle> handle_pair;
-  {
-    base::AutoLock locker(handle_table_lock_);
-    handle_pair = handle_table_.AddDispatcherPair(producer_dispatcher,
-                                                  consumer_dispatcher);
-  }
+  const MojoCreateDataPipeOptions* create_options =
+      options ? options : &default_options;
 
-  if (handle_pair.first == MOJO_HANDLE_INVALID) {
-    DCHECK_EQ(handle_pair.second, MOJO_HANDLE_INVALID);
-    LOG(ERROR) << "Handle table full";
-    producer_dispatcher->Close();
-    consumer_dispatcher->Close();
+  ports::PortRef port0, port1;
+  node_controller_.node()->CreatePortPair(&port0, &port1);
+  CHECK(data_pipe_producer_handle);
+  CHECK(data_pipe_consumer_handle);
+  *data_pipe_producer_handle = AddDispatcher(
+      new DataPipeProducerDispatcher(&node_controller_, port0,
+                                     *create_options));
+  if (*data_pipe_producer_handle == MOJO_HANDLE_INVALID)
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+
+  *data_pipe_consumer_handle = AddDispatcher(
+      new DataPipeConsumerDispatcher(&node_controller_, port1,
+                                     *create_options));
+  if (*data_pipe_consumer_handle == MOJO_HANDLE_INVALID) {
+    scoped_refptr<Dispatcher> unused;
+    unused->Close();
+    handles_.GetAndRemoveDispatcher(*data_pipe_producer_handle, &unused);
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
   }
-  DCHECK_NE(handle_pair.second, MOJO_HANDLE_INVALID);
 
-  ScopedPlatformHandle server_handle, client_handle;
-// TODO: Enable DataPipe on Windows.
-//#if defined(OS_WIN)
-//  internal::g_broker->CreatePlatformChannelPair(&server_handle, &client_handle);
-//#else
-  PlatformChannelPair channel_pair;
-  server_handle = channel_pair.PassServerHandle();
-  client_handle = channel_pair.PassClientHandle();
-//#endif
-  producer_dispatcher->Init(std::move(server_handle), nullptr, 0u);
-  consumer_dispatcher->Init(std::move(client_handle), nullptr, 0u);
-
-  *data_pipe_producer_handle = handle_pair.first;
-  *data_pipe_consumer_handle = handle_pair.second;
   return MOJO_RESULT_OK;
-*/
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
 }
 
 MojoResult Core::WriteData(MojoHandle data_pipe_producer_handle,

@@ -87,7 +87,8 @@ MojoResult HandleTable::BeginTransit(
     Dispatcher::DispatcherInTransit& d = dispatchers->back();
     d.local_handle = handles[i];
     d.dispatcher = it->second.dispatcher;
-    d.dispatcher->BeginTransit();
+    if (!d.dispatcher->BeginTransit())
+      return MOJO_RESULT_BUSY;
   }
   return MOJO_RESULT_OK;
 }

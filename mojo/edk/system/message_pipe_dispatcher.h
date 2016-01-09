@@ -22,8 +22,6 @@ class MessagePipeDispatcher : public Dispatcher {
   MessagePipeDispatcher(NodeController* node_controller,
                         const ports::PortRef& port);
 
-  const ports::PortName& GetPortName() const { return port_.name(); }
-
   // Dispatcher:
   Type GetType() const override;
   MojoResult Close() override;
@@ -50,6 +48,7 @@ class MessagePipeDispatcher : public Dispatcher {
   bool EndSerializeAndClose(void* destination,
                             ports::PortName* ports,
                             PlatformHandleVector* handles) override;
+  bool BeginTransit() override;
   void CompleteTransit() override;
 
   static scoped_refptr<Dispatcher> Deserialize(
@@ -66,6 +65,7 @@ class MessagePipeDispatcher : public Dispatcher {
 
   ~MessagePipeDispatcher() override;
 
+  MojoResult CloseNoLock();
   HandleSignalsState GetHandleSignalsStateNoLock() const;
   void OnPortStatusChanged();
 
