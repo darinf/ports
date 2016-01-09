@@ -45,8 +45,13 @@ NodeController::NodeController(Core* core)
   DVLOG(1) << "Initializing node " << name_;
 }
 
+void NodeController::SetIOTaskRunner(
+    scoped_refptr<base::TaskRunner> task_runner) {
+  io_task_runner_ = task_runner;
+}
+
 void NodeController::ConnectToChild(ScopedPlatformHandle platform_handle) {
-  core_->io_task_runner()->PostTask(
+  io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&NodeController::ConnectToChildOnIOThread,
                  base::Unretained(this),
@@ -54,7 +59,7 @@ void NodeController::ConnectToChild(ScopedPlatformHandle platform_handle) {
 }
 
 void NodeController::ConnectToParent(ScopedPlatformHandle platform_handle) {
-  core_->io_task_runner()->PostTask(
+  io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&NodeController::ConnectToParentOnIOThread,
                  base::Unretained(this),
@@ -88,7 +93,7 @@ int NodeController::SendMessage(const ports::PortRef& port,
 void NodeController::ReservePortForToken(const ports::PortName& port_name,
                                          const std::string& token,
                                          const base::Closure& on_connect) {
-  core_->io_task_runner()->PostTask(
+  io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&NodeController::ReservePortForTokenOnIOThread,
                  base::Unretained(this), port_name, token, on_connect));
@@ -98,7 +103,7 @@ void NodeController::ConnectToParentPortByToken(
     const std::string& token,
     const ports::PortName& local_port,
     const base::Closure& on_connect) {
-  core_->io_task_runner()->PostTask(
+  io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&NodeController::ConnectToParentPortByTokenOnIOThread,
                  base::Unretained(this), token, local_port, on_connect));
@@ -106,11 +111,10 @@ void NodeController::ConnectToParentPortByToken(
 
 void NodeController::ConnectToChildOnIOThread(
     ScopedPlatformHandle platform_handle) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(platform_handle),
-                      core_->io_task_runner()));
+      new NodeChannel(this, std::move(platform_handle), io_task_runner_));
 
   ports::NodeName token;
   GenerateRandomName(&token);
@@ -124,13 +128,12 @@ void NodeController::ConnectToChildOnIOThread(
 
 void NodeController::ConnectToParentOnIOThread(
     ScopedPlatformHandle platform_handle) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(parent_name_ == ports::kInvalidNodeName);
   DCHECK(!bootstrap_channel_to_parent_);
 
   scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(platform_handle),
-                      core_->io_task_runner()));
+      new NodeChannel(this, std::move(platform_handle), io_task_runner_));
   bootstrap_channel_to_parent_ = std::move(channel);
   bootstrap_channel_to_parent_->Start();
 }
@@ -138,7 +141,7 @@ void NodeController::ConnectToParentOnIOThread(
 void NodeController::AddPeer(const ports::NodeName& name,
                    scoped_ptr<NodeChannel> channel,
                    bool start_channel) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   DCHECK(name != ports::kInvalidNodeName);
   DCHECK(channel);
@@ -177,7 +180,7 @@ void NodeController::AddPeer(const ports::NodeName& name,
 }
 
 void NodeController::DropPeer(const ports::NodeName& name) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   {
     base::AutoLock lock(peers_lock_);
@@ -226,7 +229,7 @@ void NodeController::ReservePortForTokenOnIOThread(
     const ports::PortName& port_name,
     const std::string& token,
     const base::Closure& on_connect) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   ReservedPort reservation;
   reservation.local_port = port_name;
@@ -241,7 +244,7 @@ void NodeController::ConnectToParentPortByTokenOnIOThread(
     const std::string& token,
     const ports::PortName& local_port,
     const base::Closure& on_connect) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (parent_name_ != ports::kInvalidNodeName) {
     ConnectToParentPortByTokenNow(token, local_port, on_connect);
@@ -259,7 +262,7 @@ void NodeController::ConnectToParentPortByTokenNow(
     const std::string& token,
     const ports::PortName& local_port,
     const base::Closure& on_connect) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(parent_name_ != ports::kInvalidNodeName);
 
   auto result = pending_connection_acks_.insert(
@@ -272,7 +275,6 @@ void NodeController::ConnectToParentPortByTokenNow(
 }
 
 void NodeController::AcceptMessageOnIOThread(ports::ScopedMessage message) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
   node_->AcceptMessage(std::move(message));
 }
 
@@ -293,11 +295,10 @@ void NodeController::ForwardMessage(const ports::NodeName& node,
   if (node == name_) {
     // NOTE: It isn't critical that we accept the message on the IO thread.
     // Rather, we just need to avoid re-entering the Node instance.
-    core_->io_task_runner()->PostTask(
+    io_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&NodeController::AcceptMessageOnIOThread,
-                   base::Unretained(this),
-                   base::Passed(&message)));
+                   base::Unretained(this), base::Passed(&message)));
   } else {
     SendPeerMessage(node, std::move(message));
   }
@@ -315,7 +316,7 @@ void NodeController::PortStatusChanged(const ports::PortRef& port) {
 void NodeController::OnAcceptChild(const ports::NodeName& from_node,
                                    const ports::NodeName& parent_name,
                                    const ports::NodeName& token) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (!bootstrap_channel_to_parent_) {
     DLOG(ERROR) << "Unexpected AcceptChild message from " << from_node;
@@ -338,7 +339,7 @@ void NodeController::OnAcceptChild(const ports::NodeName& from_node,
 void NodeController::OnAcceptParent(const ports::NodeName& from_node,
                                     const ports::NodeName& token,
                                     const ports::NodeName& child_name) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   scoped_ptr<NodeChannel> channel;
 
@@ -363,7 +364,7 @@ void NodeController::OnPortsMessage(
     const void* bytes,
     size_t num_bytes,
     ScopedPlatformHandleVectorPtr platform_handles) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   size_t num_header_bytes, num_payload_bytes, num_ports_bytes;
   ports::Message::Parse(bytes,
@@ -379,13 +380,13 @@ void NodeController::OnPortsMessage(
                        bytes,
                        num_bytes,
                        std::move(platform_handles)));
-  AcceptMessageOnIOThread(std::move(message));
+  node_->AcceptMessage(std::move(message));
 }
 
 void NodeController::OnConnectToPort(const ports::NodeName& from_node,
                                      const ports::PortName& connector_port_name,
                                      const std::string& token) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   base::AutoLock lock(peers_lock_);
   auto port_it = reserved_ports_.find(token);
@@ -419,7 +420,7 @@ void NodeController::OnConnectToPortAck(
     const ports::NodeName& from_node,
     const ports::PortName& connector_port_name,
     const ports::PortName& connectee_port_name) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (from_node != parent_name_) {
     DLOG(ERROR) << "Ignoring ConnectToPortAck from non-parent node "
@@ -445,7 +446,7 @@ void NodeController::OnConnectToPortAck(
 
 void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,
                                            const ports::NodeName& name) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (from_node == name || name == ports::kInvalidNodeName) {
     DLOG(ERROR) << "Rejecting invalid OnRequestIntroduction message from "
@@ -472,7 +473,7 @@ void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,
 void NodeController::OnIntroduce(const ports::NodeName& from_node,
                                  const ports::NodeName& name,
                                  ScopedPlatformHandle channel_handle) {
-  DCHECK(core_->io_task_runner()->RunsTasksOnCurrentThread());
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (from_node != parent_name_) {
     DLOG(ERROR) << "Received unexpected Introduce message from node "
@@ -489,16 +490,15 @@ void NodeController::OnIntroduce(const ports::NodeName& from_node,
   }
 
   scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(channel_handle),
-                      core_->io_task_runner()));
+      new NodeChannel(this, std::move(channel_handle), io_task_runner_));
   AddPeer(name, std::move(channel), true /* start_channel */);
 }
 
 void NodeController::OnChannelError(const ports::NodeName& from_node) {
-  if (core_->io_task_runner()->RunsTasksOnCurrentThread()) {
+  if (io_task_runner_->RunsTasksOnCurrentThread()) {
     DropPeer(from_node);
   } else {
-    core_->io_task_runner()->PostTask(
+    io_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&NodeController::DropPeer, base::Unretained(this), from_node));
   }

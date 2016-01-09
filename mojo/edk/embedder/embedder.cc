@@ -85,7 +85,7 @@ void InitIPCSupport(ProcessDelegate* process_delegate,
   internal::g_io_thread_task_runner = io_thread_task_runner.get();
   internal::g_io_thread_task_runner->AddRef();
 
-  internal::g_core->SetIOTaskRunner(io_thread_task_runner);
+  internal::g_core->node_controller()->SetIOTaskRunner(io_thread_task_runner);
 }
 
 void ShutdownIPCSupportOnIOThread() {

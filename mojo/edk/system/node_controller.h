@@ -12,6 +12,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/task_runner.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/node_channel.h"
@@ -43,6 +44,10 @@ class NodeController : public ports::NodeDelegate,
   const ports::NodeName& name() const { return name_; }
   Core* core() const { return core_; }
   ports::Node* node() const { return node_.get(); }
+
+  // Called exactly once, shortly after construction, and before any other
+  // methods are called on this object.
+  void SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner);
 
   // Connects this node to a child node. This node will initiate a handshake.
   void ConnectToChild(ScopedPlatformHandle platform_handle);
@@ -149,7 +154,9 @@ class NodeController : public ports::NodeDelegate,
   const ports::NodeName name_;
   const scoped_ptr<ports::Node> node_;
 
-  // Guards peers_ and pending_peer_messages_.
+  scoped_refptr<base::TaskRunner> io_task_runner_;
+
+  // Guards |peers_| and |pending_peer_messages_|.
   base::Lock peers_lock_;
 
   // Channels to known peers, including parent and children, if any.

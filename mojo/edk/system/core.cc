@@ -58,10 +58,6 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
   return handles_.GetDispatcher(handle);
 }
 
-void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
-  io_task_runner_ = io_task_runner;
-}
-
 void Core::AddChild(ScopedPlatformHandle platform_handle) {
   node_controller_.ConnectToChild(std::move(platform_handle));
 }

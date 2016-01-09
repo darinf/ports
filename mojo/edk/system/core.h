@@ -13,7 +13,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "base/task_runner.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/handle_signals_state.h"
@@ -38,13 +37,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   virtual ~Core();
 
   NodeController* node_controller() { return &node_controller_; }
-  scoped_refptr<base::TaskRunner> io_task_runner() { return io_task_runner_; }
 
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
-
-  // Called exactly once, shortly after construction, and before any other
-  // methods are called on this object.
-  void SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner);
 
   // Called in the parent process any time a new child is launched.
   void AddChild(ScopedPlatformHandle platform_handle);
@@ -194,8 +188,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                               HandleSignalsState* signals_states);
 
   NodeController node_controller_;
-
-  scoped_refptr<base::TaskRunner> io_task_runner_;
 
   base::Lock handles_lock_;
   HandleTable handles_;
