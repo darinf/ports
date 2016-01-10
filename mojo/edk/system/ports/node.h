@@ -170,7 +170,7 @@ class Node {
 
   // Guards the fields below.
   std::mutex local_message_lock_;
-  bool is_delivering_local_messages_;
+  bool is_delivering_local_messages_ = false;
   std::queue<ScopedMessage> local_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
