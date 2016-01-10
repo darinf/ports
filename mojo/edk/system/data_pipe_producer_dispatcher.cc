@@ -24,6 +24,15 @@
 namespace mojo {
 namespace edk {
 
+namespace {
+
+struct SerializedState {
+  MojoCreateDataPipeOptions options;
+  bool error;
+};
+
+}  // namespace
+
 // A PortObserver which forwards to a DataPipeProducerDispatcher. This owns a
 // reference to the dispatcher to ensure it lives as long as the observed port.
 class DataPipeProducerDispatcher::PortObserverThunk
@@ -207,7 +216,7 @@ void DataPipeProducerDispatcher::RemoveAwakable(
 void DataPipeProducerDispatcher::StartSerialize(uint32_t* num_bytes,
                                                 uint32_t* num_ports,
                                                 uint32_t* num_handles) {
-  *num_bytes = sizeof(MojoCreateDataPipeOptions);
+  *num_bytes = sizeof(SerializedState);
   *num_ports = 1;
   *num_handles = 0;
 }
@@ -216,9 +225,8 @@ bool DataPipeProducerDispatcher::EndSerializeAndClose(
     void* destination,
     ports::PortName* ports,
     PlatformHandleVector* platform_handles) {
-  MojoCreateDataPipeOptions* options =
-      static_cast<MojoCreateDataPipeOptions*>(destination);
-  memcpy(options, &options_, sizeof(MojoCreateDataPipeOptions));
+  SerializedState* state = static_cast<SerializedState*>(destination);
+  memcpy(&state->options, &options_, sizeof(MojoCreateDataPipeOptions));
 
   ports[0] = port_.name();
 
@@ -250,18 +258,17 @@ DataPipeProducerDispatcher::Deserialize(const void* data,
   if (num_ports != 1 || num_handles != 0)
     return nullptr;
 
-  if (num_bytes < sizeof(MojoCreateDataPipeOptions))
+  if (num_bytes < sizeof(SerializedState))
     return nullptr;
 
-  const MojoCreateDataPipeOptions* options =
-      static_cast<const MojoCreateDataPipeOptions*>(data);
+  const SerializedState* state = static_cast<const SerializedState*>(data);
 
   NodeController* node_controller = internal::g_core->node_controller();
   ports::PortRef port;
   if (node_controller->node()->GetPort(ports[0], &port) != ports::OK)
     return nullptr;
 
-  return new DataPipeProducerDispatcher(node_controller, port, *options);
+  return new DataPipeProducerDispatcher(node_controller, port, state->options);
 }
 
 DataPipeProducerDispatcher::~DataPipeProducerDispatcher() {}

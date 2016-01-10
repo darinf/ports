@@ -23,6 +23,15 @@
 namespace mojo {
 namespace edk {
 
+namespace {
+
+struct SerializedState {
+  MojoCreateDataPipeOptions options;
+  bool error;
+};
+
+}  // namespace
+
 // A PortObserver which forwards to a DataPipeConsumerDispatcher. This owns a
 // reference to the dispatcher to ensure it lives as long as the observed port.
 class DataPipeConsumerDispatcher::PortObserverThunk
@@ -227,7 +236,7 @@ void DataPipeConsumerDispatcher::RemoveAwakable(
 void DataPipeConsumerDispatcher::StartSerialize(uint32_t* num_bytes,
                                                 uint32_t* num_ports,
                                                 uint32_t* num_handles) {
-  *num_bytes = sizeof(MojoCreateDataPipeOptions) + data_.size();
+  *num_bytes = sizeof(SerializedState) + data_.size();
   *num_ports = 1;
   *num_handles = 0;
 }
@@ -236,10 +245,11 @@ bool DataPipeConsumerDispatcher::EndSerializeAndClose(
     void* destination,
     ports::PortName* ports,
     PlatformHandleVector* platform_handles) {
-  MojoCreateDataPipeOptions* options =
-      static_cast<MojoCreateDataPipeOptions*>(destination);
-  memcpy(options, &options_, sizeof(MojoCreateDataPipeOptions));
-  memcpy(options + 1, data_.data(), data_.size());
+  SerializedState* state = static_cast<SerializedState*>(destination);
+  memcpy(&state->options, &options_, sizeof(MojoCreateDataPipeOptions));
+  state->error = error_;
+
+  memcpy(state + 1, data_.data(), data_.size());
 
   ports[0] = port_.name();
 
@@ -271,11 +281,10 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
   if (num_ports != 1 || num_handles != 0)
     return nullptr;
 
-  if (num_bytes < sizeof(MojoCreateDataPipeOptions))
+  if (num_bytes < sizeof(SerializedState))
     return nullptr;
 
-  const MojoCreateDataPipeOptions* options =
-      static_cast<const MojoCreateDataPipeOptions*>(data);
+  const SerializedState* state = static_cast<const SerializedState*>(data);
   size_t data_buffer_size = num_bytes - sizeof(MojoCreateDataPipeOptions);
 
   NodeController* node_controller = internal::g_core->node_controller();
@@ -284,10 +293,11 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
     return nullptr;
 
   scoped_refptr<DataPipeConsumerDispatcher> dispatcher =
-      new DataPipeConsumerDispatcher(node_controller, port, *options);
+      new DataPipeConsumerDispatcher(node_controller, port, state->options);
 
+  dispatcher->error_ = state->error;
   dispatcher->data_.resize(data_buffer_size);
-  memcpy(dispatcher->data_.data(), options + 1, data_buffer_size);
+  memcpy(dispatcher->data_.data(), state + 1, data_buffer_size);
 
   dispatcher->OnPortStatusChanged();
 
