@@ -347,10 +347,30 @@ void DataPipeConsumerDispatcher::UpdateSignalsStateNoLock() {
       if (rv != ports::OK)
         error_ = true;
       if (message) {
-        size_t data_size = data_.size();
-        data_.resize(data_.size() + message->num_payload_bytes());
-        memcpy(data_.data() + data_size, message->payload_bytes(),
-               message->num_payload_bytes());
+        if (in_two_phase_read_) {
+          size_t data_size = data_received_during_two_phase_read_.size();
+          DCHECK_GE(options_.capacity_num_bytes, data_.size() + data_size);
+          size_t bytes_to_read =
+              std::min(options_.capacity_num_bytes - data_size - data_.size(),
+                       message->num_payload_bytes());
+          if (bytes_to_read > 0) {
+            data_received_during_two_phase_read_.resize(
+                data_size + bytes_to_read);
+            memcpy(data_received_during_two_phase_read_.data() + data_size,
+                   message->payload_bytes(), bytes_to_read);
+          }
+        } else {
+          size_t data_size = data_.size();
+          DCHECK_GE(options_.capacity_num_bytes, data_size);
+          size_t bytes_to_read =
+              std::min(options_.capacity_num_bytes - data_size,
+                       message->num_payload_bytes());
+          if (bytes_to_read > 0) {
+            data_.resize(data_size + bytes_to_read);
+            memcpy(data_.data() + data_size, message->payload_bytes(),
+                   bytes_to_read);
+          }
+        }
       }
     } while (message);
   }
