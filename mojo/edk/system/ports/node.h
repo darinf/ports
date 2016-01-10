@@ -21,6 +21,8 @@
 #include "mojo/edk/system/ports/port_ref.h"
 #include "mojo/edk/system/ports/user_data.h"
 
+#undef SendMessage  // Gah, windows
+
 namespace mojo {
 namespace edk {
 namespace ports {

@@ -34,6 +34,7 @@ static_library("system") {
     "channel.cc",
     "channel.h",
     "channel_posix.cc",
+    "channel_win.cc",
     "configuration.cc",
     "configuration.h",
     "core.cc",

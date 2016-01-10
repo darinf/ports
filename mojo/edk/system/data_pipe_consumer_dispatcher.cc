@@ -236,7 +236,7 @@ void DataPipeConsumerDispatcher::RemoveAwakable(
 void DataPipeConsumerDispatcher::StartSerialize(uint32_t* num_bytes,
                                                 uint32_t* num_ports,
                                                 uint32_t* num_handles) {
-  *num_bytes = sizeof(SerializedState) + data_.size();
+  *num_bytes = static_cast<uint32_t>(sizeof(SerializedState) + data_.size());
   *num_ports = 1;
   *num_handles = 0;
 }
