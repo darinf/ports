@@ -23,7 +23,7 @@
 #include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/dispatcher.h"
-//#include "mojo/edk/system/platform_handle_dispatcher.h"
+#include "mojo/edk/system/platform_handle_dispatcher.h"
 #include "mojo/edk/system/raw_channel.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
 #include "mojo/edk/system/test_utils.h"
@@ -383,7 +383,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CheckPlatformHandleFile,
 class MultiprocessMessagePipeTestWithPipeCount
     : public test::MultiprocessTestBase,
       public testing::WithParamInterface<size_t> {};
-/*
+
 TEST_P(MultiprocessMessagePipeTestWithPipeCount, PlatformHandlePassing) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -430,12 +430,14 @@ TEST_P(MultiprocessMessagePipeTestWithPipeCount, PlatformHandlePassing) {
     MojoClose(h);
   END_CHILD()
 }
-*/
+
 // Android multi-process tests are not executing the new process. This is flaky.
 #if !defined(OS_ANDROID)
 INSTANTIATE_TEST_CASE_P(PipeCount,
                         MultiprocessMessagePipeTestWithPipeCount,
-                        testing::Values(1u, 128u, 140u));
+                        // TODO: Enable 140-handle test once POSIX supports
+                        // passing a large number of handles.
+                        testing::Values(1u, 128u/*, 140u*/));
 #endif
 
 DEFINE_TEST_CLIENT_WITH_PIPE(CheckMessagePipe, MultiprocessMessagePipeTest, h) {
@@ -580,19 +582,12 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipeTwoPassing) {
     CHECK_EQ(read_buffer, std::string("world"));
   END_CHILD()
 }
-/*
-MOJO_MULTIPROCESS_TEST_CHILD_MAIN(DataPipeConsumer) {
-  ScopedPlatformHandle client_platform_handle =
-      std::move(test::MultiprocessTestHelper::client_platform_handle);
-  CHECK(client_platform_handle.is_valid());
 
-  ScopedMessagePipeHandle mp =
-      CreateMessagePipe(std::move(client_platform_handle));
-
+DEFINE_TEST_CLIENT_WITH_PIPE(DataPipeConsumer, MultiprocessMessagePipeTest, h) {
   // Wait for the first message from our parent.
   HandleSignalsState hss;
-  CHECK_EQ(MojoWait(mp.get().value(), MOJO_HANDLE_SIGNAL_READABLE,
-               MOJO_DEADLINE_INDEFINITE, &hss),
+  CHECK_EQ(MojoWait(h, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
+                    &hss),
            MOJO_RESULT_OK);
   // In this test, the parent definitely doesn't close its end of the message
   // pipe before we do.
@@ -605,15 +600,14 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(DataPipeConsumer) {
   // It should have a message pipe.
   MojoHandle handles[10];
   uint32_t num_handlers = MOJO_ARRAYSIZE(handles);
-  CHECK_EQ(MojoReadMessage(mp.get().value(), nullptr,
-                           nullptr, &handles[0],
-                           &num_handlers, MOJO_READ_MESSAGE_FLAG_NONE),
+  CHECK_EQ(MojoReadMessage(h, nullptr, nullptr, &handles[0], &num_handlers,
+                           MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
   CHECK_EQ(num_handlers, 1u);
 
   // Read data from the received message pipe.
   CHECK_EQ(MojoWait(handles[0], MOJO_HANDLE_SIGNAL_READABLE,
-               MOJO_DEADLINE_INDEFINITE, &hss),
+                    MOJO_DEADLINE_INDEFINITE, &hss),
            MOJO_RESULT_OK);
   CHECK_EQ(hss.satisfied_signals,
            MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
@@ -647,51 +641,46 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(DataPipeConsumer) {
 #define MAYBE_DataPipeConsumer DataPipeConsumer
 #endif
 TEST_F(MultiprocessMessagePipeTest, MAYBE_DataPipeConsumer) {
-  helper()->StartChild("DataPipeConsumer");
+  RUN_WITH_CHILD(DataPipeConsumer)
+  ON_PIPE(h)
+    MojoCreateSharedBufferOptions options;
+    options.struct_size = sizeof(options);
+    options.flags = MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE;
 
-  ScopedMessagePipeHandle mp =
-      CreateMessagePipe(std::move(helper()->server_platform_handle));
-  MojoCreateSharedBufferOptions options;
-  options.struct_size = sizeof(options);
-  options.flags = MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE;
+    MojoHandle mp1, mp2;
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoCreateMessagePipe(nullptr, &mp2, &mp1));
 
-  MojoHandle mp1, mp2;
-  ASSERT_EQ(MOJO_RESULT_OK,
-            MojoCreateMessagePipe(nullptr, &mp2, &mp1));
+    // Write a string into one end of the new message pipe and send the other end.
+    const std::string hello("hello");
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoWriteMessage(mp1, &hello[0],
+                               static_cast<uint32_t>(hello.size()), nullptr, 0u,
+                               MOJO_WRITE_MESSAGE_FLAG_NONE));
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoWriteMessage(h, nullptr, 0, &mp2, 1u,
+                               MOJO_WRITE_MESSAGE_FLAG_NONE));
 
-  // Write a string into one end of the new message pipe and send the other end.
-  const std::string hello("hello");
-  ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp1, &hello[0],
-                             static_cast<uint32_t>(hello.size()), nullptr, 0u,
-                             MOJO_WRITE_MESSAGE_FLAG_NONE));
-  ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp.get().value(), nullptr, 0, &mp2, 1u,
-                             MOJO_WRITE_MESSAGE_FLAG_NONE));
+    // Wait for a message from the child.
+    HandleSignalsState hss;
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoWait(mp1, MOJO_HANDLE_SIGNAL_READABLE,
+                       MOJO_DEADLINE_INDEFINITE, &hss));
+    EXPECT_TRUE((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE));
+    EXPECT_TRUE((hss.satisfiable_signals & MOJO_HANDLE_SIGNAL_READABLE));
 
-  // Wait for a message from the child.
-  HandleSignalsState hss;
-  ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWait(mp1, MOJO_HANDLE_SIGNAL_READABLE,
-                     MOJO_DEADLINE_INDEFINITE, &hss));
-  EXPECT_TRUE((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE));
-  EXPECT_TRUE((hss.satisfiable_signals & MOJO_HANDLE_SIGNAL_READABLE));
+    std::string read_buffer(100, '\0');
+    uint32_t read_buffer_size = static_cast<uint32_t>(read_buffer.size());
+    CHECK_EQ(MojoReadMessage(mp1, &read_buffer[0],
+                             &read_buffer_size, nullptr,
+                             0, MOJO_READ_MESSAGE_FLAG_NONE),
+             MOJO_RESULT_OK);
+    read_buffer.resize(read_buffer_size);
+    CHECK_EQ(read_buffer, std::string("world"));
 
-  std::string read_buffer(100, '\0');
-  uint32_t read_buffer_size = static_cast<uint32_t>(read_buffer.size());
-  CHECK_EQ(MojoReadMessage(mp1, &read_buffer[0],
-                           &read_buffer_size, nullptr,
-                           0, MOJO_READ_MESSAGE_FLAG_NONE),
-           MOJO_RESULT_OK);
-  read_buffer.resize(read_buffer_size);
-  CHECK_EQ(read_buffer, std::string("world"));
-
-  MojoClose(mp1);
-  MojoClose(mp.release().value());
-
-  ASSERT_EQ(0, helper()->WaitForChildShutdown());
+    MojoClose(mp1);
+  END_CHILD()
 }
-*/
 
 }  // namespace
 }  // namespace edk

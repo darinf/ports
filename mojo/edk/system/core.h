@@ -67,6 +67,12 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
       const std::vector<Dispatcher::DispatcherInTransit>& dispatchers,
       MojoHandle* handles);
 
+  MojoResult CreatePlatformHandleWrapper(ScopedPlatformHandle platform_handle,
+                                         MojoHandle* wrapper_handle);
+
+  MojoResult PassWrappedPlatformHandle(MojoHandle wrapper_handle,
+                                       ScopedPlatformHandle* platform_handle);
+
   // Watches on the given handle for the given signals, calling |callback| when
   // a signal is satisfied or when all signals become unsatisfiable. |callback|
   // must satisfy stringent requirements -- see |Awakable::Awake()| in

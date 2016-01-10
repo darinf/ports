@@ -20,6 +20,7 @@
 #include "mojo/edk/system/data_pipe_producer_dispatcher.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/message_pipe_dispatcher.h"
+#include "mojo/edk/system/platform_handle_dispatcher.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
 #include "mojo/edk/system/wait_set_dispatcher.h"
 #include "mojo/edk/system/waiter.h"
@@ -100,6 +101,32 @@ bool Core::AddDispatchersFromTransit(
     return false;
   }
   return true;
+}
+
+MojoResult Core::CreatePlatformHandleWrapper(
+    ScopedPlatformHandle platform_handle,
+    MojoHandle* wrapper_handle) {
+  MojoHandle h = AddDispatcher(
+      PlatformHandleDispatcher::Create(std::move(platform_handle)));
+  if (h == MOJO_HANDLE_INVALID)
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  *wrapper_handle = h;
+  return MOJO_RESULT_OK;
+}
+
+MojoResult Core::PassWrappedPlatformHandle(
+    MojoHandle wrapper_handle,
+    ScopedPlatformHandle* platform_handle) {
+  base::AutoLock lock(handles_lock_);
+  scoped_refptr<Dispatcher> d;
+  MojoResult result = handles_.GetAndRemoveDispatcher(wrapper_handle, &d);
+  if (result != MOJO_RESULT_OK)
+    return result;
+  PlatformHandleDispatcher* phd =
+      static_cast<PlatformHandleDispatcher*>(d.get());
+  *platform_handle = phd->PassPlatformHandle();
+  phd->Close();
+  return MOJO_RESULT_OK;
 }
 
 void Core::CreateParentMessagePipe(

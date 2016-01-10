@@ -66,14 +66,14 @@ MojoResult AsyncWait(MojoHandle handle,
 MojoResult CreatePlatformHandleWrapper(
     ScopedPlatformHandle platform_handle,
     MojoHandle* platform_handle_wrapper_handle) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  return internal::g_core->CreatePlatformHandleWrapper(
+      std::move(platform_handle), platform_handle_wrapper_handle);
 }
 
 MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
                                      ScopedPlatformHandle* platform_handle) {
-  NOTIMPLEMENTED();
-  return MOJO_RESULT_UNIMPLEMENTED;
+  return internal::g_core->PassWrappedPlatformHandle(
+      platform_handle_wrapper_handle, platform_handle);
 }
 
 void InitIPCSupport(ProcessDelegate* process_delegate,
