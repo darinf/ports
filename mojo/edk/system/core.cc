@@ -45,7 +45,8 @@ void OnRemotePeerConnected(
       core->node_controller()->node()->GetPort(local_port_name, &local_port));
 
   callback.Run(ScopedMessagePipeHandle(MessagePipeHandle(core->AddDispatcher(
-      new MessagePipeDispatcher(core->node_controller(), local_port)))));
+      new MessagePipeDispatcher(core->node_controller(), local_port,
+                                true /* connected */)))));
 }
 
 }  // namespace
@@ -81,7 +82,8 @@ bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
              node_controller_.node()->GetPort(message.ports()[i], &port));
 
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(&node_controller_, port);
+    d.dispatcher = new MessagePipeDispatcher(&node_controller_, port,
+                                             true /* connected */);
   }
   return AddDispatchersFromTransit(dispatchers, handles);
 }
@@ -302,12 +304,14 @@ MojoResult Core::CreateMessagePipe(
   CHECK(message_pipe_handle0);
   CHECK(message_pipe_handle1);
   *message_pipe_handle0 = AddDispatcher(
-      new MessagePipeDispatcher(&node_controller_, port0));
+      new MessagePipeDispatcher(&node_controller_, port0,
+                                true /* connected */));
   if (*message_pipe_handle0 == MOJO_HANDLE_INVALID)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   *message_pipe_handle1 = AddDispatcher(
-      new MessagePipeDispatcher(&node_controller_, port1));
+      new MessagePipeDispatcher(&node_controller_, port1,
+                                true /* connected */));
   if (*message_pipe_handle1 == MOJO_HANDLE_INVALID) {
     scoped_refptr<Dispatcher> unused;
     unused->Close();

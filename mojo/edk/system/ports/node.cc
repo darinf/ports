@@ -73,15 +73,19 @@ int Node::InitializePort(const PortRef& port_ref,
                          const PortName& peer_port_name) {
   Port* port = port_ref.port();
 
-  std::lock_guard<std::mutex> guard(port->lock);
-  if (port->state != Port::kUninitialized)
-    return ERROR_PORT_STATE_UNEXPECTED;
+  {
+    std::lock_guard<std::mutex> guard(port->lock);
+    if (port->state != Port::kUninitialized)
+      return ERROR_PORT_STATE_UNEXPECTED;
 
-  port->state = Port::kReceiving;
-  port->peer_node_name = peer_node_name;
-  port->peer_port_name = peer_port_name;
+    port->state = Port::kReceiving;
+    port->peer_node_name = peer_node_name;
+    port->peer_port_name = peer_port_name;
 
-  FlushOutgoingMessages_Locked(port);
+    FlushOutgoingMessages_Locked(port);
+  }
+
+  delegate_->PortStatusChanged(port_ref);
 
   return OK;
 }

@@ -43,12 +43,6 @@ struct MOJO_ALIGNAS(8) DispatcherHeader {
   uint32_t num_platform_handles;
 };
 
-struct SerializedDispatcherInfo {
-  uint32_t num_bytes;
-  uint32_t num_ports;
-  uint32_t num_handles;
-};
-
 }  // namespace
 
 // A PortObserver which forwards to a MessagePipeDispatcher. This owns a
@@ -70,9 +64,11 @@ class MessagePipeDispatcher::PortObserverThunk
 };
 
 MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
-                                             const ports::PortRef& port)
+                                             const ports::PortRef& port,
+                                             bool connected)
     : node_controller_(node_controller),
-      port_(port) {
+      port_(port),
+      port_connected_(connected) {
   // OnPortStatusChanged (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
   base::AutoLock lock(signal_lock_);
@@ -95,11 +91,23 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     const DispatcherInTransit* dispatchers,
     uint32_t num_dispatchers,
     MojoWriteMessageFlags flags) {
+  {
+    base::AutoLock lock(signal_lock_);
+    if (port_closed_)
+      return MOJO_RESULT_INVALID_ARGUMENT;
+  }
+
+  struct DispatcherInfo {
+    uint32_t num_bytes;
+    uint32_t num_ports;
+    uint32_t num_handles;
+  };
+
   size_t header_size = sizeof(MessageHeader) +
       num_dispatchers * sizeof(DispatcherHeader);
   size_t num_ports = 0;
 
-  std::vector<SerializedDispatcherInfo> dispatcher_info(num_dispatchers);
+  std::vector<DispatcherInfo> dispatcher_info(num_dispatchers);
   for (size_t i = 0; i < num_dispatchers; ++i) {
     Dispatcher* d = dispatchers[i].dispatcher.get();
     d->StartSerialize(&dispatcher_info[i].num_bytes,
@@ -189,6 +197,15 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
                                               MojoHandle* handles,
                                               uint32_t* num_handles,
                                               MojoReadMessageFlags flags) {
+  {
+    base::AutoLock lock(signal_lock_);
+    if (port_closed_)
+      return MOJO_RESULT_INVALID_ARGUMENT;
+
+    if (!port_connected_)
+      return MOJO_RESULT_SHOULD_WAIT;
+  }
+
   bool no_space = false;
   bool may_discard = flags & MOJO_READ_MESSAGE_FLAG_MAY_DISCARD;
 
@@ -388,7 +405,7 @@ bool MessagePipeDispatcher::EndSerializeAndClose(
 
 bool MessagePipeDispatcher::BeginTransit() {
   signal_lock_.Acquire();
-  return true;
+  return port_connected_;
 }
 
 void MessagePipeDispatcher::CompleteTransit() {
@@ -410,7 +427,10 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
   CHECK_EQ(
       ports::OK,
       internal::g_core->node_controller()->node()->GetPort(ports[0], &port));
-  return new MessagePipeDispatcher(internal::g_core->node_controller(), port);
+
+  // Note: disconnected ports cannot be serialized.
+  return new MessagePipeDispatcher(internal::g_core->node_controller(), port,
+                                   true /* connected */);
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
@@ -433,13 +453,22 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
 }
 
 HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
+  HandleSignalsState rv;
+
   ports::PortStatus port_status;
   if (node_controller_->node()->GetStatus(port_, &port_status) != ports::OK) {
-    CHECK(port_transferred_ || port_closed_);
+    CHECK(port_transferred_ || port_closed_ || !port_connected_);
+    if (!port_connected_) {
+      // If we aren't connected yet, treat the pipe like it's in a normal
+      // state with no messages available.
+      rv.satisfiable_signals = MOJO_HANDLE_SIGNAL_READABLE |
+          MOJO_HANDLE_SIGNAL_WRITABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED;
+      rv.satisfied_signals = MOJO_HANDLE_SIGNAL_WRITABLE;
+      return rv;
+    }
     return HandleSignalsState();
   }
 
-  HandleSignalsState rv;
   if (port_status.has_messages) {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
@@ -457,6 +486,7 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
 
 void MessagePipeDispatcher::OnPortStatusChanged() {
   base::AutoLock lock(signal_lock_);
+  port_connected_ = true;
   awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
 }
 

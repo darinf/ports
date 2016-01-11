@@ -8,6 +8,7 @@
 #include <queue>
 
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "mojo/edk/system/awakable_list.h"
 #include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/ports/port_ref.h"
@@ -16,11 +17,20 @@ namespace mojo {
 namespace edk {
 
 class NodeController;
+class PortsMessage;
 
 class MessagePipeDispatcher : public Dispatcher {
  public:
+  // Constructs a MessagePipeDispatcher permanently tied to a specific port.
+  // |connected| must indicate the state of the port at construction time; if
+  // the port is initialized with a peer, |connected| must be true. Otherwise it
+  // must be false.
+  //
+  // A MessagePipeDispatcher may not be transferred while in a disconnected
+  // state, and one can never return to a disconnected once connected.
   MessagePipeDispatcher(NodeController* node_controller,
-                        const ports::PortRef& port);
+                        const ports::PortRef& port,
+                        bool connected);
 
   // Dispatcher:
   Type GetType() const override;
@@ -76,6 +86,7 @@ class MessagePipeDispatcher : public Dispatcher {
   // Guards access to all the fields below.
   mutable base::Lock signal_lock_;
 
+  bool port_connected_ = false;
   bool port_transferred_ = false;
   bool port_closed_ = false;
   AwakableList awakables_;
