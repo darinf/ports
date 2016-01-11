@@ -80,6 +80,9 @@ int Node::InitializePort(const PortRef& port_ref,
   port->state = Port::kReceiving;
   port->peer_node_name = peer_node_name;
   port->peer_port_name = peer_port_name;
+
+  FlushOutgoingMessages_Locked(port);
+
   return OK;
 }
 
@@ -251,15 +254,26 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
   {
     std::lock_guard<std::mutex> guard(port->lock);
 
-    if (port->state != Port::kReceiving)
+    if (port->state != Port::kReceiving && port->state != Port::kUninitialized)
       return ERROR_PORT_STATE_UNEXPECTED;
 
-    if (port->peer_closed)
+    if (port->state == Port::kReceiving && port->peer_closed)
       return ERROR_PORT_PEER_CLOSED;
 
-    int rv = WillSendMessage_Locked(port, port_ref.name(), message.get());
+    std::vector<std::shared_ptr<Port>> ports_taken;
+    int rv = WillSendMessage_Locked(port, port_ref.name(), message.get(),
+                                    &ports_taken);
     if (rv != OK)
       return rv;
+
+    if (port->state == Port::kUninitialized) {
+      port->outgoing_messages.emplace(std::move(message));
+      std::copy(ports_taken.begin(), ports_taken.end(),
+                std::back_inserter(port->outgoing_ports));
+      return OK;
+    }
+
+    CHECK_EQ(port->state, Port::kReceiving);
 
     if (port->peer_node_name != name_) {
       delegate_->ForwardMessage(port->peer_node_name, std::move(message));
@@ -735,9 +749,11 @@ int Node::AcceptPort(const PortName& port_name,
   return OK;
 }
 
-int Node::WillSendMessage_Locked(Port* port,
-                                 const PortName& port_name,
-                                 Message* message) {
+int Node::WillSendMessage_Locked(
+    Port* port,
+    const PortName& port_name,
+    Message* message,
+    std::vector<std::shared_ptr<Port>>* ports_taken) {
   DCHECK(message);
 
   // Messages may already have a sequence number if they're being forwarded
@@ -762,6 +778,8 @@ int Node::WillSendMessage_Locked(Port* port,
 
     std::vector<std::shared_ptr<Port>> ports;
     ports.resize(message->num_ports());
+    if (ports_taken)
+      ports_taken->resize(message->num_ports());
 
     {
       // Exclude other threads from locking multiple ports in arbitrary order.
@@ -769,6 +787,8 @@ int Node::WillSendMessage_Locked(Port* port,
 
       for (size_t i = 0; i < message->num_ports(); ++i) {
         ports[i] = GetPort(message->ports()[i]);
+        if (ports_taken)
+          ports_taken->at(i) = ports[i];
         ports[i]->lock.lock();
 
         if (ports[i]->state != Port::kReceiving) {
@@ -813,7 +833,7 @@ int Node::ForwardMessages_Locked(Port* port, const PortName &port_name) {
     if (!message)
       break;
 
-    int rv = WillSendMessage_Locked(port, port_name, message.get());
+    int rv = WillSendMessage_Locked(port, port_name, message.get(), nullptr);
     if (rv != OK)
       return rv;
 
@@ -861,6 +881,29 @@ void Node::MaybeRemoveProxy_Locked(Port* port,
   } else {
     DVLOG(1) << "Cannot remove port " << port_name << "@" << name_
              << " now; waiting for more messages";
+  }
+}
+
+void Node::FlushOutgoingMessages_Locked(Port* port) {
+  DCHECK(port->peer_node_name != kInvalidNodeName);
+
+  // Rewrite the peer node names for all ports that are about to start proxying.
+  std::vector<std::shared_ptr<Port>> outgoing_ports;
+  std::swap(outgoing_ports, port->outgoing_ports);
+  for (const auto& outgoing_port : outgoing_ports)
+    outgoing_port->peer_node_name = port->peer_node_name;
+
+  while (!port->outgoing_messages.empty()) {
+    ScopedMessage& message = port->outgoing_messages.front();
+
+    // Rewrite the message destination port.
+    EventHeader* header = GetMutableEventHeader(message.get());
+    header->port_name = port->peer_port_name;
+
+    DCHECK(header->type == EventType::kUser);
+
+    delegate_->ForwardMessage(port->peer_node_name, std::move(message));
+    port->outgoing_messages.pop();
   }
 }
 

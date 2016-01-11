@@ -7,7 +7,9 @@
 
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <utility>
+#include <vector>
 
 #include "mojo/edk/system/ports/message_queue.h"
 #include "mojo/edk/system/ports/user_data.h"
@@ -37,6 +39,9 @@ class Port {
   std::shared_ptr<UserData> user_data;
   bool remove_proxy_on_last_message;
   bool peer_closed;
+
+  std::queue<ScopedMessage> outgoing_messages;
+  std::vector<std::shared_ptr<Port>> outgoing_ports;
 
   Port(uint32_t next_sequence_num_to_send,
        uint32_t next_sequence_num_to_receive);
