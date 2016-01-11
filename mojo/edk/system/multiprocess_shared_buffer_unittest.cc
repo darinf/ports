@@ -18,7 +18,7 @@ namespace mojo {
 namespace edk {
 namespace {
 
-class BuffersTest : public test::MultiprocessTestBase {
+class MultiprocessSharedBufferTest : public test::MultiprocessTestBase {
  protected:
   static MojoHandle CreateBuffer(uint64_t size) {
     MojoHandle h;
@@ -54,21 +54,22 @@ class BuffersTest : public test::MultiprocessTestBase {
 
 // Reads a single message with a shared buffer handle, maps the buffer, copies
 // the message contents into it, then exits.
-DEFINE_TEST_CLIENT_WITH_PIPE(MultiprocessSharedBufferClient, BuffersTest, h) {
+DEFINE_TEST_CLIENT_WITH_PIPE(MultiprocessSharedBufferClient,
+                             MultiprocessSharedBufferTest, h) {
   MojoHandle buffer_handle;
   std::string message = ReadStringWithHandles(h, &buffer_handle, 1);
   WriteToBuffer(buffer_handle, message);
   return 0;
 }
 
-TEST_F(BuffersTest, CreateSharedBuffer) {
+TEST_F(MultiprocessSharedBufferTest, CreateSharedBuffer) {
   const std::string message = "hello";
   MojoHandle h = CreateBuffer(message.size());
   WriteToBuffer(h, message);
   ExpectBufferContents(h, message);
 }
 
-TEST_F(BuffersTest, DuplicateSharedBuffer) {
+TEST_F(MultiprocessSharedBufferTest, DuplicateSharedBuffer) {
   const std::string message = "hello";
   MojoHandle h = CreateBuffer(message.size());
   WriteToBuffer(h, message);
@@ -77,7 +78,7 @@ TEST_F(BuffersTest, DuplicateSharedBuffer) {
   ExpectBufferContents(dupe, message);
 }
 
-TEST_F(BuffersTest, PassSharedBufferLocal) {
+TEST_F(MultiprocessSharedBufferTest, PassSharedBufferLocal) {
   const std::string message = "hello";
   MojoHandle h = CreateBuffer(message.size());
   WriteToBuffer(h, message);
@@ -91,12 +92,11 @@ TEST_F(BuffersTest, PassSharedBufferLocal) {
   ExpectBufferContents(dupe, message);
 }
 
-TEST_F(BuffersTest, PassSharedBufferCrossProcess) {
+TEST_F(MultiprocessSharedBufferTest, PassSharedBufferCrossProcess) {
   const std::string message = "hello";
   MojoHandle b = CreateBuffer(message.size());
 
-  RUN_WITH_CHILD(MultiprocessSharedBufferClient)
-  ON_PIPE(h)
+  RUN_CHILD_ON_PIPE(MultiprocessSharedBufferClient, h)
     MojoHandle dupe = DuplicateBuffer(b);
     WriteStringWithHandles(h, message, &dupe, 1);
   END_CHILD()
