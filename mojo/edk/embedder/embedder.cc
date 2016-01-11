@@ -97,22 +97,20 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
-  NOTIMPLEMENTED();
+  NOTREACHED()
+      << "Use the token-based CreateParentMessagePipe/CreateChildMessagePipe "
+      << "functions when using the Ports EDK.";
   return ScopedMessagePipeHandle();
 }
 
-void CreateParentMessagePipe(
-    const std::string& token,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token) {
   DCHECK(internal::g_core);
-  internal::g_core->CreateParentMessagePipe(token, callback);
+  return internal::g_core->CreateParentMessagePipe(token);
 }
 
-void CreateChildMessagePipe(
-    const std::string& token,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+ScopedMessagePipeHandle CreateChildMessagePipe(const std::string& token) {
   DCHECK(internal::g_core);
-  internal::g_core->CreateChildMessagePipe(token, callback);
+  return internal::g_core->CreateChildMessagePipe(token);
 }
 
 }  // namespace edk

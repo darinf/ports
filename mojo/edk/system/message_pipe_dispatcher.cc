@@ -444,7 +444,7 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
   port_closed_ = true;
   awakables_.CancelAll();
 
-  if (!port_transferred_) {
+  if (!port_transferred_ && port_connected_) {
     int rv = node_controller_->node()->ClosePort(port_);
     DCHECK_EQ(ports::OK, rv);
   }
@@ -457,7 +457,9 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
 
   ports::PortStatus port_status;
   if (node_controller_->node()->GetStatus(port_, &port_status) != ports::OK) {
-    CHECK(port_transferred_ || port_closed_ || !port_connected_);
+    if (port_transferred_ || port_closed_)
+      return HandleSignalsState();
+
     if (!port_connected_) {
       // If we aren't connected yet, treat the pipe like it's in a normal
       // state with no messages available.
@@ -466,7 +468,8 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
       rv.satisfied_signals = MOJO_HANDLE_SIGNAL_WRITABLE;
       return rv;
     }
-    return HandleSignalsState();
+
+    NOTREACHED();
   }
 
   if (port_status.has_messages) {
@@ -486,7 +489,13 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
 
 void MessagePipeDispatcher::OnPortStatusChanged() {
   base::AutoLock lock(signal_lock_);
-  port_connected_ = true;
+  if (!port_connected_) {
+    port_connected_ = true;
+    if (port_closed_) {
+      int rv = node_controller_->node()->ClosePort(port_);
+      DCHECK_EQ(rv, ports::OK);
+    }
+  }
   awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
 }
 

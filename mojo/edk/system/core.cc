@@ -33,22 +33,6 @@ namespace {
 // This is an unnecessarily large limit that is relatively easy to enforce.
 const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 
-void OnRemotePeerConnected(
-    Core* core,
-    const ports::PortName& local_port_name,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
-  DVLOG(1) << "Remote peer connected for " << local_port_name;
-
-  ports::PortRef local_port;
-  CHECK_EQ(
-      ports::OK,
-      core->node_controller()->node()->GetPort(local_port_name, &local_port));
-
-  callback.Run(ScopedMessagePipeHandle(MessagePipeHandle(core->AddDispatcher(
-      new MessagePipeDispatcher(core->node_controller(), local_port,
-                                true /* connected */)))));
-}
-
 }  // namespace
 
 Core::Core() : node_controller_(this) {}
@@ -131,26 +115,25 @@ MojoResult Core::PassWrappedPlatformHandle(
   return MOJO_RESULT_OK;
 }
 
-void Core::CreateParentMessagePipe(
-    const std::string& token,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+ScopedMessagePipeHandle Core::CreateParentMessagePipe(
+    const std::string& token) {
   ports::PortRef port;
   node_controller_.node()->CreateUninitializedPort(&port);
-  node_controller_.ReservePortForToken(
-      port.name(), token,
-      base::Bind(&OnRemotePeerConnected, base::Unretained(this), port.name(),
-                 callback));
+  node_controller_.ReservePortForToken(port.name(), token);
+  MojoHandle handle = AddDispatcher(
+      new MessagePipeDispatcher(&node_controller_, port,
+                                false /* connected */));
+  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
 
-void Core::CreateChildMessagePipe(
-    const std::string& token,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+ScopedMessagePipeHandle Core::CreateChildMessagePipe(const std::string& token) {
   ports::PortRef port;
   node_controller_.node()->CreateUninitializedPort(&port);
-  node_controller_.ConnectToParentPortByToken(
-      token, port.name(),
-      base::Bind(&OnRemotePeerConnected, base::Unretained(this), port.name(),
-                 callback));
+  node_controller_.ConnectToParentPortByToken(token, port.name());
+  MojoHandle handle = AddDispatcher(
+      new MessagePipeDispatcher(&node_controller_, port,
+                                false /* connected */));
+  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,

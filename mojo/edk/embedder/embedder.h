@@ -121,29 +121,26 @@ MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupport();
 MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
 CreateMessagePipe(ScopedPlatformHandle platform_handle);
 
-// Asynchronously creates a local message pipe endpoint whose other end will
-// live in a child process. |callback| is called with the pipe handle once the
-// pipe is established. |token| must be agreed upon out-of-band by both
-// processes (e.g. via command-line argument when launching the child.)
+// Creates a local message pipe endpoint whose other end will live in a child
+// process. |token| must be agreed upon out-of-band by both processes (e.g. via
+// command-line argument when launching the child.)
 //
 // When this is called in the parent process, a corresponding call to
 // CreateChildMessagePipe (with the same |token|) must be made in a child
 // process in order for pipe creation to complete.
-MOJO_SYSTEM_IMPL_EXPORT void CreateParentMessagePipe(
-    const std::string& token,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback);
+MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
+CreateParentMessagePipe(const std::string& token);
 
-// Asynchronously creates a local message pipe endpoint in a child process,
-// which will be connected to an embedder in the parent process. |token| must be
-// agreed upon out-of-band by both processes (e.g. via command-line argument
-// when launching the child.)
+// Creates a local message pipe endpoint in a child process, which will be
+// connected to an embedder in the parent process. |token| must be agreed
+// upon out-of-band by both processes (e.g. via command-line argument when
+// launching the child.)
 //
 // When this is called in a child process, a corresponding call to
 // CreateParentMessagePIpe (with the same |token|) must be made in the parent
 // process in order for pipe creation to complete.
-MOJO_SYSTEM_IMPL_EXPORT void CreateChildMessagePipe(
-    const std::string& token,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback);
+MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
+CreateChildMessagePipe(const std::string& token);
 
 }  // namespace edk
 }  // namespace mojo

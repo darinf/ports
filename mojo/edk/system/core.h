@@ -46,13 +46,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // Called in a child process exactly once during early initialization.
   void InitChild(ScopedPlatformHandle platform_handle);
 
-  void CreateParentMessagePipe(
-      const std::string& token,
-      const base::Callback<void(ScopedMessagePipeHandle)>& callback);
-
-  void CreateChildMessagePipe(
-      const std::string& token,
-      const base::Callback<void(ScopedMessagePipeHandle)>& callback);
+  // See mojo/edk/embedder/embedder.h for documentation of these methods.
+  ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token);
+  ScopedMessagePipeHandle CreateChildMessagePipe(const std::string& token);
 
   MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 

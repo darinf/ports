@@ -138,11 +138,9 @@ void MultiprocessTestHelper::StartChildWithExtraSwitch(
 
   // This callback won't be invoked until the child is started and the
   // message pipe to it has been established.
-  CreateParentMessagePipe(
-      port_token_,
-      base::Bind(&MultiprocessTestHelper::OnMessagePipeCreated,
-                 base::Unretained(this), base::ThreadTaskRunnerHandle::Get(),
-                 parent_main));
+  ScopedMessagePipeHandle handle = CreateParentMessagePipe(port_token_);
+  OnMessagePipeCreated(base::ThreadTaskRunnerHandle::Get(), parent_main,
+                       std::move(handle));
 
   CHECK(test_child_.IsValid());
 }
@@ -183,10 +181,9 @@ int MultiprocessTestHelper::RunChildAsyncMain(
   base::MessageLoop child_message_loop;
   base::RunLoop run_loop;
   int result = 0;
-  CreateChildMessagePipe(
-      port_token,
-      base::Bind(&AsyncMainRunner, main, child_message_loop.task_runner(),
-                 &result, run_loop.QuitClosure()));
+  ScopedMessagePipeHandle handle = CreateChildMessagePipe(port_token);
+  AsyncMainRunner(main, child_message_loop.task_runner(), &result,
+                  run_loop.QuitClosure(), std::move(handle));
   run_loop.Run();
   return result;
 }

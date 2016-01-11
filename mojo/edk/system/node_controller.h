@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -70,33 +70,14 @@ class NodeController : public ports::NodeDelegate,
                   scoped_ptr<PortsMessage> message);
 
   void ReservePortForToken(const ports::PortName& port_name,
-                           const std::string& token,
-                           const base::Closure& on_connect);
+                           const std::string& token);
 
   void ConnectToParentPortByToken(const std::string& token,
-                                  const ports::PortName& local_port,
-                                  const base::Closure& on_connect);
+                                  const ports::PortName& local_port);
 
  private:
   using NodeMap = std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>>;
   using OutgoingMessageQueue = std::queue<ports::ScopedMessage>;
-
-  struct PendingTokenConnection {
-    PendingTokenConnection();
-    ~PendingTokenConnection();
-
-    ports::PortName port;
-    std::string token;
-    base::Closure callback;
-  };
-
-  struct ReservedPort {
-    ReservedPort();
-    ~ReservedPort();
-
-    ports::PortName local_port;
-    base::Closure callback;
-  };
 
   void ConnectToChildOnIOThread(ScopedPlatformHandle platform_handle);
   void ConnectToParentOnIOThread(ScopedPlatformHandle platform_handle);
@@ -107,14 +88,11 @@ class NodeController : public ports::NodeDelegate,
   void SendPeerMessage(const ports::NodeName& name,
                        ports::ScopedMessage message);
   void ReservePortForTokenOnIOThread(const ports::PortName& port_name,
-                                     const std::string& token,
-                                     const base::Closure& on_connect);
+                                     const std::string& token);
   void ConnectToParentPortByTokenOnIOThread(const std::string& token,
-                                            const ports::PortName& local_port,
-                                            const base::Closure& on_connect);
+                                            const ports::PortName& local_port);
   void ConnectToParentPortByTokenNow(const std::string& token,
-                                     const ports::PortName& local_port,
-                                     const base::Closure& on_connect);
+                                     const ports::PortName& local_port);
   void AcceptIncomingMessages();
 
   // ports::NodeDelegate:
@@ -186,11 +164,10 @@ class NodeController : public ports::NodeDelegate,
   // NodeChannel::ConnectToPort request.
   //
   // The embedder must provide a channel to communicate the token to each node.
-  std::unordered_map<std::string, ReservedPort> reserved_ports_;
+  base::hash_map<std::string, ports::PortName> reserved_ports_;
 
   // This tracks pending outgoing connection request for named ports.
-  std::vector<PendingTokenConnection> pending_token_connections_;
-  std::unordered_map<ports::PortName, base::Closure> pending_connection_acks_;
+  base::hash_map<std::string, ports::PortName> pending_token_connections_;
 
   // Guards |incoming_messages_|.
   base::Lock messages_lock_;

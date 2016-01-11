@@ -30,14 +30,6 @@ ports::NodeName GetRandomNodeName() {
 
 }  // namespace
 
-NodeController::PendingTokenConnection::PendingTokenConnection() {}
-
-NodeController::PendingTokenConnection::~PendingTokenConnection() {}
-
-NodeController::ReservedPort::ReservedPort() {}
-
-NodeController::ReservedPort::~ReservedPort() {}
-
 NodeController::~NodeController() {}
 
 NodeController::NodeController(Core* core)
@@ -93,22 +85,20 @@ int NodeController::SendMessage(const ports::PortRef& port,
 }
 
 void NodeController::ReservePortForToken(const ports::PortName& port_name,
-                                         const std::string& token,
-                                         const base::Closure& on_connect) {
+                                         const std::string& token) {
   io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&NodeController::ReservePortForTokenOnIOThread,
-                 base::Unretained(this), port_name, token, on_connect));
+                 base::Unretained(this), port_name, token));
 }
 
 void NodeController::ConnectToParentPortByToken(
     const std::string& token,
-    const ports::PortName& local_port,
-    const base::Closure& on_connect) {
+    const ports::PortName& local_port) {
   io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&NodeController::ConnectToParentPortByTokenOnIOThread,
-                 base::Unretained(this), token, local_port, on_connect));
+                 base::Unretained(this), token, local_port));
 }
 
 void NodeController::ConnectToChildOnIOThread(
@@ -229,47 +219,33 @@ void NodeController::SendPeerMessage(const ports::NodeName& name,
 
 void NodeController::ReservePortForTokenOnIOThread(
     const ports::PortName& port_name,
-    const std::string& token,
-    const base::Closure& on_connect) {
+    const std::string& token) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-
-  ReservedPort reservation;
-  reservation.local_port = port_name;
-  reservation.callback = on_connect;
-
-  auto result = reserved_ports_.insert(std::make_pair(token, reservation));
+  auto result = reserved_ports_.insert(std::make_pair(token, port_name));
   if (!result.second)
     DLOG(ERROR) << "Can't reserve port for duplicate token: " << token;
 }
 
 void NodeController::ConnectToParentPortByTokenOnIOThread(
     const std::string& token,
-    const ports::PortName& local_port,
-    const base::Closure& on_connect) {
+    const ports::PortName& local_port) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (parent_name_ != ports::kInvalidNodeName) {
-    ConnectToParentPortByTokenNow(token, local_port, on_connect);
+    ConnectToParentPortByTokenNow(token, local_port);
   } else {
-    PendingTokenConnection pending_connection;
-    pending_connection.port = local_port;
-    pending_connection.token = token;
-    pending_connection.callback = on_connect;
-
-    pending_token_connections_.push_back(pending_connection);
+    auto result = pending_token_connections_.insert(
+        std::make_pair(token, local_port));
+    if (!result.second)
+      DLOG(ERROR) << "Ignoring duplicate token connection request.";
   }
 }
 
 void NodeController::ConnectToParentPortByTokenNow(
     const std::string& token,
-    const ports::PortName& local_port,
-    const base::Closure& on_connect) {
+    const ports::PortName& local_port) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(parent_name_ != ports::kInvalidNodeName);
-
-  auto result = pending_connection_acks_.insert(
-      std::make_pair(local_port, on_connect));
-  DCHECK(result.second);
 
   base::AutoLock lock(peers_lock_);
   auto it = peers_.find(parent_name_);
@@ -352,8 +328,8 @@ void NodeController::OnAcceptChild(const ports::NodeName& from_node,
           false /* start_channel */);
 
   // Flush any pending token-based port connections.
-  for (const PendingTokenConnection& c : pending_token_connections_)
-    ConnectToParentPortByTokenNow(c.token, c.port, c.callback);
+  for (const auto& c : pending_token_connections_)
+    ConnectToParentPortByTokenNow(c.first, c.second);
 
   DVLOG(1) << "Child " << name_ << " accepted parent " << parent_name;
 }
@@ -410,32 +386,47 @@ void NodeController::OnConnectToPort(const ports::NodeName& from_node,
                                      const std::string& token) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
-  base::AutoLock lock(peers_lock_);
-  auto port_it = reserved_ports_.find(token);
-  auto peer_it = peers_.find(from_node);
-  if (port_it == reserved_ports_.end() || peer_it == peers_.end()) {
-    base::AutoUnlock unlock(peers_lock_);
-    DLOG(ERROR) << "Ignoring invalid ConnectToPort from node " << from_node
-                << " for token " << token;
-    DropPeer(from_node);
-    return;
-  }
+  // There are some fairly subtle issues here when establishing the new
+  // connection.
+  //
+  // First, we can't hold |peers_lock_| when initializing the port, because it
+  // causes the port to flush its outgoing message queue which may in turn
+  // re-enter NodeController for e.g. SendPeerMessage.
+  //
+  // Second, the remote node must receive the ConnectToPortAck message *before*
+  // our port flushes its queue, otherwise the remote node may be asked to
+  // accept messages for an uninitialized port.
+  //
+  // So we send the ConnectToPortAck first, then initialize the local port. This
+  // is safe because although the ConnectToPortAck may result in the peer
+  // immediately sending messages to our uninitialized port, we'll receive them
+  // on the I/O thread (this one) and they won't be processed until after this
+  // function returns.
 
-  ports::PortName parent_port_name = port_it->second.local_port;
-  base::Closure callback = port_it->second.callback;
-  reserved_ports_.erase(port_it);
-
-  DCHECK(!callback.is_null());
-
+  ports::PortName parent_port_name;
   ports::PortRef parent_port;
-  CHECK_EQ(ports::OK, node_->GetPort(parent_port_name, &parent_port));
+  {
+    base::AutoLock lock(peers_lock_);
+    auto port_it = reserved_ports_.find(token);
+    auto peer_it = peers_.find(from_node);
+    if (port_it == reserved_ports_.end() || peer_it == peers_.end()) {
+      base::AutoUnlock unlock(peers_lock_);
+      DLOG(ERROR) << "Ignoring invalid ConnectToPort from node " << from_node
+                  << " for token " << token;
+      DropPeer(from_node);
+      return;
+    }
+
+    parent_port_name = port_it->second;
+    reserved_ports_.erase(port_it);
+
+    CHECK_EQ(ports::OK, node_->GetPort(parent_port_name, &parent_port));
+
+    peer_it->second->ConnectToPortAck(connector_port_name, parent_port_name);
+  }
 
   CHECK_EQ(ports::OK, node_->InitializePort(parent_port, from_node,
                                             connector_port_name));
-
-  callback.Run();
-
-  peer_it->second->ConnectToPortAck(connector_port_name, parent_port_name);
 }
 
 void NodeController::OnConnectToPortAck(
@@ -451,19 +442,11 @@ void NodeController::OnConnectToPortAck(
     return;
   }
 
-  auto it = pending_connection_acks_.find(connector_port_name);
-  DCHECK(it != pending_connection_acks_.end());
-  base::Closure callback = it->second;
-  pending_connection_acks_.erase(it);
-
-  DCHECK(!callback.is_null());
-
   ports::PortRef connector_port;
   CHECK_EQ(ports::OK, node_->GetPort(connector_port_name, &connector_port));
 
   CHECK_EQ(ports::OK, node_->InitializePort(connector_port, parent_name_,
                                             connectee_port_name));
-  callback.Run();
 }
 
 void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,
