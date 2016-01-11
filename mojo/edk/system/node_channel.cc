@@ -21,7 +21,6 @@ enum class MessageType : uint32_t {
   ACCEPT_PARENT,
   PORTS_MESSAGE,
   CONNECT_TO_PORT,
-  CONNECT_TO_PORT_ACK,
   REQUEST_INTRODUCTION,
   INTRODUCE,
 };
@@ -44,18 +43,9 @@ struct AcceptParentData {
   ports::NodeName child_name;
 };
 
-// This data is followed by arbitrary string contents in the payload, which
-// are used as a token to identify the target port.
 struct ConnectToPortData {
-  ports::PortName connector_port;
-};
-
-// Response sent by the connectee, i.e., the receiver of a ConnectToPort
-// message. If the connectee rejects the connection request, |connectee_port|
-// should be |ports::kInvalidPortName|.
-struct ConnectToPortAckData {
-  ports::PortName connector_port;
-  ports::PortName connectee_port;
+  ports::PortName connector_port_name;
+  ports::PortName connectee_port_name;
 };
 
 // Used for both REQUEST_INTRODUCTION and INTRODUCE.
@@ -145,25 +135,13 @@ void NodeChannel::PortsMessage(Channel::MessagePtr message) {
   channel_->Write(std::move(message));
 }
 
-void NodeChannel::ConnectToPort(const std::string& token,
-                                const ports::PortName& connector_port) {
+void NodeChannel::ConnectToPort(const ports::PortName& connector_port_name,
+                                const ports::PortName& connectee_port_name) {
   ConnectToPortData* data;
   Channel::MessagePtr message = CreateMessage(
-      MessageType::CONNECT_TO_PORT, sizeof(ConnectToPortData) + token.size(),
-      nullptr, &data);
-  data->connector_port = connector_port;
-  memcpy(&data[1], token.data(), token.size());
-  channel_->Write(std::move(message));
-}
-
-void NodeChannel::ConnectToPortAck(const ports::PortName& connector_port,
-                                   const ports::PortName& connectee_port) {
-  ConnectToPortAckData* data;
-  Channel::MessagePtr message = CreateMessage(
-      MessageType::CONNECT_TO_PORT_ACK, sizeof(ConnectToPortAckData), nullptr,
-      &data);
-  data->connector_port = connector_port,
-  data->connectee_port = connectee_port;
+      MessageType::CONNECT_TO_PORT, sizeof(ConnectToPortData), nullptr, &data);
+  data->connector_port_name = connector_port_name;
+  data->connectee_port_name = connectee_port_name;
   channel_->Write(std::move(message));
 }
 
@@ -226,20 +204,8 @@ void NodeChannel::OnChannelMessage(const void* payload,
     case MessageType::CONNECT_TO_PORT: {
       const ConnectToPortData* data;
       GetMessagePayload(payload, &data);
-      // TODO: yikes
-      std::string token(
-          reinterpret_cast<const char*>(&data[1]),
-          payload_size - sizeof(Header) - sizeof(ConnectToPortData));
-      delegate_->OnConnectToPort(remote_node_name_, data->connector_port,
-                                 token);
-      break;
-    }
-
-    case MessageType::CONNECT_TO_PORT_ACK: {
-      const ConnectToPortAckData* data;
-      GetMessagePayload(payload, &data);
-      delegate_->OnConnectToPortAck(remote_node_name_, data->connector_port,
-                                    data->connectee_port);
+      delegate_->OnConnectToPort(remote_node_name_, data->connector_port_name,
+                                 data->connectee_port_name);
       break;
     }
 

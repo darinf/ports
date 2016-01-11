@@ -7,6 +7,7 @@
 
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "base/containers/hash_tables.h"
@@ -76,12 +77,6 @@ class NodeController : public ports::NodeDelegate,
                               const ports::NodeName& peer_node_name,
                               const ports::PortName& peer_port_name);
 
-  void ReservePortForToken(const ports::PortName& port_name,
-                           const std::string& token);
-
-  void ConnectToParentPortByToken(const std::string& token,
-                                  const ports::PortName& local_port);
-
  private:
   using NodeMap = std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>>;
   using OutgoingMessageQueue = std::queue<ports::ScopedMessage>;
@@ -101,12 +96,6 @@ class NodeController : public ports::NodeDelegate,
   void DropPeer(const ports::NodeName& name);
   void SendPeerMessage(const ports::NodeName& name,
                        ports::ScopedMessage message);
-  void ReservePortForTokenOnIOThread(const ports::PortName& port_name,
-                                     const std::string& token);
-  void ConnectToParentPortByTokenOnIOThread(const std::string& token,
-                                            const ports::PortName& local_port);
-  void ConnectToParentPortByTokenNow(const std::string& token,
-                                     const ports::PortName& local_port);
   void AcceptIncomingMessages();
 
   // ports::NodeDelegate:
@@ -131,11 +120,8 @@ class NodeController : public ports::NodeDelegate,
                       size_t payload_size,
                       ScopedPlatformHandleVectorPtr platform_handles) override;
   void OnConnectToPort(const ports::NodeName& from_node,
-                       const ports::PortName& connector_port,
-                       const std::string& token) override;
-  void OnConnectToPortAck(const ports::NodeName& from_node,
-                          const ports::PortName& connector_port,
-                          const ports::PortName& connectee_port) override;
+                       const ports::PortName& connector_port_name,
+                       const ports::PortName& connectee_port_name) override;
   void OnRequestIntroduction(const ports::NodeName& from_node,
                              const ports::NodeName& name) override;
   void OnIntroduce(const ports::NodeName& from_node,
@@ -175,17 +161,6 @@ class NodeController : public ports::NodeDelegate,
 
   // Channels to children during handshake.
   NodeMap pending_children_;
-
-  // Named ports for establishing cross-node port pairs out-of-band. A port
-  // can be reserved by name via ReservePortForToken(), and a peer can entangle
-  // one of its owns ports to the reserved port by referencing the token in a
-  // NodeChannel::ConnectToPort request.
-  //
-  // The embedder must provide a channel to communicate the token to each node.
-  base::hash_map<std::string, ports::PortName> reserved_ports_;
-
-  // This tracks pending outgoing connection request for named ports.
-  base::hash_map<std::string, ports::PortName> pending_token_connections_;
 
   // Guards |incoming_messages_|.
   base::Lock messages_lock_;

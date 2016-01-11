@@ -13,6 +13,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/message_loop/message_loop.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "crypto/random.h"
@@ -39,30 +40,42 @@ namespace {
 const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 
 // A simple channel delegate which exchanges peer port information with the
-// remote endpoint and initializes a local port with the received info.
-class BootstrapChannelDelegate : public Channel::Delegate {
+// remote endpoint and initializes a local port with the received info. This is
+// used for negotiating cross-process ports over an arbitrary platform channel,
+// assuming both ends of the channel are using this same delegate.
+//
+// This is not thread-safe; it lives, works, and dies entirely on the I/O task
+// runner's thread.
+class BootstrapChannelDelegate : public Channel::Delegate,
+                                 public base::MessageLoop::DestructionObserver {
  public:
-  BootstrapChannelDelegate(NodeController* node_controller,
-                           const ports::PortRef& port,
-                           ScopedPlatformHandle platform_handle,
-                           scoped_refptr<base::TaskRunner> io_task_runner)
-      : channel_(
-            Channel::Create(this, std::move(platform_handle), io_task_runner)),
-        node_controller_(node_controller),
-        port_(port) {
-    channel_->Start();
-    SendPeerInfo();
+  static void Create(NodeController* node_controller,
+                     const ports::PortRef& port,
+                     ScopedPlatformHandle platform_handle,
+                     scoped_refptr<base::TaskRunner> io_task_runner) {
+    io_task_runner->PostTask(FROM_HERE,
+                             base::Bind(&CreateOnIOThread,
+                                        base::Unretained(node_controller),
+                                        port, base::Passed(&platform_handle)));
   }
 
  private:
-  ~BootstrapChannelDelegate() override { channel_->ShutDown(); }
-
   struct PeerInfo {
     ports::NodeName node_name;
     ports::PortName port_name;
   };
 
-  void SendPeerInfo() {
+  BootstrapChannelDelegate(NodeController* node_controller,
+                           const ports::PortRef& port,
+                           ScopedPlatformHandle platform_handle)
+      : channel_(
+            Channel::Create(this, std::move(platform_handle),
+                            base::ThreadTaskRunnerHandle::Get())),
+        node_controller_(node_controller),
+        port_(port) {
+    base::MessageLoop::current()->AddDestructionObserver(this);
+    channel_->Start();
+
     PeerInfo info;
     info.node_name = node_controller_->name();
     info.port_name = port_.name();
@@ -70,6 +83,30 @@ class BootstrapChannelDelegate : public Channel::Delegate {
     Channel::MessagePtr message(new Channel::Message(sizeof(info), nullptr));
     memcpy(message->mutable_payload(), &info, sizeof(info));
     channel_->Write(std::move(message));
+  }
+
+  ~BootstrapChannelDelegate() override {
+    base::MessageLoop::current()->RemoveDestructionObserver(this);
+  }
+
+  static void Delete(BootstrapChannelDelegate* delegate) { delete delegate; }
+
+  void DeleteSelfSoon() {
+    if (deleting)
+      return;
+    deleting = true;
+    channel_->ShutDown();
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&Delete, base::Unretained(this)));
+  }
+
+  static void CreateOnIOThread(NodeController* node_controller,
+                               const ports::PortRef& port,
+                               ScopedPlatformHandle platform_handle) {
+    // This deletes itself either when bootstrap is complete or the IO thread
+    // dies, whichever happens first.
+    new BootstrapChannelDelegate(node_controller, port,
+                                 std::move(platform_handle));
   }
 
   // Channel::Delegate:
@@ -98,17 +135,16 @@ class BootstrapChannelDelegate : public Channel::Delegate {
     }
   }
 
-  void OnChannelError() override { DeleteSelfSoon(); }
-
-  void DeleteSelfSoon() {
-    if (deleting)
-      return;
-    deleting = true;
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&Delete, base::Unretained(this)));
+  // base::MessageLoop::DestructionObserver:
+  void WillDestroyCurrentMessageLoop() override {
+    if (!deleting) {
+      channel_->ShutDown();
+      deleting = true;
+    }
+    delete this;
   }
 
-  static void Delete(BootstrapChannelDelegate* delegate) { delete delegate; }
+  void OnChannelError() override { DeleteSelfSoon(); }
 
   scoped_refptr<Channel> channel_;
 
@@ -216,12 +252,8 @@ ScopedMessagePipeHandle Core::CreateMessagePipe(
                                 false /* connected */));
 
   DCHECK(io_task_runner_);
-
-  // Owns itself and deletes itself once bootstrapping is complete. This will
-  // perform a simple handshake with the other end to figure out how to
-  // initialize |port|.
-  new BootstrapChannelDelegate(&node_controller_, port,
-                               std::move(platform_handle), io_task_runner_);
+  BootstrapChannelDelegate::Create(&node_controller_, port,
+                                   std::move(platform_handle), io_task_runner_);
 
   return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }

@@ -90,33 +90,22 @@ void NodeController::InitializePortDeferred(
     const ports::PortName& peer_port_name) {
   {
     base::AutoLock lock(peers_lock_);
-    if (peers_.find(peer_node_name) == peers_.end()) {
+    auto it = peers_.find(peer_node_name);
+    if (it == peers_.end()) {
       DeferredPeerPort deferred_port;
       deferred_port.local_port = port_ref;
       deferred_port.remote_port = peer_port_name;
       pending_peer_ports_[peer_node_name].push_back(deferred_port);
       return;
     }
+
+    // Ensure that the remote port is initialized before it receives any
+    // ports messages from us. It's OK if this races with a corresponding
+    // InitializePortDeferred on the remote node.
+    it->second->ConnectToPort(port_ref.name(), peer_port_name);
   }
 
   node_->InitializePort(port_ref, peer_node_name, peer_port_name);
-}
-
-void NodeController::ReservePortForToken(const ports::PortName& port_name,
-                                         const std::string& token) {
-  io_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&NodeController::ReservePortForTokenOnIOThread,
-                 base::Unretained(this), port_name, token));
-}
-
-void NodeController::ConnectToParentPortByToken(
-    const std::string& token,
-    const ports::PortName& local_port) {
-  io_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&NodeController::ConnectToParentPortByTokenOnIOThread,
-                 base::Unretained(this), token, local_port));
 }
 
 void NodeController::ConnectToChildOnIOThread(
@@ -174,6 +163,7 @@ void NodeController::AddPeer(const ports::NodeName& name,
     if (start_channel)
       channel->Start();
 
+    // Flush any queued message we need to deliver to this node.
     OutgoingMessageQueue pending_messages;
     auto it = pending_peer_messages_.find(name);
     if (it != pending_peer_messages_.end()) {
@@ -187,18 +177,33 @@ void NodeController::AddPeer(const ports::NodeName& name,
       pending_peer_messages_.erase(it);
     }
 
-    auto result = peers_.insert(std::make_pair(name, std::move(channel)));
-    DCHECK(result.second);
-
+    // Flush any pending lazy port connections we have pending for this node.
     auto ports_iter = pending_peer_ports_.find(name);
     if (ports_iter != pending_peer_ports_.end()) {
       std::swap(ports_to_initialize, ports_iter->second);
       pending_peer_ports_.erase(ports_iter);
+
+      // Ensure the remote port is initialized before it receives any messages.
+      for (const auto& port : ports_to_initialize)
+        channel->ConnectToPort(port.local_port.name(), port.remote_port);
     }
+
+    auto result = peers_.insert(std::make_pair(name, std::move(channel)));
+    DCHECK(result.second);
   }
 
-  for (const auto& port : ports_to_initialize)
+  // Note that we initialize the ports without |peers_lock_| held, since
+  // they will flush their outgoing messages queue on initialization and that
+  // can re-enter NodeController, e.g. for ForwardMessage -> SendPeerMessage.
+  for (const auto& port : ports_to_initialize) {
+    // The port may have already been initialized by a ConnectToPort from the
+    // peer, in which case we have no work to do.
+    ports::PortStatus port_status;
+    if (node_->GetStatus(port.local_port, &port_status) == ports::OK)
+      continue;
+
     node_->InitializePort(port.local_port, name, port.remote_port);
+  }
 }
 
 void NodeController::DropPeer(const ports::NodeName& name) {
@@ -245,41 +250,6 @@ void NodeController::SendPeerMessage(const ports::NodeName& name,
     it->second->RequestIntroduction(name);
   }
   queue.emplace(std::move(message));
-}
-
-void NodeController::ReservePortForTokenOnIOThread(
-    const ports::PortName& port_name,
-    const std::string& token) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-  auto result = reserved_ports_.insert(std::make_pair(token, port_name));
-  if (!result.second)
-    DLOG(ERROR) << "Can't reserve port for duplicate token: " << token;
-}
-
-void NodeController::ConnectToParentPortByTokenOnIOThread(
-    const std::string& token,
-    const ports::PortName& local_port) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-
-  if (parent_name_ != ports::kInvalidNodeName) {
-    ConnectToParentPortByTokenNow(token, local_port);
-  } else {
-    auto result = pending_token_connections_.insert(
-        std::make_pair(token, local_port));
-    if (!result.second)
-      DLOG(ERROR) << "Ignoring duplicate token connection request.";
-  }
-}
-
-void NodeController::ConnectToParentPortByTokenNow(
-    const std::string& token,
-    const ports::PortName& local_port) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-  DCHECK(parent_name_ != ports::kInvalidNodeName);
-
-  base::AutoLock lock(peers_lock_);
-  auto it = peers_.find(parent_name_);
-  it->second->ConnectToPort(token, local_port);
 }
 
 void NodeController::AcceptIncomingMessages() {
@@ -357,10 +327,6 @@ void NodeController::OnAcceptChild(const ports::NodeName& from_node,
   AddPeer(parent_name_, std::move(bootstrap_channel_to_parent_),
           false /* start_channel */);
 
-  // Flush any pending token-based port connections.
-  for (const auto& c : pending_token_connections_)
-    ConnectToParentPortByTokenNow(c.first, c.second);
-
   DVLOG(1) << "Child " << name_ << " accepted parent " << parent_name;
 }
 
@@ -411,72 +377,33 @@ void NodeController::OnPortsMessage(
   node_->AcceptMessage(std::move(message));
 }
 
-void NodeController::OnConnectToPort(const ports::NodeName& from_node,
-                                     const ports::PortName& connector_port_name,
-                                     const std::string& token) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-
-  // There are some fairly subtle issues here when establishing the new
-  // connection.
-  //
-  // First, we can't hold |peers_lock_| when initializing the port, because it
-  // causes the port to flush its outgoing message queue which may in turn
-  // re-enter NodeController for e.g. SendPeerMessage.
-  //
-  // Second, the remote node must receive the ConnectToPortAck message *before*
-  // our port flushes its queue, otherwise the remote node may be asked to
-  // accept messages for an uninitialized port.
-  //
-  // So we send the ConnectToPortAck first, then initialize the local port. This
-  // is safe because although the ConnectToPortAck may result in the peer
-  // immediately sending messages to our uninitialized port, we'll receive them
-  // on the I/O thread (this one) and they won't be processed until after this
-  // function returns.
-
-  ports::PortName parent_port_name;
-  ports::PortRef parent_port;
-  {
-    base::AutoLock lock(peers_lock_);
-    auto port_it = reserved_ports_.find(token);
-    auto peer_it = peers_.find(from_node);
-    if (port_it == reserved_ports_.end() || peer_it == peers_.end()) {
-      base::AutoUnlock unlock(peers_lock_);
-      DLOG(ERROR) << "Ignoring invalid ConnectToPort from node " << from_node
-                  << " for token " << token;
-      DropPeer(from_node);
-      return;
-    }
-
-    parent_port_name = port_it->second;
-    reserved_ports_.erase(port_it);
-
-    CHECK_EQ(ports::OK, node_->GetPort(parent_port_name, &parent_port));
-
-    peer_it->second->ConnectToPortAck(connector_port_name, parent_port_name);
-  }
-
-  CHECK_EQ(ports::OK, node_->InitializePort(parent_port, from_node,
-                                            connector_port_name));
-}
-
-void NodeController::OnConnectToPortAck(
+void NodeController::OnConnectToPort(
     const ports::NodeName& from_node,
     const ports::PortName& connector_port_name,
     const ports::PortName& connectee_port_name) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
-  if (from_node != parent_name_) {
-    DLOG(ERROR) << "Ignoring ConnectToPortAck from non-parent node "
-                << from_node;
-    DropPeer(from_node);
+  ports::PortRef connectee_port;
+  int rv = node_->GetPort(connectee_port_name, &connectee_port);
+  if (rv != ports::OK) {
+    DLOG(ERROR) << "Ignoring ConnectToPort for unknown port "
+                << connectee_port_name;
     return;
   }
 
-  ports::PortRef connector_port;
-  CHECK_EQ(ports::OK, node_->GetPort(connector_port_name, &connector_port));
+  // It's OK if this port has already been initialized. This message is only
+  // sent by the remote peer to ensure the port is ready before it starts
+  // us sending messages to it.
+  ports::PortStatus port_status;
+  rv = node_->GetStatus(connectee_port, &port_status);
+  if (rv == ports::OK) {
+    DVLOG(1) << "Ignoring ConnectToPort for already-initialized port "
+             << connectee_port_name;
+    return;
+  }
 
-  CHECK_EQ(ports::OK, node_->InitializePort(connector_port, parent_name_,
-                                            connectee_port_name));
+  CHECK_EQ(ports::OK, node_->InitializePort(connectee_port, from_node,
+                                            connector_port_name));
 }
 
 void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,

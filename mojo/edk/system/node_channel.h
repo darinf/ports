@@ -35,11 +35,8 @@ class NodeChannel : public Channel::Delegate {
         size_t payload_size,
         ScopedPlatformHandleVectorPtr platform_handles) = 0;
     virtual void OnConnectToPort(const ports::NodeName& from_node,
-                                 const ports::PortName& connector_port,
-                                 const std::string& token) = 0;
-    virtual void OnConnectToPortAck(const ports::NodeName& from_node,
-                                    const ports::PortName& connector_port,
-                                    const ports::PortName& connectee_port) = 0;
+                                 const ports::PortName& connector_port_name,
+                                 const ports::PortName& connectee_port_name) = 0;
     virtual void OnRequestIntroduction(const ports::NodeName& from_node,
                                        const ports::NodeName& name) = 0;
     virtual void OnIntroduce(const ports::NodeName& from_name,
@@ -70,10 +67,8 @@ class NodeChannel : public Channel::Delegate {
   void AcceptParent(const ports::NodeName& token,
                     const ports::NodeName& child_name);
   void PortsMessage(Channel::MessagePtr message);
-  void ConnectToPort(const std::string& token,
-                     const ports::PortName& connector_port);
-  void ConnectToPortAck(const ports::PortName& connector_port,
-                        const ports::PortName& connectee_port);
+  void ConnectToPort(const ports::PortName& connector_port_name,
+                     const ports::PortName& connectee_port_name);
   void RequestIntroduction(const ports::NodeName& name);
   void Introduce(const ports::NodeName& name, ScopedPlatformHandle handle);
 
