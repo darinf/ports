@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "mojo/edk/embedder/embedder_internal.h"
+#include "mojo/edk/embedder/platform_channel_pair.h"
 #include "mojo/edk/embedder/simple_platform_support.h"
 #include "mojo/edk/system/core.h"
 
@@ -37,8 +38,9 @@ void PreInitializeChildProcess() {
 }
 
 ScopedPlatformHandle ChildProcessLaunched(base::ProcessHandle child_process) {
-  NOTIMPLEMENTED();
-  return ScopedPlatformHandle();
+  PlatformChannelPair channel;
+  ChildProcessLaunched(child_process, channel.PassServerHandle());
+  return channel.PassClientHandle();
 }
 
 void ChildProcessLaunched(base::ProcessHandle child_process,
@@ -85,7 +87,7 @@ void InitIPCSupport(ProcessDelegate* process_delegate,
   internal::g_io_thread_task_runner = io_thread_task_runner.get();
   internal::g_io_thread_task_runner->AddRef();
 
-  internal::g_core->node_controller()->SetIOTaskRunner(io_thread_task_runner);
+  internal::g_core->SetIOTaskRunner(io_thread_task_runner);
 }
 
 void ShutdownIPCSupportOnIOThread() {
@@ -97,20 +99,8 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
-  NOTREACHED()
-      << "Use the token-based CreateParentMessagePipe/CreateChildMessagePipe "
-      << "functions when using the Ports EDK.";
-  return ScopedMessagePipeHandle();
-}
-
-ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token) {
   DCHECK(internal::g_core);
-  return internal::g_core->CreateParentMessagePipe(token);
-}
-
-ScopedMessagePipeHandle CreateChildMessagePipe(const std::string& token) {
-  DCHECK(internal::g_core);
-  return internal::g_core->CreateChildMessagePipe(token);
+  return internal::g_core->CreateMessagePipe(std::move(platform_handle));
 }
 
 }  // namespace edk

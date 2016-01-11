@@ -4,6 +4,8 @@
 
 #include "mojo/edk/system/core.h"
 
+#include <string.h>
+
 #include <utility>
 
 #include "base/bind.h"
@@ -21,6 +23,7 @@
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/message_pipe_dispatcher.h"
 #include "mojo/edk/system/platform_handle_dispatcher.h"
+#include "mojo/edk/system/ports/node.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
 #include "mojo/edk/system/wait_set_dispatcher.h"
 #include "mojo/edk/system/waiter.h"
@@ -33,11 +36,88 @@ namespace {
 // This is an unnecessarily large limit that is relatively easy to enforce.
 const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 
+// A simple channel delegate which exchanges peer port information with the
+// remote endpoint and initializes a local port with the received info.
+class BootstrapChannelDelegate : public Channel::Delegate {
+ public:
+  BootstrapChannelDelegate(ports::Node* node,
+                           const ports::NodeName& node_name,
+                           const ports::PortRef& port,
+                           ScopedPlatformHandle platform_handle,
+                           scoped_refptr<base::TaskRunner> io_task_runner)
+      : channel_(
+            Channel::Create(this, std::move(platform_handle), io_task_runner)),
+        node_(node),
+        node_name_(node_name),
+        port_(port) {
+    channel_->Start();
+    SendPeerInfo();
+  }
+
+ private:
+  ~BootstrapChannelDelegate() override { channel_->ShutDown(); }
+
+  struct PeerInfo {
+    ports::NodeName node_name;
+    ports::PortName port_name;
+  };
+
+  void SendPeerInfo() {
+    PeerInfo info;
+    info.node_name = node_name_;
+    info.port_name = port_.name();
+
+    Channel::MessagePtr message(new Channel::Message(sizeof(info), nullptr));
+    memcpy(message->mutable_payload(), &info, sizeof(info));
+    channel_->Write(std::move(message));
+  }
+
+  // Channel::Delegate:
+  void OnChannelMessage(const void* payload,
+                        size_t payload_size,
+                        ScopedPlatformHandleVectorPtr handles) override {
+    DCHECK(!handles || handles->size() == 0);
+
+    // The first message we receive should be peer info. We then expect to
+    // receive a second message to acknowledge receipt of our information. It's
+    // not important for the ack to complete on both ends, but this at least
+    // guarantees that both sides stay alive long enough to send their info out.
+    if (!waiting_for_ack_) {
+      waiting_for_ack_ = true;
+
+      DCHECK_EQ(payload_size, sizeof(PeerInfo));
+
+      const PeerInfo* info = static_cast<const PeerInfo*>(payload);
+      node_->InitializePort(port_, info->node_name, info->port_name);
+
+      Channel::MessagePtr ack(new Channel::Message(0, nullptr));
+      channel_->Write(std::move(ack));
+    } else {
+      delete this;
+    }
+  }
+
+  void OnChannelError() override { delete this; }
+
+  scoped_refptr<Channel> channel_;
+
+  ports::Node* node_;
+  ports::NodeName node_name_;
+  ports::PortRef port_;
+  bool waiting_for_ack_ = false;;
+
+  DISALLOW_COPY_AND_ASSIGN(BootstrapChannelDelegate);
+};
+
 }  // namespace
 
 Core::Core() : node_controller_(this) {}
 
 Core::~Core() {}
+
+void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
+  io_task_runner_ = io_task_runner;
+}
 
 scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
   base::AutoLock lock(handles_lock_);
@@ -115,24 +195,23 @@ MojoResult Core::PassWrappedPlatformHandle(
   return MOJO_RESULT_OK;
 }
 
-ScopedMessagePipeHandle Core::CreateParentMessagePipe(
-    const std::string& token) {
+ScopedMessagePipeHandle Core::CreateMessagePipe(
+    ScopedPlatformHandle platform_handle) {
   ports::PortRef port;
   node_controller_.node()->CreateUninitializedPort(&port);
-  node_controller_.ReservePortForToken(port.name(), token);
   MojoHandle handle = AddDispatcher(
       new MessagePipeDispatcher(&node_controller_, port,
                                 false /* connected */));
-  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
-}
 
-ScopedMessagePipeHandle Core::CreateChildMessagePipe(const std::string& token) {
-  ports::PortRef port;
-  node_controller_.node()->CreateUninitializedPort(&port);
-  node_controller_.ConnectToParentPortByToken(token, port.name());
-  MojoHandle handle = AddDispatcher(
-      new MessagePipeDispatcher(&node_controller_, port,
-                                false /* connected */));
+  DCHECK(io_task_runner_);
+
+  // Owns itself and deletes itself once bootstrapping is complete. This will
+  // perform a simple handshake with the other end to figure out how to
+  // initialize |port|.
+  new BootstrapChannelDelegate(
+      node_controller_.node(), node_controller_.name(), port,
+      std::move(platform_handle), io_task_runner_);
+
   return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
 
