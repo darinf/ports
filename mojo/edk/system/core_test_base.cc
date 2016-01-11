@@ -69,49 +69,44 @@ class MockDispatcher : public Dispatcher {
     return MOJO_RESULT_OK;
   }
 
-/* TODO: restore these when data pipe API is added
-  MojoResult WriteDataImplNoLock(const void* elements,
-                                 uint32_t* num_bytes,
-                                 MojoWriteDataFlags flags) override {
+  MojoResult WriteData(const void* elements,
+                       uint32_t* num_bytes,
+                       MojoWriteDataFlags flags) override {
     info_->IncrementWriteDataCallCount();
     return MOJO_RESULT_UNIMPLEMENTED;
   }
 
-  MojoResult BeginWriteDataImplNoLock(
-      void** buffer,
-      uint32_t* buffer_num_bytes,
-      MojoWriteDataFlags flags) override {
+  MojoResult BeginWriteData(void** buffer,
+                            uint32_t* buffer_num_bytes,
+                            MojoWriteDataFlags flags) override {
     info_->IncrementBeginWriteDataCallCount();
     return MOJO_RESULT_UNIMPLEMENTED;
   }
 
-  MojoResult EndWriteDataImplNoLock(uint32_t num_bytes_written) override {
+  MojoResult EndWriteData(uint32_t num_bytes_written) override {
     info_->IncrementEndWriteDataCallCount();
     return MOJO_RESULT_UNIMPLEMENTED;
   }
 
-  MojoResult ReadDataImplNoLock(void* elements,
-                                uint32_t* num_bytes,
-                                MojoReadDataFlags flags*) override {
+  MojoResult ReadData(void* elements,
+                      uint32_t* num_bytes,
+                      MojoReadDataFlags flags) override {
     info_->IncrementReadDataCallCount();
-    lock().AssertAcquired();
     return MOJO_RESULT_UNIMPLEMENTED;
   }
 
-  MojoResult BeginReadDataImplNoLock(const void** buffer,
-                                     uint32_t* buffer_num_bytes,
-                                     MojoReadDataFlags flags) override {
+  MojoResult BeginReadData(const void** buffer,
+                           uint32_t* buffer_num_bytes,
+                           MojoReadDataFlags flags) override {
     info_->IncrementBeginReadDataCallCount();
-    lock().AssertAcquired();
     return MOJO_RESULT_UNIMPLEMENTED;
   }
 
-  MojoResult EndReadDataImplNoLock(uint32_t num_bytes_read) override {
+  MojoResult EndReadData(uint32_t num_bytes_read) override {
     info_->IncrementEndReadDataCallCount();
-    lock().AssertAcquired();
     return MOJO_RESULT_UNIMPLEMENTED;
   }
-*/
+
   MojoResult AddAwakable(Awakable* awakable,
                          MojoHandleSignals /*signals*/,
                          uintptr_t /*context*/,

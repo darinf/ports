@@ -285,7 +285,7 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
     return nullptr;
 
   const SerializedState* state = static_cast<const SerializedState*>(data);
-  size_t data_buffer_size = num_bytes - sizeof(MojoCreateDataPipeOptions);
+  size_t data_buffer_size = num_bytes - sizeof(SerializedState);
 
   NodeController* node_controller = internal::g_core->node_controller();
   ports::PortRef port;

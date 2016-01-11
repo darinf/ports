@@ -67,7 +67,6 @@ TEST_F(CoreTest, Basic) {
             core()->ReadMessage(h, nullptr, nullptr, nullptr, nullptr,
                                 MOJO_READ_MESSAGE_FLAG_NONE));
   ASSERT_EQ(2u, info.GetReadMessageCallCount());
-/* TODO: re-enable these bits when data pipe is added
   ASSERT_EQ(0u, info.GetWriteDataCallCount());
   ASSERT_EQ(MOJO_RESULT_UNIMPLEMENTED,
             core()->WriteData(h, nullptr, nullptr, MOJO_WRITE_DATA_FLAG_NONE));
@@ -97,7 +96,6 @@ TEST_F(CoreTest, Basic) {
   ASSERT_EQ(0u, info.GetEndReadDataCallCount());
   ASSERT_EQ(MOJO_RESULT_UNIMPLEMENTED, core()->EndReadData(h, 0));
   ASSERT_EQ(1u, info.GetEndReadDataCallCount());
-*/
   ASSERT_EQ(0u, info.GetAddAwakableCallCount());
   ASSERT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
             core()->Wait(h, ~MOJO_HANDLE_SIGNAL_NONE, MOJO_DEADLINE_INDEFINITE,
@@ -804,7 +802,7 @@ TEST_F(CoreTest, MessagePipeBasicLocalHandlePassing1) {
   ASSERT_EQ(MOJO_RESULT_OK, core()->Close(h_passed[0]));
   ASSERT_EQ(MOJO_RESULT_OK, core()->Close(h_received));
 }
-/*
+
 TEST_F(CoreTest, DataPipe) {
   MojoHandle ph, ch;  // p is for producer and c is for consumer.
   MojoHandleSignalsState hss;
@@ -1008,9 +1006,7 @@ TEST_F(CoreTest, DataPipe) {
 
   ASSERT_EQ(MOJO_RESULT_OK, core()->Close(ch));
 }
-*/
 
-/*
 // Tests passing data pipe producer and consumer handles.
 TEST_F(CoreTest, MessagePipeBasicLocalHandlePassing2) {
   const char kHello[] = "hello";
@@ -1227,7 +1223,6 @@ TEST_F(CoreTest, MessagePipeBasicLocalHandlePassing2) {
   ASSERT_EQ(MOJO_RESULT_OK, core()->Close(ph));
   ASSERT_EQ(MOJO_RESULT_OK, core()->Close(ch));
 }
-*/
 
 struct TestAsyncWaiter {
   TestAsyncWaiter() : result(MOJO_RESULT_UNKNOWN) {}
