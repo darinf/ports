@@ -60,6 +60,7 @@ class MessagePipeDispatcher : public Dispatcher {
                             PlatformHandleVector* handles) override;
   bool BeginTransit() override;
   void CompleteTransit() override;
+  void CancelTransit() override;
 
   static scoped_refptr<Dispatcher> Deserialize(
       const void* data,

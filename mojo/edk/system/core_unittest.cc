@@ -714,6 +714,17 @@ TEST_F(CoreTest, MessagePipeBasicLocalHandlePassing1) {
                                  &h_passing[0], 1,
                                  MOJO_WRITE_MESSAGE_FLAG_NONE));
 
+#if defined(OS_WIN)
+  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
+#endif
+  ASSERT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
+            core()->WriteMessage(h_passing[0], kHello, kHelloSize,
+                                 &h_passing[1], 1,
+                                 MOJO_WRITE_MESSAGE_FLAG_NONE));
+#if defined(OS_WIN)
+  }
+#endif
+
   MojoHandle h_passed[2];
   MojoCreateMessagePipeOptions options;
   options.struct_size = sizeof(MojoCreateMessagePipeOptions);

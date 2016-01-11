@@ -795,11 +795,19 @@ int Node::WillSendMessage_Locked(
           ports_taken->at(i) = ports[i];
         ports[i]->lock.lock();
 
-        if (ports[i]->state != Port::kReceiving) {
+        int error = OK;
+        if (ports[i]->state != Port::kReceiving)
+          error = ERROR_PORT_STATE_UNEXPECTED;
+        else if (message->ports()[i] == port->peer_port_name)
+          error = ERROR_PORT_CANNOT_SEND_PEER;
+
+        if (error != OK) {
           // Oops, we cannot send this port.
           for (size_t j = 0; j <= i; ++j)
             ports[i]->lock.unlock();
-          return ERROR_PORT_STATE_UNEXPECTED;
+          // Backpedal on the sequence number.
+          port->next_sequence_num_to_send--;
+          return error;
         }
       }
     }

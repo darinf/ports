@@ -176,7 +176,8 @@ MojoResult MessagePipeDispatcher::WriteMessage(
 
   if (rv != ports::OK) {
     if (rv == ports::ERROR_PORT_UNKNOWN ||
-        rv == ports::ERROR_PORT_STATE_UNEXPECTED)
+        rv == ports::ERROR_PORT_STATE_UNEXPECTED ||
+        rv == ports::ERROR_PORT_CANNOT_SEND_PEER)
       return MOJO_RESULT_INVALID_ARGUMENT;
 
     if (rv == ports::ERROR_PORT_PEER_CLOSED) {
@@ -398,8 +399,9 @@ bool MessagePipeDispatcher::EndSerializeAndClose(
     ports::PortName* ports,
     PlatformHandleVector* handles) {
   *ports = port_.name();
-  port_transferred_ = true;
-  CloseNoLock();
+  // Note: We don't actually close a serialized MPD until CompleteTransit()
+  // since sending might fail at the ports layer and we want to keep the MPD
+  // alive in that case. This is OK because the signal lock is held.
   return true;
 }
 
@@ -409,6 +411,12 @@ bool MessagePipeDispatcher::BeginTransit() {
 }
 
 void MessagePipeDispatcher::CompleteTransit() {
+  port_transferred_ = true;
+  CloseNoLock();
+  signal_lock_.Release();
+}
+
+void MessagePipeDispatcher::CancelTransit() {
   signal_lock_.Release();
 }
 
