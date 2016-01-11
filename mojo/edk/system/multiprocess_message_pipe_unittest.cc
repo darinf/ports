@@ -655,7 +655,9 @@ TEST_P(MultiprocessMessagePipeTestWithPipeCount, PlatformHandlePassing) {
 #if !defined(OS_ANDROID)
 INSTANTIATE_TEST_CASE_P(PipeCount,
                         MultiprocessMessagePipeTestWithPipeCount,
-                        testing::Values(1u, 128u, 140u));
+                        // TODO: Re-enable the 140-pipe case when ChannelPosix
+                        // has support for sending lots of handles.
+                        testing::Values(1u, 128u/*, 140u*/));
 #endif
 
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckMessagePipe) {
