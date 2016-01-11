@@ -721,6 +721,47 @@ TEST_F(PortsTest, SendUninitialized2) {
   EXPECT_EQ(0, strcmp("bye", ToString(message)));
 }
 
+TEST_F(PortsTest, SendFailure) {
+  NodeName node0_name(0, 1);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_save_messages(true);
+
+  PortRef A, B;
+  EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
+
+  // Try to send A over itself.
+
+  EXPECT_EQ(ERROR_PORT_CANNOT_SEND_SELF,
+            node0.SendMessage(A, NewStringMessageWithPort("oops", A)));
+
+  // Try to send B over A.
+
+  EXPECT_EQ(ERROR_PORT_CANNOT_SEND_PEER,
+            node0.SendMessage(A, NewStringMessageWithPort("nope", B)));
+
+  PumpTasks();
+
+  // There should have been no messages accepted.
+  ScopedMessage message;
+  EXPECT_FALSE(node0_delegate.GetSavedMessage(&message));
+
+  // Both A and B should still work.
+
+  EXPECT_EQ(OK, node0.SendMessage(A, NewStringMessage("hi")));
+  EXPECT_EQ(OK, node0.SendMessage(B, NewStringMessage("hey")));
+
+  PumpTasks();
+
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  EXPECT_EQ(0, strcmp("hi", ToString(message)));
+
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  EXPECT_EQ(0, strcmp("hey", ToString(message)));
+}
+
 }  // namespace test
 }  // namespace ports
 }  // namespace edk
