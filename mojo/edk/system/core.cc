@@ -10,8 +10,10 @@
 
 #include "base/bind.h"
 #include "base/containers/stack_container.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "crypto/random.h"
 #include "mojo/edk/embedder/embedder_internal.h"
@@ -40,15 +42,13 @@ const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 // remote endpoint and initializes a local port with the received info.
 class BootstrapChannelDelegate : public Channel::Delegate {
  public:
-  BootstrapChannelDelegate(ports::Node* node,
-                           const ports::NodeName& node_name,
+  BootstrapChannelDelegate(NodeController* node_controller,
                            const ports::PortRef& port,
                            ScopedPlatformHandle platform_handle,
                            scoped_refptr<base::TaskRunner> io_task_runner)
       : channel_(
             Channel::Create(this, std::move(platform_handle), io_task_runner)),
-        node_(node),
-        node_name_(node_name),
+        node_controller_(node_controller),
         port_(port) {
     channel_->Start();
     SendPeerInfo();
@@ -64,7 +64,7 @@ class BootstrapChannelDelegate : public Channel::Delegate {
 
   void SendPeerInfo() {
     PeerInfo info;
-    info.node_name = node_name_;
+    info.node_name = node_controller_->name();
     info.port_name = port_.name();
 
     Channel::MessagePtr message(new Channel::Message(sizeof(info), nullptr));
@@ -88,23 +88,34 @@ class BootstrapChannelDelegate : public Channel::Delegate {
       DCHECK_EQ(payload_size, sizeof(PeerInfo));
 
       const PeerInfo* info = static_cast<const PeerInfo*>(payload);
-      node_->InitializePort(port_, info->node_name, info->port_name);
+      node_controller_->InitializePortDeferred(port_, info->node_name,
+                                               info->port_name);
 
       Channel::MessagePtr ack(new Channel::Message(0, nullptr));
       channel_->Write(std::move(ack));
     } else {
-      delete this;
+      DeleteSelfSoon();
     }
   }
 
-  void OnChannelError() override { delete this; }
+  void OnChannelError() override { DeleteSelfSoon(); }
+
+  void DeleteSelfSoon() {
+    if (deleting)
+      return;
+    deleting = true;
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&Delete, base::Unretained(this)));
+  }
+
+  static void Delete(BootstrapChannelDelegate* delegate) { delete delegate; }
 
   scoped_refptr<Channel> channel_;
 
-  ports::Node* node_;
-  ports::NodeName node_name_;
+  NodeController* node_controller_;
   ports::PortRef port_;
-  bool waiting_for_ack_ = false;;
+  bool waiting_for_ack_ = false;
+  bool deleting = false;
 
   DISALLOW_COPY_AND_ASSIGN(BootstrapChannelDelegate);
 };
@@ -117,6 +128,7 @@ Core::~Core() {}
 
 void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
   io_task_runner_ = io_task_runner;
+  node_controller_.SetIOTaskRunner(io_task_runner);
 }
 
 scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
@@ -208,9 +220,8 @@ ScopedMessagePipeHandle Core::CreateMessagePipe(
   // Owns itself and deletes itself once bootstrapping is complete. This will
   // perform a simple handshake with the other end to figure out how to
   // initialize |port|.
-  new BootstrapChannelDelegate(
-      node_controller_.node(), node_controller_.name(), port,
-      std::move(platform_handle), io_task_runner_);
+  new BootstrapChannelDelegate(&node_controller_, port,
+                               std::move(platform_handle), io_task_runner_);
 
   return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }

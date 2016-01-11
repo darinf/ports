@@ -84,6 +84,24 @@ int NodeController::SendMessage(const ports::PortRef& port,
   return node_->SendMessage(port, std::move(ports_message));
 }
 
+void NodeController::InitializePortDeferred(
+    const ports::PortRef& port_ref,
+    const ports::NodeName& peer_node_name,
+    const ports::PortName& peer_port_name) {
+  {
+    base::AutoLock lock(peers_lock_);
+    if (peers_.find(peer_node_name) == peers_.end()) {
+      DeferredPeerPort deferred_port;
+      deferred_port.local_port = port_ref;
+      deferred_port.remote_port = peer_port_name;
+      pending_peer_ports_[peer_node_name].push_back(deferred_port);
+      return;
+    }
+  }
+
+  node_->InitializePort(port_ref, peer_node_name, peer_port_name);
+}
+
 void NodeController::ReservePortForToken(const ports::PortName& port_name,
                                          const std::string& token) {
   io_task_runner_->PostTask(
@@ -131,8 +149,8 @@ void NodeController::ConnectToParentOnIOThread(
 }
 
 void NodeController::AddPeer(const ports::NodeName& name,
-                   scoped_ptr<NodeChannel> channel,
-                   bool start_channel) {
+                             scoped_ptr<NodeChannel> channel,
+                             bool start_channel) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   DCHECK(name != ports::kInvalidNodeName);
@@ -140,35 +158,47 @@ void NodeController::AddPeer(const ports::NodeName& name,
 
   channel->SetRemoteNodeName(name);
 
-  base::AutoLock lock(peers_lock_);
-  if (peers_.find(name) != peers_.end()) {
-    // This can happen normally if two nodes race to be introduced to each
-    // other. The losing pipe will be silently closed and introduction should
-    // not be affected.
-    DVLOG(1) << "Ignoring duplicate peer name " << name;
-    return;
-  }
-
-  DVLOG(1) << "Accepting new peer " << name << " on node " << name_;
-
-  if (start_channel)
-    channel->Start();
-
-  OutgoingMessageQueue pending_messages;
-  auto it = pending_peer_messages_.find(name);
-  if (it != pending_peer_messages_.end()) {
-    auto& message_queue = it->second;
-    while (!message_queue.empty()) {
-      ports::ScopedMessage message = std::move(message_queue.front());
-      channel->PortsMessage(
-          static_cast<PortsMessage*>(message.get())->TakeChannelMessage());
-      message_queue.pop();
+  DeferredPeerPorts ports_to_initialize;
+  {
+    base::AutoLock lock(peers_lock_);
+    if (peers_.find(name) != peers_.end()) {
+      // This can happen normally if two nodes race to be introduced to each
+      // other. The losing pipe will be silently closed and introduction should
+      // not be affected.
+      DVLOG(1) << "Ignoring duplicate peer name " << name;
+      return;
     }
-    pending_peer_messages_.erase(it);
+
+    DVLOG(1) << "Accepting new peer " << name << " on node " << name_;
+
+    if (start_channel)
+      channel->Start();
+
+    OutgoingMessageQueue pending_messages;
+    auto it = pending_peer_messages_.find(name);
+    if (it != pending_peer_messages_.end()) {
+      auto& message_queue = it->second;
+      while (!message_queue.empty()) {
+        ports::ScopedMessage message = std::move(message_queue.front());
+        channel->PortsMessage(
+            static_cast<PortsMessage*>(message.get())->TakeChannelMessage());
+        message_queue.pop();
+      }
+      pending_peer_messages_.erase(it);
+    }
+
+    auto result = peers_.insert(std::make_pair(name, std::move(channel)));
+    DCHECK(result.second);
+
+    auto ports_iter = pending_peer_ports_.find(name);
+    if (ports_iter != pending_peer_ports_.end()) {
+      std::swap(ports_to_initialize, ports_iter->second);
+      pending_peer_ports_.erase(ports_iter);
+    }
   }
 
-  auto result = peers_.insert(std::make_pair(name, std::move(channel)));
-  DCHECK(result.second);
+  for (const auto& port : ports_to_initialize)
+    node_->InitializePort(port.local_port, name, port.remote_port);
 }
 
 void NodeController::DropPeer(const ports::NodeName& name) {

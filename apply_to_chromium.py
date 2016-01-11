@@ -18,7 +18,6 @@ DIRS_TO_COPY_ = [
   "mojo/edk/embedder",
   "mojo/edk/system",
   "mojo/edk/system/ports",
-  "mojo/edk/test",
 ]
 
 

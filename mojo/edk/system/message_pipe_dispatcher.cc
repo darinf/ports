@@ -469,7 +469,7 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
       return rv;
     }
 
-    NOTREACHED();
+    return HandleSignalsState();
   }
 
   if (port_status.has_messages) {
