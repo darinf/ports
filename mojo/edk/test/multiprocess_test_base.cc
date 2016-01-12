@@ -32,7 +32,7 @@ MultiprocessTestBase::ClientController::ClientController(
     MultiprocessTestBase* test)
     : test_(test) {
   helper_.StartChild(client_name);
-  pipe_ = CreateMessagePipe(std::move(helper_.server_platform_handle));
+  pipe_ = std::move(helper_.parent_message_pipe);
 }
 
 MultiprocessTestBase::ClientController::~ClientController() {

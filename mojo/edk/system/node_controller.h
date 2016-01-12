@@ -70,26 +70,32 @@ class NodeController : public ports::NodeDelegate,
   int SendMessage(const ports::PortRef& port_ref,
                   scoped_ptr<PortsMessage> message);
 
-  // Eventually initializes the local port referenced by |port_ref| such that
-  // it points to the identified peer port. Initialization is deferred until
-  // this node has been acquainted with the peer node.
-  void InitializePortDeferred(const ports::PortRef& port_ref,
-                              const ports::NodeName& peer_node_name,
-                              const ports::PortName& peer_port_name);
+  // Reserves a port associated with |token|. A peer may associate one of their
+  // own ports with this one by sending us a LocatePort message with the same
+  // token value.
+  void ReservePort(const std::string& token, ports::PortRef* port_ref);
+
+  // Eventually initializes a local port with a parent port identified by
+  // |token|. The parent should also have |token| and should have reserved
+  // a port for it.
+  void LocateParentPort(const std::string& token, ports::PortRef* port_ref);
 
  private:
   using NodeMap = std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>>;
   using OutgoingMessageQueue = std::queue<ports::ScopedMessage>;
 
-  struct DeferredPeerPort {
+  struct PendingPortRequest {
+    std::string token;
     ports::PortRef local_port;
-    ports::PortName remote_port;
   };
-
-  using DeferredPeerPorts = std::vector<DeferredPeerPort>;
 
   void ConnectToChildOnIOThread(ScopedPlatformHandle platform_handle);
   void ConnectToParentOnIOThread(ScopedPlatformHandle platform_handle);
+  void ReservePortOnIOThread(const std::string& token,
+                             const ports::PortRef& local_port);
+  void LocateParentPortOnIOThread(const std::string& token,
+                                  const ports::PortRef& local_port);
+
   void AddPeer(const ports::NodeName& name,
                scoped_ptr<NodeChannel> channel,
                bool start_channel);
@@ -119,6 +125,9 @@ class NodeController : public ports::NodeDelegate,
                       const void* payload,
                       size_t payload_size,
                       ScopedPlatformHandleVectorPtr platform_handles) override;
+  void OnLocatePort(const ports::NodeName& from_node,
+                    const std::string& token,
+                    const ports::PortName& connector_port_name) override;
   void OnConnectToPort(const ports::NodeName& from_node,
                        const ports::PortName& connector_port_name,
                        const ports::PortName& connectee_port_name) override;
@@ -136,7 +145,7 @@ class NodeController : public ports::NodeDelegate,
 
   scoped_refptr<base::TaskRunner> io_task_runner_;
 
-  // Guards |peers_|, |pending_peer_messages_|, and |pending_peer_ports_|.
+  // Guards |peers_| and |pending_peer_messages_|.
   base::Lock peers_lock_;
 
   // Channels to known peers, including parent and children, if any.
@@ -145,10 +154,6 @@ class NodeController : public ports::NodeDelegate,
   // Outgoing message queues for peers we've heard of but can't yet talk to.
   std::unordered_map<ports::NodeName, OutgoingMessageQueue>
       pending_peer_messages_;
-
-  // Port initializations which have been deferred until a new peer node is
-  // discovered.
-  std::unordered_map<ports::NodeName, DeferredPeerPorts> pending_peer_ports_;
 
   // All other fields below must only be accessed on the I/O thread, i.e., the
   // thread on which core_->io_task_runner() runs tasks.
@@ -161,6 +166,12 @@ class NodeController : public ports::NodeDelegate,
 
   // Channels to children during handshake.
   NodeMap pending_children_;
+
+  // Ports reserved by token.
+  base::hash_map<std::string, ports::PortRef> reserved_ports_;
+
+  // Port location requests which have been deferred until we have a parent.
+  std::vector<PendingPortRequest> pending_port_requests_;
 
   // Guards |incoming_messages_|.
   base::Lock messages_lock_;

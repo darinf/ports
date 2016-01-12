@@ -39,123 +39,6 @@ namespace {
 // This is an unnecessarily large limit that is relatively easy to enforce.
 const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 
-// A simple channel delegate which exchanges peer port information with the
-// remote endpoint and initializes a local port with the received info. This is
-// used for negotiating cross-process ports over an arbitrary platform channel,
-// assuming both ends of the channel are using this same delegate.
-//
-// This is not thread-safe; it lives, works, and dies entirely on the I/O task
-// runner's thread.
-class BootstrapChannelDelegate : public Channel::Delegate,
-                                 public base::MessageLoop::DestructionObserver {
- public:
-  static void Create(NodeController* node_controller,
-                     const ports::PortRef& port,
-                     ScopedPlatformHandle platform_handle,
-                     scoped_refptr<base::TaskRunner> io_task_runner) {
-    io_task_runner->PostTask(FROM_HERE,
-                             base::Bind(&CreateOnIOThread,
-                                        base::Unretained(node_controller),
-                                        port, base::Passed(&platform_handle)));
-  }
-
- private:
-  struct PeerInfo {
-    ports::NodeName node_name;
-    ports::PortName port_name;
-  };
-
-  BootstrapChannelDelegate(NodeController* node_controller,
-                           const ports::PortRef& port,
-                           ScopedPlatformHandle platform_handle)
-      : channel_(
-            Channel::Create(this, std::move(platform_handle),
-                            base::ThreadTaskRunnerHandle::Get())),
-        node_controller_(node_controller),
-        port_(port) {
-    base::MessageLoop::current()->AddDestructionObserver(this);
-    channel_->Start();
-
-    PeerInfo info;
-    info.node_name = node_controller_->name();
-    info.port_name = port_.name();
-
-    Channel::MessagePtr message(new Channel::Message(sizeof(info), nullptr));
-    memcpy(message->mutable_payload(), &info, sizeof(info));
-    channel_->Write(std::move(message));
-  }
-
-  ~BootstrapChannelDelegate() override {
-    base::MessageLoop::current()->RemoveDestructionObserver(this);
-  }
-
-  static void Delete(BootstrapChannelDelegate* delegate) { delete delegate; }
-
-  void DeleteSelfSoon() {
-    if (deleting)
-      return;
-    deleting = true;
-    channel_->ShutDown();
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&Delete, base::Unretained(this)));
-  }
-
-  static void CreateOnIOThread(NodeController* node_controller,
-                               const ports::PortRef& port,
-                               ScopedPlatformHandle platform_handle) {
-    // This deletes itself either when bootstrap is complete or the IO thread
-    // dies, whichever happens first.
-    new BootstrapChannelDelegate(node_controller, port,
-                                 std::move(platform_handle));
-  }
-
-  // Channel::Delegate:
-  void OnChannelMessage(const void* payload,
-                        size_t payload_size,
-                        ScopedPlatformHandleVectorPtr handles) override {
-    DCHECK(!handles || handles->size() == 0);
-
-    // The first message we receive should be peer info. We then expect to
-    // receive a second message to acknowledge receipt of our information. It's
-    // not important for the ack to complete on both ends, but this at least
-    // guarantees that both sides stay alive long enough to send their info out.
-    if (!waiting_for_ack_) {
-      waiting_for_ack_ = true;
-
-      DCHECK_EQ(payload_size, sizeof(PeerInfo));
-
-      const PeerInfo* info = static_cast<const PeerInfo*>(payload);
-      node_controller_->InitializePortDeferred(port_, info->node_name,
-                                               info->port_name);
-
-      Channel::MessagePtr ack(new Channel::Message(0, nullptr));
-      channel_->Write(std::move(ack));
-    } else {
-      DeleteSelfSoon();
-    }
-  }
-
-  // base::MessageLoop::DestructionObserver:
-  void WillDestroyCurrentMessageLoop() override {
-    if (!deleting) {
-      channel_->ShutDown();
-      deleting = true;
-    }
-    delete this;
-  }
-
-  void OnChannelError() override { DeleteSelfSoon(); }
-
-  scoped_refptr<Channel> channel_;
-
-  NodeController* node_controller_;
-  ports::PortRef port_;
-  bool waiting_for_ack_ = false;
-  bool deleting = false;
-
-  DISALLOW_COPY_AND_ASSIGN(BootstrapChannelDelegate);
-};
-
 }  // namespace
 
 Core::Core() : node_controller_(this) {}
@@ -163,7 +46,6 @@ Core::Core() : node_controller_(this) {}
 Core::~Core() {}
 
 void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
-  io_task_runner_ = io_task_runner;
   node_controller_.SetIOTaskRunner(io_task_runner);
 }
 
@@ -243,18 +125,23 @@ MojoResult Core::PassWrappedPlatformHandle(
   return MOJO_RESULT_OK;
 }
 
-ScopedMessagePipeHandle Core::CreateMessagePipe(
-    ScopedPlatformHandle platform_handle) {
+ScopedMessagePipeHandle Core::CreateParentMessagePipe(
+    const std::string& token) {
   ports::PortRef port;
-  node_controller_.node()->CreateUninitializedPort(&port);
+  node_controller_.ReservePort(token, &port);
   MojoHandle handle = AddDispatcher(
       new MessagePipeDispatcher(&node_controller_, port,
                                 false /* connected */));
+  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
+}
 
-  DCHECK(io_task_runner_);
-  BootstrapChannelDelegate::Create(&node_controller_, port,
-                                   std::move(platform_handle), io_task_runner_);
-
+ScopedMessagePipeHandle Core::CreateChildMessagePipe(
+    const std::string& token) {
+  ports::PortRef port;
+  node_controller_.LocateParentPort(token, &port);
+  MojoHandle handle = AddDispatcher(
+      new MessagePipeDispatcher(&node_controller_, port,
+                                false /* connected */));
   return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
 

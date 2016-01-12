@@ -51,11 +51,14 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // Called in a child process exactly once during early initialization.
   void InitChild(ScopedPlatformHandle platform_handle);
 
-  // Creates a message pipe connected to whomever is on the other end of
-  // |platform_handle|, assuming they also eventually call this method on their
-  // end.
-  ScopedMessagePipeHandle CreateMessagePipe(
-      ScopedPlatformHandle platform_handle);
+  // Creates a message pipe endpoint associated with |token|, which a child
+  // holding the token can later locate and connect to.
+  ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token);
+
+  // Creates a message pipe endpoint associated with |token|, which will be
+  // passed to the parent in order to find an associated remote port and connect
+  // to it.
+  ScopedMessagePipeHandle CreateChildMessagePipe(const std::string& token);
 
   MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 
@@ -197,7 +200,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                               HandleSignalsState* signals_states);
 
   NodeController node_controller_;
-  scoped_refptr<base::TaskRunner> io_task_runner_;
 
   base::Lock handles_lock_;
   HandleTable handles_;

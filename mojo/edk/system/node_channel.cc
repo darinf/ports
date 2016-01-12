@@ -20,6 +20,7 @@ enum class MessageType : uint32_t {
   ACCEPT_CHILD,
   ACCEPT_PARENT,
   PORTS_MESSAGE,
+  LOCATE_PORT,
   CONNECT_TO_PORT,
   REQUEST_INTRODUCTION,
   INTRODUCE,
@@ -41,6 +42,12 @@ struct AcceptChildData {
 struct AcceptParentData {
   ports::NodeName token;
   ports::NodeName child_name;
+};
+
+// This is followed by arbitrary payload data which is interpreted as a token
+// string for port location.
+struct LocatePortData {
+  ports::PortName connector_port_name;
 };
 
 struct ConnectToPortData {
@@ -135,6 +142,17 @@ void NodeChannel::PortsMessage(Channel::MessagePtr message) {
   channel_->Write(std::move(message));
 }
 
+void NodeChannel::LocatePort(const std::string& token,
+                             const ports::PortName& connector_port_name) {
+  LocatePortData* data;
+  Channel::MessagePtr message = CreateMessage(
+      MessageType::LOCATE_PORT, sizeof(LocatePortData) + token.size(), nullptr,
+      &data);
+  data->connector_port_name = connector_port_name;
+  memcpy(data + 1, token.data(), token.size());
+  channel_->Write(std::move(message));
+}
+
 void NodeChannel::ConnectToPort(const ports::PortName& connector_port_name,
                                 const ports::PortName& connectee_port_name) {
   ConnectToPortData* data;
@@ -198,6 +216,16 @@ void NodeChannel::OnChannelMessage(const void* payload,
       delegate_->OnPortsMessage(remote_node_name_, data,
                                 payload_size - sizeof(Header),
                                 std::move(handles));
+      break;
+    }
+
+    case MessageType::LOCATE_PORT: {
+      const LocatePortData* data;
+      GetMessagePayload(payload, &data);
+      std::string token(reinterpret_cast<const char*>(data + 1),
+                        payload_size - sizeof(LocatePortData) - sizeof(Header));
+      delegate_->OnLocatePort(remote_node_name_, token,
+                              data->connector_port_name);
       break;
     }
 

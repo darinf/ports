@@ -19,6 +19,8 @@ DIRS_TO_COPY_ = [
   "mojo/edk/system",
   "mojo/edk/system/ports",
   "mojo/edk/test",
+  "mojo/runner/child",
+  "mojo/runner/host",
 ]
 
 

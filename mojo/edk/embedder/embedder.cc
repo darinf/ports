@@ -4,8 +4,12 @@
 
 #include "mojo/edk/embedder/embedder.h"
 
+#include <stdint.h>
+
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/string_number_conversions.h"
+#include "crypto/random.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
 #include "mojo/edk/embedder/simple_platform_support.h"
@@ -62,6 +66,7 @@ void Init() {
 MojoResult AsyncWait(MojoHandle handle,
                      MojoHandleSignals signals,
                      const base::Callback<void(MojoResult)>& callback) {
+  CHECK(internal::g_core);
   return internal::g_core->AsyncWait(handle, signals, callback);
 }
 
@@ -99,8 +104,24 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
+  NOTREACHED() << "Use Create{Parent, Child}MessagePipe with Ports EDK.";
+  return ScopedMessagePipeHandle();
+}
+
+ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token) {
   DCHECK(internal::g_core);
-  return internal::g_core->CreateMessagePipe(std::move(platform_handle));
+  return internal::g_core->CreateParentMessagePipe(token);
+}
+
+ScopedMessagePipeHandle CreateChildMessagePipe(const std::string& token) {
+  DCHECK(internal::g_core);
+  return internal::g_core->CreateChildMessagePipe(token);
+}
+
+std::string GenerateRandomToken() {
+  char random_bytes[16];
+  crypto::RandBytes(random_bytes, 16);
+  return base::HexEncode(random_bytes, 16);
 }
 
 }  // namespace edk
