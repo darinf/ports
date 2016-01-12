@@ -194,7 +194,6 @@ void NodeChannel::OnChannelMessage(const void* payload,
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   const Header* header = static_cast<const Header*>(payload);
-  DLOG(INFO) << "NodeChannel::OnChannelMessage: type=" << static_cast<uint32_t>(header->type);
   switch (header->type) {
     case MessageType::ACCEPT_CHILD: {
       const AcceptChildData* data;
