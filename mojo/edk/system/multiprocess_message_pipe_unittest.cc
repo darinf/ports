@@ -289,6 +289,12 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_Basic) {
     read_buffer.resize(read_buffer_size);
     VLOG(2) << "Parent got: " << read_buffer;
     ASSERT_EQ(hello + hello, read_buffer);
+
+    std::string quitquitquit("quitquitquit");
+    CHECK_EQ(MojoWriteMessage(h, quitquitquit.data(),
+                              static_cast<uint32_t>(quitquitquit.size()),
+                              nullptr, 0u, MOJO_WRITE_MESSAGE_FLAG_NONE),
+             MOJO_RESULT_OK);
   END_CHILD_AND_EXPECT_EXIT_CODE(1 % 100);
 }
 
