@@ -1014,6 +1014,28 @@ TEST_F(MultiprocessMessagePipeTest, MoreChildToChildPipes) {
           b.Send("say:c_pipe:it's a beautiful day");
           c.Send("hear:b_pipe:it's a beautiful day");
 
+          // Create x and y and have b and c exchange them.
+          CREATE_PIPE(x, y);
+          b.SendHandle("x", x);
+          c.SendHandle("y", y);
+          b.Send("pass:x:c_pipe");
+          c.Send("pass:y:b_pipe");
+          b.Send("catch:y:c_pipe");
+          c.Send("catch:x:b_pipe");
+
+          // Make sure the pipe still works in both directions.
+          b.Send("say:y:hello");
+          c.Send("hear:x:hello");
+          c.Send("say:x:goodbye");
+          b.Send("hear:y:goodbye");
+
+          // Take both pipes back.
+          y = c.RetrieveHandle("x");
+          x = b.RetrieveHandle("y");
+
+          VerifyTransmission(x, y, "still works");
+          VerifyTransmission(y, x, "in both directions");
+
           a.Exit();
           b.Exit();
           c.Exit();
