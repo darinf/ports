@@ -551,7 +551,7 @@ TEST_F(DataPipeTest, BasicConsumerWaiting) {
   ASSERT_EQ(MOJO_RESULT_OK,
             MojoWait(consumer_, MOJO_HANDLE_SIGNAL_READABLE,
                      MOJO_DEADLINE_INDEFINITE, &hss));
-  ASSERT_EQ(MOJO_HANDLE_SIGNAL_READABLE, hss.satisfied_signals);
+  ASSERT_TRUE((MOJO_HANDLE_SIGNAL_READABLE & hss.satisfied_signals) != 0);
   ASSERT_EQ(MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED,
             hss.satisfiable_signals);
 
