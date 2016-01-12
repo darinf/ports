@@ -138,10 +138,18 @@ ScopedMessagePipeHandle Core::CreateParentMessagePipe(
 ScopedMessagePipeHandle Core::CreateChildMessagePipe(
     const std::string& token) {
   ports::PortRef port;
-  node_controller_.LocateParentPort(token, &port);
+  node_controller_.node()->CreateUninitializedPort(&port);
+
   MojoHandle handle = AddDispatcher(
       new MessagePipeDispatcher(&node_controller_, port,
                                 false /* connected */));
+
+  // Note: It's important that we create the MPD before calling
+  // ConnectToParentPort(), as the corresponding request and the parent's
+  // response could otherwise race with MPD creation, and the pipe could miss
+  // incoming messages.
+  node_controller_.ConnectToParentPort(port, token);
+
   return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
 

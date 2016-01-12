@@ -20,7 +20,7 @@ enum class MessageType : uint32_t {
   ACCEPT_CHILD,
   ACCEPT_PARENT,
   PORTS_MESSAGE,
-  LOCATE_PORT,
+  REQUEST_PORT_CONNECTION,
   CONNECT_TO_PORT,
   REQUEST_INTRODUCTION,
   INTRODUCE,
@@ -46,7 +46,7 @@ struct AcceptParentData {
 
 // This is followed by arbitrary payload data which is interpreted as a token
 // string for port location.
-struct LocatePortData {
+struct RequestPortConnectionData {
   ports::PortName connector_port_name;
 };
 
@@ -142,12 +142,13 @@ void NodeChannel::PortsMessage(Channel::MessagePtr message) {
   channel_->Write(std::move(message));
 }
 
-void NodeChannel::LocatePort(const std::string& token,
-                             const ports::PortName& connector_port_name) {
-  LocatePortData* data;
+void NodeChannel::RequestPortConnection(
+    const ports::PortName& connector_port_name,
+    const std::string& token) {
+  RequestPortConnectionData* data;
   Channel::MessagePtr message = CreateMessage(
-      MessageType::LOCATE_PORT, sizeof(LocatePortData) + token.size(), nullptr,
-      &data);
+      MessageType::REQUEST_PORT_CONNECTION,
+      sizeof(RequestPortConnectionData) + token.size(), nullptr, &data);
   data->connector_port_name = connector_port_name;
   memcpy(data + 1, token.data(), token.size());
   channel_->Write(std::move(message));
@@ -219,13 +220,16 @@ void NodeChannel::OnChannelMessage(const void* payload,
       break;
     }
 
-    case MessageType::LOCATE_PORT: {
-      const LocatePortData* data;
+    case MessageType::REQUEST_PORT_CONNECTION: {
+      const RequestPortConnectionData* data;
       GetMessagePayload(payload, &data);
-      std::string token(reinterpret_cast<const char*>(data + 1),
-                        payload_size - sizeof(LocatePortData) - sizeof(Header));
-      delegate_->OnLocatePort(remote_node_name_, token,
-                              data->connector_port_name);
+
+      const char* token_data = reinterpret_cast<const char*>(data + 1);
+      const size_t token_size = payload_size - sizeof(*data) - sizeof(Header);
+      std::string token(token_data, token_size);
+
+      delegate_->OnRequestPortConnection(remote_node_name_,
+                                         data->connector_port_name, token);
       break;
     }
 

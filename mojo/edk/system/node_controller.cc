@@ -95,13 +95,12 @@ void NodeController::ReservePort(const std::string& token,
   reserved_ports_.insert(std::make_pair(token, *port_ref));
 }
 
-void NodeController::LocateParentPort(const std::string& token,
-                                      ports::PortRef* port_ref) {
-  node_->CreateUninitializedPort(port_ref);
+void NodeController::ConnectToParentPort(const ports::PortRef& local_port,
+                                         const std::string& token) {
   io_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&NodeController::LocateParentPortOnIOThread,
-                 base::Unretained(this), token, *port_ref));
+      base::Bind(&NodeController::RequestParentPortConnectionOnIOThread,
+                 base::Unretained(this), local_port, token));
 }
 
 void NodeController::ConnectToChildOnIOThread(
@@ -133,9 +132,9 @@ void NodeController::ConnectToParentOnIOThread(
   bootstrap_channel_to_parent_->Start();
 }
 
-void NodeController::LocateParentPortOnIOThread(
-    const std::string& token,
-    const ports::PortRef& local_port) {
+void NodeController::RequestParentPortConnectionOnIOThread(
+    const ports::PortRef& local_port,
+    const std::string& token) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (parent_name_ == ports::kInvalidNodeName) {
@@ -151,7 +150,7 @@ void NodeController::LocateParentPortOnIOThread(
       return;
     }
 
-    it->second->LocatePort(token, local_port.name());
+    it->second->RequestPortConnection(local_port.name(), token);
   }
 }
 
@@ -321,8 +320,8 @@ void NodeController::OnAcceptChild(const ports::NodeName& from_node,
   bootstrap_channel_to_parent_->AcceptParent(token, name_);
 
   for (const auto& request : pending_port_requests_) {
-    bootstrap_channel_to_parent_->LocatePort(request.token,
-                                             request.local_port.name());
+    bootstrap_channel_to_parent_->RequestPortConnection(
+        request.local_port.name(), request.token);
   }
   pending_port_requests_.clear();
 
@@ -379,21 +378,22 @@ void NodeController::OnPortsMessage(
   node_->AcceptMessage(std::move(message));
 }
 
-void NodeController::OnLocatePort(
+void NodeController::OnRequestPortConnection(
     const ports::NodeName& from_node,
-    const std::string& token,
-    const ports::PortName& connector_port_name) {
+    const ports::PortName& connector_port_name,
+    const std::string& token) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
-  DVLOG(2) << "Node " << name_ << " received LocatePort for token " << token
-           << " and port " << connector_port_name << "@" << from_node;
+  DVLOG(2) << "Node " << name_ << " received RequestPortConnection for token "
+           << token << " and port " << connector_port_name << "@" << from_node;
 
   ports::PortRef local_port;
   {
     base::AutoLock lock(reserved_ports_lock_);
     auto it = reserved_ports_.find(token);
     if (it == reserved_ports_.end()) {
-      DVLOG(1) << "Ignoring request to locate port for unknown token " << token;
+      DVLOG(1) << "Ignoring request to connect to port for unknown token "
+               << token;
       return;
     }
     local_port = it->second;
@@ -404,13 +404,13 @@ void NodeController::OnLocatePort(
     base::AutoLock lock(peers_lock_);
     auto it = peers_.find(from_node);
     if (it == peers_.end()) {
-      DVLOG(1) << "Ignoring request to locate port from unknown node "
+      DVLOG(1) << "Ignoring request to connect to port from unknown node "
                << from_node;
       return;
     }
-    // Note: We send our ConnectToPort message first to ensure that it arrives
-    // (and thus the remote port is fully initialized) before any messages are
-    // sent from our local port.
+    // Note: We send our ConnectToPort message before initializing our own end
+    // of the port pair to ensure that it arrives  (and thus the remote port is
+    // fully initialized) before any messages are sent from our local port.
     it->second->ConnectToPort(local_port.name(), connector_port_name);
   }
 

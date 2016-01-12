@@ -79,10 +79,11 @@ class NodeController : public ports::NodeDelegate,
   // potential peer.
   void ReservePort(const std::string& token, ports::PortRef* port_ref);
 
-  // Eventually initializes a local port with a parent port identified by
-  // |token|. The parent should also have |token| and should have reserved
-  // a port for it.
-  void LocateParentPort(const std::string& token, ports::PortRef* port_ref);
+  // Eventually initializes a local port with a parent port peer identified by
+  // |token|. The parent should also have |token| and should alrady have
+  // reserved a port for it.
+  void ConnectToParentPort(const ports::PortRef& local_port,
+                           const std::string& token);
 
  private:
   using NodeMap = std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>>;
@@ -95,8 +96,8 @@ class NodeController : public ports::NodeDelegate,
 
   void ConnectToChildOnIOThread(ScopedPlatformHandle platform_handle);
   void ConnectToParentOnIOThread(ScopedPlatformHandle platform_handle);
-  void LocateParentPortOnIOThread(const std::string& token,
-                                  const ports::PortRef& local_port);
+  void RequestParentPortConnectionOnIOThread(const ports::PortRef& local_port,
+                                             const std::string& token);
 
   void AddPeer(const ports::NodeName& name,
                scoped_ptr<NodeChannel> channel,
@@ -127,9 +128,9 @@ class NodeController : public ports::NodeDelegate,
                       const void* payload,
                       size_t payload_size,
                       ScopedPlatformHandleVectorPtr platform_handles) override;
-  void OnLocatePort(const ports::NodeName& from_node,
-                    const std::string& token,
-                    const ports::PortName& connector_port_name) override;
+  void OnRequestPortConnection(const ports::NodeName& from_node,
+                               const ports::PortName& connector_port_name,
+                               const std::string& token) override;
   void OnConnectToPort(const ports::NodeName& from_node,
                        const ports::PortName& connector_port_name,
                        const ports::PortName& connectee_port_name) override;
