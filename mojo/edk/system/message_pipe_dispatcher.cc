@@ -69,6 +69,9 @@ MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
     : node_controller_(node_controller),
       port_(port),
       port_connected_(connected) {
+  DVLOG(2) << "Creating new MessagePipeDispatcher for port " << port.name()
+           << " [connected=" << connected << "]";
+
   // OnPortStatusChanged (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
   base::AutoLock lock(signal_lock_);

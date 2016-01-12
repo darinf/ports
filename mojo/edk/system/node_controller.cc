@@ -87,10 +87,12 @@ int NodeController::SendMessage(const ports::PortRef& port,
 void NodeController::ReservePort(const std::string& token,
                                  ports::PortRef* port_ref) {
   node_->CreateUninitializedPort(port_ref);
-  io_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&NodeController::ReservePortOnIOThread, base::Unretained(this),
-                 token, *port_ref));
+
+  DVLOG(2) << "Reserving port " << port_ref->name() << "@" << name_
+           << " for token " << token;
+
+  base::AutoLock lock(reserved_ports_lock_);
+  reserved_ports_.insert(std::make_pair(token, *port_ref));
 }
 
 void NodeController::LocateParentPort(const std::string& token,
@@ -129,14 +131,6 @@ void NodeController::ConnectToParentOnIOThread(
       new NodeChannel(this, std::move(platform_handle), io_task_runner_));
   bootstrap_channel_to_parent_ = std::move(channel);
   bootstrap_channel_to_parent_->Start();
-}
-
-void NodeController::ReservePortOnIOThread(
-    const std::string& token,
-    const ports::PortRef& local_port) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-
-  reserved_ports_.insert(std::make_pair(token, local_port));
 }
 
 void NodeController::LocateParentPortOnIOThread(
@@ -180,7 +174,7 @@ void NodeController::AddPeer(const ports::NodeName& name,
     return;
   }
 
-  DVLOG(1) << "Accepting new peer " << name << " on node " << name_;
+  DVLOG(2) << "Accepting new peer " << name << " on node " << name_;
 
   if (start_channel)
     channel->Start();
@@ -304,8 +298,12 @@ void NodeController::PortStatusChanged(const ports::PortRef& port) {
   node_->GetUserData(port, &user_data);
 
   PortObserver* observer = static_cast<PortObserver*>(user_data.get());
-  if (observer)
+  if (observer) {
     observer->OnPortStatusChanged();
+  } else {
+    DVLOG(2) << "Ignoring status change for " << port.name() << " because it "
+             << "doesn't have an observer.";
+  }
 }
 
 void NodeController::OnAcceptChild(const ports::NodeName& from_node,
@@ -331,7 +329,7 @@ void NodeController::OnAcceptChild(const ports::NodeName& from_node,
   AddPeer(parent_name_, std::move(bootstrap_channel_to_parent_),
           false /* start_channel */);
 
-  DVLOG(1) << "Child " << name_ << " accepted parent " << parent_name;
+  DVLOG(2) << "Child " << name_ << " accepted parent " << parent_name;
 }
 
 void NodeController::OnAcceptParent(const ports::NodeName& from_node,
@@ -387,28 +385,33 @@ void NodeController::OnLocatePort(
     const ports::PortName& connector_port_name) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
-  auto it = reserved_ports_.find(token);
-  if (it == reserved_ports_.end()) {
-    DVLOG(1) << "Ignoring request to locate port for unknown token " << token;
-    return;
-  }
+  DVLOG(2) << "Node " << name_ << " received LocatePort for token " << token
+           << " and port " << connector_port_name << "@" << from_node;
 
-  ports::PortRef local_port = it->second;
-  reserved_ports_.erase(it);
+  ports::PortRef local_port;
+  {
+    base::AutoLock lock(reserved_ports_lock_);
+    auto it = reserved_ports_.find(token);
+    if (it == reserved_ports_.end()) {
+      DVLOG(1) << "Ignoring request to locate port for unknown token " << token;
+      return;
+    }
+    local_port = it->second;
+    reserved_ports_.erase(it);
+  }
 
   {
     base::AutoLock lock(peers_lock_);
-    auto peer_it = peers_.find(from_node);
-    if (peer_it == peers_.end()) {
+    auto it = peers_.find(from_node);
+    if (it == peers_.end()) {
       DVLOG(1) << "Ignoring request to locate port from unknown node "
                << from_node;
       return;
     }
-
     // Note: We send our ConnectToPort message first to ensure that it arrives
     // (and thus the remote port is fully initialized) before any messages are
     // sent from our local port.
-    peer_it->second->ConnectToPort(local_port.name(), connector_port_name);
+    it->second->ConnectToPort(local_port.name(), connector_port_name);
   }
 
   // This reserved port should not have been initialized yet.
@@ -425,6 +428,10 @@ void NodeController::OnConnectToPort(
     const ports::PortName& connector_port_name,
     const ports::PortName& connectee_port_name) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+
+  DVLOG(2) << "Node " << name_ << " received ConnectToPort for local port "
+           << connectee_port_name << " to port " << connector_port_name << "@"
+           << from_node;
 
   ports::PortRef connectee_port;
   int rv = node_->GetPort(connectee_port_name, &connectee_port);

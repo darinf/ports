@@ -73,6 +73,10 @@ class NodeController : public ports::NodeDelegate,
   // Reserves a port associated with |token|. A peer may associate one of their
   // own ports with this one by sending us a LocatePort message with the same
   // token value.
+  //
+  // Note that the reservation is made synchronously. In order to avoid races,
+  // reservations should be acquired before |token| is communicated to any
+  // potential peer.
   void ReservePort(const std::string& token, ports::PortRef* port_ref);
 
   // Eventually initializes a local port with a parent port identified by
@@ -91,8 +95,6 @@ class NodeController : public ports::NodeDelegate,
 
   void ConnectToChildOnIOThread(ScopedPlatformHandle platform_handle);
   void ConnectToParentOnIOThread(ScopedPlatformHandle platform_handle);
-  void ReservePortOnIOThread(const std::string& token,
-                             const ports::PortRef& local_port);
   void LocateParentPortOnIOThread(const std::string& token,
                                   const ports::PortRef& local_port);
 
@@ -155,6 +157,12 @@ class NodeController : public ports::NodeDelegate,
   std::unordered_map<ports::NodeName, OutgoingMessageQueue>
       pending_peer_messages_;
 
+  // Guards |reserved_ports_|.
+  base::Lock reserved_ports_lock_;
+
+  // Ports reserved by token.
+  base::hash_map<std::string, ports::PortRef> reserved_ports_;
+
   // All other fields below must only be accessed on the I/O thread, i.e., the
   // thread on which core_->io_task_runner() runs tasks.
 
@@ -166,9 +174,6 @@ class NodeController : public ports::NodeDelegate,
 
   // Channels to children during handshake.
   NodeMap pending_children_;
-
-  // Ports reserved by token.
-  base::hash_map<std::string, ports::PortRef> reserved_ports_;
 
   // Port location requests which have been deferred until we have a parent.
   std::vector<PendingPortRequest> pending_port_requests_;
