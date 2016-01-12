@@ -18,7 +18,8 @@ namespace mojo {
 namespace edk {
 
 // Wraps a Channel to send and receive Node control messages.
-class NodeChannel : public Channel::Delegate {
+class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
+                    public Channel::Delegate {
  public:
   class Delegate {
    public:
@@ -51,18 +52,21 @@ class NodeChannel : public Channel::Delegate {
     virtual void OnChannelError(const ports::NodeName& node) = 0;
   };
 
+  static scoped_refptr<NodeChannel> Create(
+      Delegate* delegate,
+      ScopedPlatformHandle platform_handle,
+      scoped_refptr<base::TaskRunner> io_task_runner);
+
   static Channel::MessagePtr CreatePortsMessage(
       size_t payload_size,
       void** payload,
       ScopedPlatformHandleVectorPtr platform_handles);
 
-  NodeChannel(Delegate* delegate,
-              ScopedPlatformHandle platform_handle,
-              scoped_refptr<base::TaskRunner> io_task_runner);
-  ~NodeChannel() override;
-
   // Start receiving messages.
   void Start();
+
+  // Permanently stop the channel from sending or receiving messages.
+  void ShutDown();
 
   // Used for context in Delegate calls (via |from_node| arguments.)
   void SetRemoteNodeName(const ports::NodeName& name);
@@ -80,6 +84,13 @@ class NodeChannel : public Channel::Delegate {
   void Introduce(const ports::NodeName& name, ScopedPlatformHandle handle);
 
  private:
+  friend class base::RefCountedThreadSafe<NodeChannel>;
+
+  NodeChannel(Delegate* delegate,
+              ScopedPlatformHandle platform_handle,
+              scoped_refptr<base::TaskRunner> io_task_runner);
+  ~NodeChannel() override;
+
   // Channel::Delegate:
   void OnChannelMessage(const void* payload,
                         size_t payload_size,
@@ -88,7 +99,9 @@ class NodeChannel : public Channel::Delegate {
 
   Delegate* const delegate_;
   const scoped_refptr<base::TaskRunner> io_task_runner_;
-  const scoped_refptr<Channel> channel_;
+
+  base::Lock channel_lock_;
+  scoped_refptr<Channel> channel_;
 
   // Must only be accessed from |io_task_runner_|'s thread.
   ports::NodeName remote_node_name_;

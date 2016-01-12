@@ -9,6 +9,8 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
+#include "base/message_loop/message_loop.h"
 #include "crypto/random.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
 #include "mojo/edk/system/core.h"
@@ -28,6 +30,44 @@ ports::NodeName GetRandomNodeName() {
   return name;
 }
 
+// Used by NodeController to watch for shutdown. Since no IO can happen once
+// the IO thread is killed, the NodeController can cleanly drop all its peers
+// at that time.
+class ThreadDestructionObserver :
+    public base::MessageLoop::DestructionObserver {
+ public:
+  static void Create(scoped_refptr<base::TaskRunner> task_runner,
+                     const base::Closure& callback) {
+    if (task_runner->RunsTasksOnCurrentThread()) {
+      // Owns itself.
+      new ThreadDestructionObserver(callback);
+    } else {
+      task_runner->PostTask(FROM_HERE,
+                            base::Bind(&Create, task_runner, callback));
+    }
+  }
+
+ private:
+  explicit ThreadDestructionObserver(const base::Closure& callback)
+      : callback_(callback) {
+    base::MessageLoop::current()->AddDestructionObserver(this);
+  }
+
+  ~ThreadDestructionObserver() override {
+    base::MessageLoop::current()->RemoveDestructionObserver(this);
+  }
+
+  // base::MessageLoop::DestructionObserver:
+  void WillDestroyCurrentMessageLoop() override {
+    callback_.Run();
+    delete this;
+  }
+
+  const base::Closure callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(ThreadDestructionObserver);
+};
+
 }  // namespace
 
 NodeController::~NodeController() {}
@@ -42,6 +82,9 @@ NodeController::NodeController(Core* core)
 void NodeController::SetIOTaskRunner(
     scoped_refptr<base::TaskRunner> task_runner) {
   io_task_runner_ = task_runner;
+  ThreadDestructionObserver::Create(
+      io_task_runner_,
+      base::Bind(&NodeController::DropAllPeers, base::Unretained(this)));
 }
 
 void NodeController::ConnectToChild(ScopedPlatformHandle platform_handle) {
@@ -107,8 +150,8 @@ void NodeController::ConnectToChildOnIOThread(
     ScopedPlatformHandle platform_handle) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
-  scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(platform_handle), io_task_runner_));
+  scoped_refptr<NodeChannel> channel =
+      NodeChannel::Create(this, std::move(platform_handle), io_task_runner_);
 
   ports::NodeName token;
   GenerateRandomName(&token);
@@ -117,19 +160,21 @@ void NodeController::ConnectToChildOnIOThread(
   channel->Start();
   channel->AcceptChild(name_, token);
 
-  pending_children_.insert(std::make_pair(token, std::move(channel)));
+  pending_children_.insert(std::make_pair(token, channel));
 }
 
 void NodeController::ConnectToParentOnIOThread(
     ScopedPlatformHandle platform_handle) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(parent_name_ == ports::kInvalidNodeName);
-  DCHECK(!bootstrap_channel_to_parent_);
+  DCHECK(!parent_channel_);
 
-  scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(platform_handle), io_task_runner_));
-  bootstrap_channel_to_parent_ = std::move(channel);
-  bootstrap_channel_to_parent_->Start();
+  // At this point we don't know the parent's name, so we can't yet insert it
+  // into our |peers_| map. That will happen as soon as we receive an
+  // AcceptChild message from them.
+  parent_channel_ = NodeChannel::Create(this, std::move(platform_handle),
+                                        io_task_runner_);
+  parent_channel_->Start();
 }
 
 void NodeController::RequestParentPortConnectionOnIOThread(
@@ -142,20 +187,28 @@ void NodeController::RequestParentPortConnectionOnIOThread(
     request.token = token;
     request.local_port = local_port;
     pending_port_requests_.push_back(request);
-  } else {
-    base::AutoLock lock(peers_lock_);
-    auto it = peers_.find(parent_name_);
-    if (it == peers_.end()) {
-      DVLOG(1) << "Lost parent node connection.";
-      return;
-    }
-
-    it->second->RequestPortConnection(local_port.name(), token);
+    return;
   }
+
+  if (!parent_channel_) {
+    DVLOG(1) << "Lost parent node connection.";
+    return;
+  }
+
+  parent_channel_->RequestPortConnection(local_port.name(), token);
+}
+
+scoped_refptr<NodeChannel> NodeController::GetPeerChannel(
+    const ports::NodeName& name) {
+  base::AutoLock lock(peers_lock_);
+  auto it = peers_.find(name);
+  if (it == peers_.end())
+    return nullptr;
+  return it->second;
 }
 
 void NodeController::AddPeer(const ports::NodeName& name,
-                             scoped_ptr<NodeChannel> channel,
+                             scoped_refptr<NodeChannel> channel,
                              bool start_channel) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
@@ -172,6 +225,9 @@ void NodeController::AddPeer(const ports::NodeName& name,
     DVLOG(1) << "Ignoring duplicate peer name " << name;
     return;
   }
+
+  auto result = peers_.insert(std::make_pair(name, channel));
+  DCHECK(result.second);
 
   DVLOG(2) << "Accepting new peer " << name << " on node " << name_;
 
@@ -191,9 +247,6 @@ void NodeController::AddPeer(const ports::NodeName& name,
     }
     pending_peer_messages_.erase(it);
   }
-
-  auto result = peers_.insert(std::make_pair(name, std::move(channel)));
-  DCHECK(result.second);
 }
 
 void NodeController::DropPeer(const ports::NodeName& name) {
@@ -218,10 +271,9 @@ void NodeController::DropPeer(const ports::NodeName& name) {
 
 void NodeController::SendPeerMessage(const ports::NodeName& name,
                                      ports::ScopedMessage message) {
-  base::AutoLock lock(peers_lock_);
-  auto it = peers_.find(name);
-  if (it != peers_.end()) {
-    it->second->PortsMessage(
+  scoped_refptr<NodeChannel> peer = GetPeerChannel(name);
+  if (peer) {
+    peer->PortsMessage(
         static_cast<PortsMessage*>(message.get())->TakeChannelMessage());
     return;
   }
@@ -231,15 +283,25 @@ void NodeController::SendPeerMessage(const ports::NodeName& name,
     return;
   }
 
-  // If we don't know who the peer is, queue the message for delivery and ask
-  // our parent node to introduce us.
-  auto& queue = pending_peer_messages_[name];
-  if (queue.empty()) {
-    auto it = peers_.find(parent_name_);
-    DCHECK(it != peers_.end());
-    it->second->RequestIntroduction(name);
+  if (!parent_channel_) {
+    DVLOG(1) << "Lost connection to parent.";
+    return;
   }
-  queue.emplace(std::move(message));
+
+  // If we don't know who the peer is, queue the message for delivery. If this
+  // is the first message queued for the peer, we also ask the parent to
+  // introduce us to them.
+
+  bool needs_introduction = false;
+  {
+    base::AutoLock lock(peers_lock_);
+    auto& queue = pending_peer_messages_[name];
+    needs_introduction = queue.empty();
+    queue.emplace(std::move(message));
+  }
+
+  if (needs_introduction)
+    parent_channel_->RequestIntroduction(name);
 }
 
 void NodeController::AcceptIncomingMessages() {
@@ -253,6 +315,31 @@ void NodeController::AcceptIncomingMessages() {
     node_->AcceptMessage(std::move(messages.front()));
     messages.pop();
   }
+}
+
+void NodeController::DropAllPeers() {
+  if (parent_channel_) {
+    // We may not yet have the parent channel held in |peers_|, so we shut it
+    // down here just in case. It's safe to call ShutDown() twice on the same
+    // NodeChannel.
+    parent_channel_->ShutDown();
+    parent_channel_ = nullptr;
+  }
+
+  std::vector<scoped_refptr<NodeChannel>> all_peers;
+  {
+    base::AutoLock lock(peers_lock_);
+    for (const auto& peer : peers_)
+      all_peers.push_back(peer.second);
+    for (const auto& peer : pending_children_)
+      all_peers.push_back(peer.second);
+    peers_.clear();
+    pending_children_.clear();
+    pending_peer_messages_.clear();
+  }
+
+  for (const auto& peer : all_peers)
+    peer->ShutDown();
 }
 
 void NodeController::GenerateRandomPortName(ports::PortName* port_name) {
@@ -310,33 +397,30 @@ void NodeController::OnAcceptChild(const ports::NodeName& from_node,
                                    const ports::NodeName& token) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
-  if (!bootstrap_channel_to_parent_) {
+  if (!parent_channel_ || parent_name_ != ports::kInvalidNodeName) {
     DLOG(ERROR) << "Unexpected AcceptChild message from " << from_node;
     DropPeer(from_node);
     return;
   }
 
   parent_name_ = parent_name;
-  bootstrap_channel_to_parent_->AcceptParent(token, name_);
+  parent_channel_->AcceptParent(token, name_);
 
   for (const auto& request : pending_port_requests_) {
-    bootstrap_channel_to_parent_->RequestPortConnection(
-        request.local_port.name(), request.token);
+    parent_channel_->RequestPortConnection(request.local_port.name(),
+                                           request.token);
   }
   pending_port_requests_.clear();
 
-  AddPeer(parent_name_, std::move(bootstrap_channel_to_parent_),
-          false /* start_channel */);
+  DVLOG(1) << "Child " << name_ << " accepting parent " << parent_name;
 
-  DVLOG(2) << "Child " << name_ << " accepted parent " << parent_name;
+  AddPeer(parent_name_, parent_channel_, false /* start_channel */);
 }
 
 void NodeController::OnAcceptParent(const ports::NodeName& from_node,
                                     const ports::NodeName& token,
                                     const ports::NodeName& child_name) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-
-  scoped_ptr<NodeChannel> channel;
 
   auto it = pending_children_.find(from_node);
   if (it == pending_children_.end() || token != from_node) {
@@ -346,12 +430,14 @@ void NodeController::OnAcceptParent(const ports::NodeName& from_node,
     return;
   }
 
-  channel = std::move(it->second);
+  scoped_refptr<NodeChannel> channel = it->second;
   pending_children_.erase(it);
 
   DCHECK(channel);
 
-  AddPeer(child_name, std::move(channel), false /* start_channel */);
+  DVLOG(1) << "Parent " << name_ << " accepted child " << child_name;
+
+  AddPeer(child_name, channel, false /* start_channel */);
 }
 
 void NodeController::OnPortsMessage(
@@ -400,19 +486,17 @@ void NodeController::OnRequestPortConnection(
     reserved_ports_.erase(it);
   }
 
-  {
-    base::AutoLock lock(peers_lock_);
-    auto it = peers_.find(from_node);
-    if (it == peers_.end()) {
-      DVLOG(1) << "Ignoring request to connect to port from unknown node "
-               << from_node;
-      return;
-    }
-    // Note: We send our ConnectToPort message before initializing our own end
-    // of the port pair to ensure that it arrives  (and thus the remote port is
-    // fully initialized) before any messages are sent from our local port.
-    it->second->ConnectToPort(local_port.name(), connector_port_name);
+  scoped_refptr<NodeChannel> peer = GetPeerChannel(from_node);
+  if (!peer) {
+    DVLOG(1) << "Ignoring request to connect to port from unknown node "
+             << from_node;
+    return;
   }
+
+  // Note: We send our ConnectToPort message before initializing our own end
+  // of the port pair to ensure that it arrives  (and thus the remote port is
+  // fully initialized) before any messages are sent from our local port.
+  peer->ConnectToPort(local_port.name(), connector_port_name);
 
   // This reserved port should not have been initialized yet.
   //
@@ -460,25 +544,22 @@ void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,
                                            const ports::NodeName& name) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
-  if (from_node == name || name == ports::kInvalidNodeName) {
+  scoped_refptr<NodeChannel> requestor = GetPeerChannel(from_node);
+  if (from_node == name || name == ports::kInvalidNodeName || !requestor) {
     DLOG(ERROR) << "Rejecting invalid OnRequestIntroduction message from "
                 << from_node;
     DropPeer(from_node);
     return;
   }
 
-  base::AutoLock lock(peers_lock_);
-  auto it = peers_.find(from_node);
-  DCHECK(it != peers_.end());
-
-  NodeChannel* requestor = it->second.get();
-  it = peers_.find(name);
-  if (it == peers_.end()) {
+  scoped_refptr<NodeChannel> new_friend = GetPeerChannel(name);
+  if (!new_friend) {
+    // We don't know who they're talking about!
     requestor->Introduce(name, ScopedPlatformHandle());
   } else {
     PlatformChannelPair new_channel;
     requestor->Introduce(name, new_channel.PassServerHandle());
-    it->second->Introduce(from_node, new_channel.PassClientHandle());
+    new_friend->Introduce(from_node, new_channel.PassClientHandle());
   }
 }
 
@@ -501,9 +582,11 @@ void NodeController::OnIntroduce(const ports::NodeName& from_node,
     return;
   }
 
-  scoped_ptr<NodeChannel> channel(
-      new NodeChannel(this, std::move(channel_handle), io_task_runner_));
-  AddPeer(name, std::move(channel), true /* start_channel */);
+  scoped_refptr<NodeChannel> channel =
+      NodeChannel::Create(this, std::move(channel_handle), io_task_runner_);
+
+  DVLOG(1) << "Adding new peer " << name << " via parent introduction.";
+  AddPeer(name, channel, true /* start_channel */);
 }
 
 void NodeController::OnChannelError(const ports::NodeName& from_node) {
@@ -512,7 +595,8 @@ void NodeController::OnChannelError(const ports::NodeName& from_node) {
   } else {
     io_task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&NodeController::DropPeer, base::Unretained(this), from_node));
+        base::Bind(&NodeController::DropPeer, base::Unretained(this),
+                   from_node));
   }
 }
 

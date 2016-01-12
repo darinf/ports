@@ -93,6 +93,8 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
 
   // Creates a new Channel around a |platform_handle|, taking ownership of the
   // handle. All I/O on the handle will be performed on |io_task_runner|.
+  // Note that ShutDown() MUST be called on the Channel some time before
+  // |delegate| is destroyed.
   static scoped_refptr<Channel> Create(
       Delegate* delegate,
       ScopedPlatformHandle platform_handle,
@@ -135,7 +137,8 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   // read done by the implementation.
   bool OnReadComplete(size_t bytes_read, size_t* next_read_size_hint);
 
-  // Called by the implementation when something goes horribly wrong.
+  // Called by the implementation when something goes horribly wrong. It is NOT
+  // OK to call this synchronously from any public interface methods.
   void OnError();
 
   virtual ScopedPlatformHandleVectorPtr GetReadPlatformHandles(

@@ -86,7 +86,8 @@ class NodeController : public ports::NodeDelegate,
                            const std::string& token);
 
  private:
-  using NodeMap = std::unordered_map<ports::NodeName, scoped_ptr<NodeChannel>>;
+  using NodeMap = std::unordered_map<ports::NodeName,
+                                     scoped_refptr<NodeChannel>>;
   using OutgoingMessageQueue = std::queue<ports::ScopedMessage>;
 
   struct PendingPortRequest {
@@ -99,13 +100,15 @@ class NodeController : public ports::NodeDelegate,
   void RequestParentPortConnectionOnIOThread(const ports::PortRef& local_port,
                                              const std::string& token);
 
+  scoped_refptr<NodeChannel> GetPeerChannel(const ports::NodeName& name);
   void AddPeer(const ports::NodeName& name,
-               scoped_ptr<NodeChannel> channel,
+               scoped_refptr<NodeChannel> channel,
                bool start_channel);
   void DropPeer(const ports::NodeName& name);
   void SendPeerMessage(const ports::NodeName& name,
                        ports::ScopedMessage message);
   void AcceptIncomingMessages();
+  void DropAllPeers();
 
   // ports::NodeDelegate:
   void GenerateRandomPortName(ports::PortName* port_name) override;
@@ -170,8 +173,9 @@ class NodeController : public ports::NodeDelegate,
   // The name of our parent node, if any.
   ports::NodeName parent_name_;
 
-  // A channel to our parent during handshake.
-  scoped_ptr<NodeChannel> bootstrap_channel_to_parent_;
+  // The channel to our parent. This is also stored in |peers_| but kept here
+  // for convenient access.
+  scoped_refptr<NodeChannel> parent_channel_;
 
   // Channels to children during handshake.
   NodeMap pending_children_;

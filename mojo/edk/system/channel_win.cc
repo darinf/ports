@@ -119,8 +119,12 @@ class ChannelWin : public Channel,
       if (write_now && !WriteNoLock(outgoing_messages_.front()))
         reject_writes_ = write_error = true;
     }
-    if (write_error)
-      OnError();
+    if (write_error) {
+      // Do not synchronously invoke OnError(). Write() may have been called by
+      // the delegate and we don't want to re-enter it.
+      io_task_runner_->PostTask(FROM_HERE,
+                                base::Bind(&ChannelWin::OnError, this));
+    }
   }
 
   ScopedPlatformHandleVectorPtr GetReadPlatformHandles(

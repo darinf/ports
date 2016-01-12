@@ -119,8 +119,12 @@ class ChannelPosix : public Channel,
         outgoing_messages_.emplace_back(std::move(message), 0);
       }
     }
-    if (write_error)
-      OnError();
+    if (write_error) {
+      // Do not synchronously invoke OnError(). Write() may have been called by
+      // the delegate and we don't want to re-enter it.
+      io_task_runner_->PostTask(FROM_HERE,
+                                base::Bind(&ChannelPosix::OnError, this));
+    }
   }
 
   ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
@@ -181,9 +185,6 @@ class ChannelPosix : public Channel,
   }
 
   void ShutDownOnIOThread() {
-    DCHECK(read_watcher_);
-    DCHECK(write_watcher_);
-
     read_watcher_.reset();
     write_watcher_.reset();
     handle_.reset();

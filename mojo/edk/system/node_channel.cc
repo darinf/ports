@@ -87,6 +87,14 @@ void GetMessagePayload(const void* bytes, DataType** out_data) {
 }  // namespace
 
 // static
+scoped_refptr<NodeChannel> NodeChannel::Create(
+    Delegate* delegate,
+    ScopedPlatformHandle platform_handle,
+    scoped_refptr<base::TaskRunner> io_task_runner) {
+  return new NodeChannel(delegate, std::move(platform_handle), io_task_runner);
+}
+
+// static
 Channel::MessagePtr NodeChannel::CreatePortsMessage(
     size_t payload_size,
     void** payload,
@@ -95,22 +103,18 @@ Channel::MessagePtr NodeChannel::CreatePortsMessage(
                        std::move(platform_handles), payload);
 }
 
-NodeChannel::NodeChannel(Delegate* delegate,
-                         ScopedPlatformHandle platform_handle,
-                         scoped_refptr<base::TaskRunner> io_task_runner)
-    : delegate_(delegate),
-      io_task_runner_(io_task_runner),
-      channel_(
-          Channel::Create(this, std::move(platform_handle), io_task_runner_)) {}
-
-NodeChannel::~NodeChannel() {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-  channel_->ShutDown();
+void NodeChannel::Start() {
+  base::AutoLock lock(channel_lock_);
+  DCHECK(channel_);
+  channel_->Start();
 }
 
-void NodeChannel::Start() {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-  channel_->Start();
+void NodeChannel::ShutDown() {
+  base::AutoLock lock(channel_lock_);
+  if (channel_) {
+    channel_->ShutDown();
+    channel_ = nullptr;
+  }
 }
 
 void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
@@ -120,6 +124,12 @@ void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
 
 void NodeChannel::AcceptChild(const ports::NodeName& parent_name,
                               const ports::NodeName& token) {
+  base::AutoLock lock(channel_lock_);
+  if (!channel_) {
+    DVLOG(2) << "Not sending AcceptChild on closed Channel.";
+    return;
+  }
+
   AcceptChildData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::ACCEPT_CHILD, sizeof(AcceptChildData), nullptr, &data);
@@ -130,6 +140,12 @@ void NodeChannel::AcceptChild(const ports::NodeName& parent_name,
 
 void NodeChannel::AcceptParent(const ports::NodeName& token,
                                const ports::NodeName& child_name) {
+  base::AutoLock lock(channel_lock_);
+  if (!channel_) {
+    DVLOG(2) << "Not sending AcceptParent on closed Channel.";
+    return;
+  }
+
   AcceptParentData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::ACCEPT_PARENT, sizeof(AcceptParentData), nullptr, &data);
@@ -139,12 +155,24 @@ void NodeChannel::AcceptParent(const ports::NodeName& token,
 }
 
 void NodeChannel::PortsMessage(Channel::MessagePtr message) {
+  base::AutoLock lock(channel_lock_);
+  if (!channel_) {
+    DVLOG(2) << "Not sending PortsMessage on closed Channel.";
+    return;
+  }
+
   channel_->Write(std::move(message));
 }
 
 void NodeChannel::RequestPortConnection(
     const ports::PortName& connector_port_name,
     const std::string& token) {
+  base::AutoLock lock(channel_lock_);
+  if (!channel_) {
+    DVLOG(2) << "Not sending RequestPortConnection on closed Channel.";
+    return;
+  }
+
   RequestPortConnectionData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::REQUEST_PORT_CONNECTION,
@@ -156,6 +184,12 @@ void NodeChannel::RequestPortConnection(
 
 void NodeChannel::ConnectToPort(const ports::PortName& connector_port_name,
                                 const ports::PortName& connectee_port_name) {
+  base::AutoLock lock(channel_lock_);
+  if (!channel_) {
+    DVLOG(2) << "Not sending ConnectToPort on closed Channel.";
+    return;
+  }
+
   ConnectToPortData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::CONNECT_TO_PORT, sizeof(ConnectToPortData), nullptr, &data);
@@ -165,6 +199,12 @@ void NodeChannel::ConnectToPort(const ports::PortName& connector_port_name,
 }
 
 void NodeChannel::RequestIntroduction(const ports::NodeName& name) {
+  base::AutoLock lock(channel_lock_);
+  if (!channel_) {
+    DVLOG(2) << "Not sending RequestIntroduction on closed Channel.";
+    return;
+  }
+
   IntroductionData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::REQUEST_INTRODUCTION, sizeof(IntroductionData), nullptr,
@@ -175,6 +215,12 @@ void NodeChannel::RequestIntroduction(const ports::NodeName& name) {
 
 void NodeChannel::Introduce(const ports::NodeName& name,
                             ScopedPlatformHandle handle) {
+  base::AutoLock lock(channel_lock_);
+  if (!channel_) {
+    DVLOG(2) << "Not sending Introduce on closed Channel.";
+    return;
+  }
+
   ScopedPlatformHandleVectorPtr handles;
   if (handle.is_valid()) {
     handles.reset(new PlatformHandleVector(1));
@@ -186,6 +232,19 @@ void NodeChannel::Introduce(const ports::NodeName& name,
       &data);
   data->name = name;
   channel_->Write(std::move(message));
+}
+
+NodeChannel::NodeChannel(Delegate* delegate,
+                         ScopedPlatformHandle platform_handle,
+                         scoped_refptr<base::TaskRunner> io_task_runner)
+    : delegate_(delegate),
+      io_task_runner_(io_task_runner),
+      channel_(
+          Channel::Create(this, std::move(platform_handle), io_task_runner_)) {
+}
+
+NodeChannel::~NodeChannel() {
+  ShutDown();
 }
 
 void NodeChannel::OnChannelMessage(const void* payload,
@@ -270,6 +329,9 @@ void NodeChannel::OnChannelMessage(const void* payload,
 }
 
 void NodeChannel::OnChannelError() {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+
+  ShutDown();
   delegate_->OnChannelError(remote_node_name_);
 }
 
