@@ -99,7 +99,6 @@ void ShutdownIPCSupportOnIOThread() {
 }
 
 void ShutdownIPCSupport() {
-  NOTIMPLEMENTED();
 }
 
 ScopedMessagePipeHandle CreateMessagePipe(

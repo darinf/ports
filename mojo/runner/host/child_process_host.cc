@@ -18,6 +18,7 @@
 #include "base/process/launch.h"
 #include "base/task_runner.h"
 #include "base/thread_task_runner_handle.h"
+#include "mojo/edk/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/interface_ptr_info.h"
 #include "mojo/public/cpp/system/core.h"
 #include "mojo/runner/host/switches.h"
@@ -43,13 +44,16 @@ ChildProcessHost::ChildProcessHost(base::TaskRunner* launch_process_runner,
       channel_info_(nullptr),
       start_child_process_event_(false, false),
       weak_factory_(this) {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk"))
-    serializer_platform_channel_pair_.reset(new edk::PlatformChannelPair);
-
-  child_message_pipe_ = embedder::CreateChannel(
-      platform_channel_pair_.PassServerHandle(),
-      base::Bind(&ChildProcessHost::DidCreateChannel, base::Unretained(this)),
-      base::ThreadTaskRunnerHandle::Get());
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
+    node_channel_.reset(new edk::PlatformChannelPair);
+    primordial_pipe_token_ = edk::GenerateRandomToken();
+    child_message_pipe_ = edk::CreateParentMessagePipe(primordial_pipe_token_);
+  } else {
+    child_message_pipe_ = embedder::CreateChannel(
+        platform_channel_pair_.PassServerHandle(),
+        base::Bind(&ChildProcessHost::DidCreateChannel, base::Unretained(this)),
+        base::ThreadTaskRunnerHandle::Get());
+  }
 }
 
 ChildProcessHost::ChildProcessHost(ScopedHandle channel)
@@ -72,21 +76,6 @@ void ChildProcessHost::Start(
     const base::Callback<void(base::ProcessId)>& pid_available_callback) {
   DCHECK(!child_process_.IsValid());
   DCHECK(child_message_pipe_.is_valid());
-
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
-    std::string client_handle_as_string =
-        serializer_platform_channel_pair_
-            ->PrepareToPassClientHandleToChildProcessAsString(
-                &handle_passing_info_);
-    // We can't send the MP for the token serializer implementation as a
-    // platform handle, because that would require the other side to use the
-    // token initializer itself! So instead we send it as a string.
-    MojoResult rv = MojoWriteMessage(
-        child_message_pipe_.get().value(), client_handle_as_string.c_str(),
-        static_cast<uint32_t>(client_handle_as_string.size()), nullptr, 0,
-        MOJO_WRITE_MESSAGE_FLAG_NONE);
-    DCHECK_EQ(rv, MOJO_RESULT_OK);
-  }
 
   controller_.Bind(
       InterfacePtrInfo<ChildController>(std::move(child_message_pipe_), 0u));
@@ -158,8 +147,11 @@ void ChildProcessHost::DoLaunch() {
   if (start_sandboxed_)
     child_command_line.AppendSwitch(switches::kEnableSandbox);
 
-  platform_channel_pair_.PrepareToPassClientHandleToChildProcess(
+  node_channel_->PrepareToPassClientHandleToChildProcess(
       &child_command_line, &handle_passing_info_);
+
+  child_command_line.AppendSwitchASCII(switches::kPrimordialPipeToken,
+                                       primordial_pipe_token_);
 
   base::LaunchOptions options;
 #if defined(OS_WIN)
@@ -210,13 +202,12 @@ void ChildProcessHost::DoLaunch() {
 
   if (child_process_.IsValid()) {
     platform_channel_pair_.ChildProcessLaunched();
-    if (serializer_platform_channel_pair_.get()) {
-      serializer_platform_channel_pair_->ChildProcessLaunched();
+    if (node_channel_.get()) {
+      node_channel_->ChildProcessLaunched();
       mojo::embedder::ChildProcessLaunched(
           child_process_.Handle(),
           mojo::embedder::ScopedPlatformHandle(mojo::embedder::PlatformHandle(
-              serializer_platform_channel_pair_->PassServerHandle().release().
-                  handle)));
+              node_channel_->PassServerHandle().release().handle)));
     }
   }
   start_child_process_event_.Signal();

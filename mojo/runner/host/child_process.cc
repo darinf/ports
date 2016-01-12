@@ -312,14 +312,11 @@ ScopedMessagePipeHandle InitializeHostMessagePipe(
   ScopedMessagePipeHandle host_message_pipe;
 
   if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
-/*    edk::ScopedPlatformHandle broker_channel =
-        edk::PlatformChannelPair::PassClientHandleFromParentProcessFromString(
-            std::string(broker_handle, num_bytes));
-    CHECK(broker_channel.is_valid());
-    CHECK(false);
-    embedder::SetParentPipeHandle(
-        mojo::embedder::ScopedPlatformHandle(mojo::embedder::PlatformHandle(
-            broker_channel.release().handle)));*/
+    embedder::SetParentPipeHandle(std::move(platform_channel));
+    std::string primordial_pipe_token =
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kPrimordialPipeToken);
+    host_message_pipe = edk::CreateChildMessagePipe(primordial_pipe_token);
   } else {
     host_message_pipe = embedder::CreateChannel(std::move(platform_channel),
                                                 base::Bind(&DidCreateChannel),

@@ -135,8 +135,8 @@ CreateParentMessagePipe(const std::string& token);
 MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
 CreateChildMessagePipe(const std::string& token);
 
-// Generates a random token string for use with CreateMessagePipe() above. The
-// generated token is suitably random so as to not have to worry about
+// Generates a random ASCII token string for use with CreateMessagePipe() above.
+// The generated token is suitably random so as to not have to worry about
 // collisions with other generated tokens.
 MOJO_SYSTEM_IMPL_EXPORT std::string GenerateRandomToken();
 

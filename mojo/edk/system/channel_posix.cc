@@ -89,8 +89,12 @@ class ChannelPosix : public Channel,
   }
 
   void Start() override {
-    io_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ChannelPosix::StartOnIOThread, this));
+    if (io_task_runner_->RunsTasksOnCurrentThread()) {
+      StartOnIOThread();
+    } else {
+      io_task_runner_->PostTask(
+          FROM_HERE, base::Bind(&ChannelPosix::StartOnIOThread, this));
+    }
   }
 
   void ShutDownImpl() override {
