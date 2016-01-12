@@ -126,8 +126,8 @@ class MultiprocessTestBase : public testing::Test {
 // The function is defined as a static member of a subclass of
 // MultiprocessTestBase so code within it has access to that class's static
 // static helpers.
-#define DEFINE_TEST_CLIENT_WITH_PIPE(test_child_name, test_base, pipe_name) \
-  class test_child_name##_MainFixture : public test_base {                  \
+#define DEFINE_TEST_CLIENT_WITH_PIPE(client_name, test_base, pipe_name)     \
+  class client_name##_MainFixture : public test_base {                      \
    public:                                                                  \
     static int ClientMain(MojoHandle pipe);                                 \
     static int ClientMainWrapper(ScopedMessagePipeHandle mp) {              \
@@ -135,12 +135,35 @@ class MultiprocessTestBase : public testing::Test {
     }                                                                       \
   };                                                                        \
   MULTIPROCESS_TEST_MAIN_WITH_SETUP(                                        \
-      test_child_name##TestChildMain,                                       \
+      client_name##TestChildMain,                                           \
       test::MultiprocessTestHelper::ChildSetup) {                           \
-        return test_child_name##_MainFixture::ClientMainWrapper(            \
+        return client_name##_MainFixture::ClientMainWrapper(                \
             std::move(test::MultiprocessTestHelper::client_message_pipe));  \
       }                                                                     \
-      int test_child_name##_MainFixture::ClientMain(MojoHandle pipe_name)
+      int client_name##_MainFixture::ClientMain(MojoHandle pipe_name)
+
+
+// This is a version of DEFINE_TEST_CLIENT_WITH_PIPE which can be used with
+// gtest ASSERT/EXPECT macros.
+#define DEFINE_TEST_CLIENT_TEST_WITH_PIPE(client_name, test_base, pipe_name) \
+  class client_name##_MainFixture : public test_base {                       \
+   public:                                                                   \
+    static void ClientMain(MojoHandle pipe);                                 \
+    static int ClientMainWrapper(ScopedMessagePipeHandle mp) {               \
+      ClientMain(mp.get().value());                                          \
+      return (::testing::Test::HasFatalFailure() ||                          \
+              ::testing::Test::HasNonfatalFailure()) ? 1 : 0;                \
+    }                                                                        \
+  };                                                                         \
+  MULTIPROCESS_TEST_MAIN_WITH_SETUP(                                         \
+      client_name##TestChildMain,                                            \
+      test::MultiprocessTestHelper::ChildSetup) {                            \
+        return client_name##_MainFixture::ClientMainWrapper(                 \
+            std::move(test::MultiprocessTestHelper::client_message_pipe));   \
+      }                                                                      \
+      void client_name##_MainFixture::ClientMain(MojoHandle pipe_name)
+
+
 
 }  // namespace test
 }  // namespace edk
