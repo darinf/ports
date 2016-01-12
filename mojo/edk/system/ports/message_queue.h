@@ -16,18 +16,18 @@ namespace mojo {
 namespace edk {
 namespace ports {
 
-const uint32_t kInitialSequenceNum = 1;
-const uint32_t kInvalidSequenceNum = 0xFFFFFFFF;
+const uint64_t kInitialSequenceNum = 1;
+const uint64_t kInvalidSequenceNum = 0xFFFFFFFF;
 
 class MessageQueue {
  public:
   explicit MessageQueue();
-  explicit MessageQueue(uint32_t next_sequence_num);
+  explicit MessageQueue(uint64_t next_sequence_num);
   ~MessageQueue();
 
   void set_signalable(bool value) { signalable_ = value; }
 
-  uint32_t next_sequence_num() const { return next_sequence_num_; }
+  uint64_t next_sequence_num() const { return next_sequence_num_; }
 
   bool HasNextMessage() const;
 
@@ -48,7 +48,7 @@ class MessageQueue {
 
  private:
   std::vector<ScopedMessage> heap_;
-  uint32_t next_sequence_num_;
+  uint64_t next_sequence_num_;
   bool signalable_ = true;
 };
 

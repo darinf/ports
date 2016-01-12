@@ -25,7 +25,7 @@ int DebugError(const char* message, int error_code) {
 bool CanAcceptMoreMessages(const Port* port) {
   // Have we already doled out the last message (i.e., do we expect to NOT
   // receive further messages)?
-  uint32_t next_sequence_num = port->message_queue.next_sequence_num();
+  uint64_t next_sequence_num = port->message_queue.next_sequence_num();
   if (port->peer_closed || port->remove_proxy_on_last_message) {
     if (port->last_sequence_num_to_receive == next_sequence_num - 1)
       return false;
@@ -154,7 +154,6 @@ int Node::ClosePort(const PortRef& port_ref) {
     // port to allow the peer to have the opportunity to consume all inbound
     // messages before notifying the embedder that this port is closed.
     data.last_sequence_num = port->next_sequence_num_to_send - 1;
-    data.padding = 0;
 
     peer_name = port->peer_node_name;
   }
@@ -537,7 +536,6 @@ int Node::OnObserveProxy(const PortName& port_name,
 
         ObserveProxyAckEventData ack;
         ack.last_sequence_num = port->next_sequence_num_to_send - 1;
-        ack.padding = 0;
 
         delegate_->ForwardMessage(
             event.proxy_node_name,
@@ -560,7 +558,6 @@ int Node::OnObserveProxy(const PortName& port_name,
 
         ObserveProxyAckEventData ack;
         ack.last_sequence_num = kInvalidSequenceNum;
-        ack.padding = 0;
 
         port->send_on_proxy_removal.reset(
             new std::pair<NodeName, ScopedMessage>(
@@ -583,7 +580,7 @@ int Node::OnObserveProxy(const PortName& port_name,
 }
 
 int Node::OnObserveProxyAck(const PortName& port_name,
-                            uint32_t last_sequence_num) {
+                            uint64_t last_sequence_num) {
   DVLOG(1) << "ObserveProxyAck at " << port_name << "@" << name_
            << " (last_sequence_num=" << last_sequence_num << ")";
 
@@ -615,7 +612,7 @@ int Node::OnObserveProxyAck(const PortName& port_name,
 }
 
 int Node::OnObserveClosure(const PortName& port_name,
-                           uint32_t last_sequence_num) {
+                           uint64_t last_sequence_num) {
   // OK if the port doesn't exist, as it may have been closed already.
   std::shared_ptr<Port> port = GetPort(port_name);
   if (!port)
@@ -654,7 +651,6 @@ int Node::OnObserveClosure(const PortName& port_name,
         // Forward this event along.
         ObserveClosureEventData data;
         data.last_sequence_num = last_sequence_num;
-        data.padding = 0;
 
         delegate_->ForwardMessage(
             next_node_name,
@@ -762,7 +758,7 @@ int Node::WillSendMessage_Locked(
 
   // Messages may already have a sequence number if they're being forwarded
   // by a proxy. Otherwise, use the next outgoing sequence number.
-  uint32_t* sequence_num =
+  uint64_t* sequence_num =
       &GetMutableEventData<UserEventData>(message)->sequence_num;
   if (*sequence_num == 0)
     *sequence_num = port->next_sequence_num_to_send++;

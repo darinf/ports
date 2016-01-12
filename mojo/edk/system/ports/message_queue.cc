@@ -13,7 +13,7 @@ namespace mojo {
 namespace edk {
 namespace ports {
 
-inline uint32_t GetSequenceNum(const ScopedMessage& message) {
+inline uint64_t GetSequenceNum(const ScopedMessage& message) {
   return GetEventData<UserEventData>(*message)->sequence_num;
 }
 
@@ -24,7 +24,7 @@ inline bool operator<(const ScopedMessage& a, const ScopedMessage& b) {
 
 MessageQueue::MessageQueue() : MessageQueue(kInitialSequenceNum) {}
 
-MessageQueue::MessageQueue(uint32_t next_sequence_num)
+MessageQueue::MessageQueue(uint64_t next_sequence_num)
     : next_sequence_num_(next_sequence_num) {
   // The message queue is blocked waiting for a message with sequence number
   // equal to |next_sequence_num|.

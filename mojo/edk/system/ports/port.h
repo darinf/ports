@@ -32,8 +32,8 @@ class Port {
   State state;
   NodeName peer_node_name;
   PortName peer_port_name;
-  uint32_t next_sequence_num_to_send;
-  uint32_t last_sequence_num_to_receive;
+  uint64_t next_sequence_num_to_send;
+  uint64_t last_sequence_num_to_receive;
   MessageQueue message_queue;
   std::unique_ptr<std::pair<NodeName, ScopedMessage>> send_on_proxy_removal;
   std::shared_ptr<UserData> user_data;
@@ -43,8 +43,8 @@ class Port {
   std::queue<ScopedMessage> outgoing_messages;
   std::vector<std::shared_ptr<Port>> outgoing_ports;
 
-  Port(uint32_t next_sequence_num_to_send,
-       uint32_t next_sequence_num_to_receive);
+  Port(uint64_t next_sequence_num_to_send,
+       uint64_t next_sequence_num_to_receive);
   ~Port();
 };
 

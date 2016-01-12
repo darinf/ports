@@ -123,8 +123,8 @@ class Node {
   int OnPortAccepted(const PortName& port_name);
   int OnObserveProxy(const PortName& port_name,
                      const ObserveProxyEventData& event);
-  int OnObserveProxyAck(const PortName& port_name, uint32_t last_sequence_num);
-  int OnObserveClosure(const PortName& port_name, uint32_t last_sequence_num);
+  int OnObserveProxyAck(const PortName& port_name, uint64_t last_sequence_num);
+  int OnObserveClosure(const PortName& port_name, uint64_t last_sequence_num);
 
   int AddPortWithName(const PortName& port_name,
                       const std::shared_ptr<Port>& port);

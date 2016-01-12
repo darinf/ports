@@ -21,8 +21,8 @@ struct PortDescriptor {
   PortName peer_port_name;
   NodeName referring_node_name;
   PortName referring_port_name;
-  uint32_t next_sequence_num_to_send;
-  uint32_t next_sequence_num_to_receive;
+  uint64_t next_sequence_num_to_send;
+  uint64_t next_sequence_num_to_receive;
 };
 
 enum struct EventType : uint32_t {
@@ -40,8 +40,9 @@ struct EventHeader {
 };
 
 struct UserEventData {
-  uint32_t sequence_num;
+  uint64_t sequence_num;
   uint32_t num_ports;
+  uint32_t padding;
 };
 
 struct ObserveProxyEventData {
@@ -52,13 +53,11 @@ struct ObserveProxyEventData {
 };
 
 struct ObserveProxyAckEventData {
-  uint32_t last_sequence_num;
-  uint32_t padding;
+  uint64_t last_sequence_num;
 };
 
 struct ObserveClosureEventData {
-  uint32_t last_sequence_num;
-  uint32_t padding;
+  uint64_t last_sequence_num;
 };
 
 inline const EventHeader* GetEventHeader(const Message& message) {
