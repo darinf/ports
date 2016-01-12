@@ -462,21 +462,18 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
 
 HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
   HandleSignalsState rv;
+  if (!port_connected_) {
+    // If we aren't connected yet, treat the pipe like it's in a normal
+    // state with no messages available.
+    rv.satisfiable_signals = MOJO_HANDLE_SIGNAL_READABLE |
+        MOJO_HANDLE_SIGNAL_WRITABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED;
+    rv.satisfied_signals = MOJO_HANDLE_SIGNAL_WRITABLE;
+    return rv;
+  }
 
   ports::PortStatus port_status;
   if (node_controller_->node()->GetStatus(port_, &port_status) != ports::OK) {
-    if (port_transferred_ || port_closed_)
-      return HandleSignalsState();
-
-    if (!port_connected_) {
-      // If we aren't connected yet, treat the pipe like it's in a normal
-      // state with no messages available.
-      rv.satisfiable_signals = MOJO_HANDLE_SIGNAL_READABLE |
-          MOJO_HANDLE_SIGNAL_WRITABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED;
-      rv.satisfied_signals = MOJO_HANDLE_SIGNAL_WRITABLE;
-      return rv;
-    }
-
+    CHECK(port_transferred_ || port_closed_);
     return HandleSignalsState();
   }
 
