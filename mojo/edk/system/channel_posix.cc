@@ -137,6 +137,8 @@ class ChannelPosix : public Channel,
   }
 
  private:
+  // TODO: This could run on any thread. Need to move RemoveDestructionObserver
+  // to ShutdownOnIOThread.
   ~ChannelPosix() override {
     DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
     DCHECK(!read_watcher_);

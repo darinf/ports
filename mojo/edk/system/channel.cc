@@ -109,6 +109,7 @@ class Channel::ReadBuffer {
   // shrinkage of the internal buffer, and it is not safe to assume the result
   // of a previous Reserve() call is still valid after this.
   void Discard(size_t num_bytes) {
+    DLOG(INFO) << "Discard: " << num_bytes;
     DCHECK_LE(num_discarded_bytes_ + num_bytes, num_occupied_bytes_);
     num_discarded_bytes_ += num_bytes;
 
@@ -173,6 +174,7 @@ char* Channel::GetReadBuffer(size_t *buffer_capacity) {
 }
 
 bool Channel::OnReadComplete(size_t bytes_read, size_t *next_read_size_hint) {
+  DLOG(INFO) << "Channel::OnReadComplete: " << bytes_read;
   bool did_dispatch_message = false;
   read_buffer_->Claim(bytes_read);
   while (read_buffer_->num_occupied_bytes() >= sizeof(Message::Header)) {
@@ -218,6 +220,7 @@ bool Channel::OnReadComplete(size_t bytes_read, size_t *next_read_size_hint) {
 }
 
 void Channel::OnError() {
+  DLOG(INFO) << "Channel::OnError: this=" << (void*) this;
   if (delegate_)
     delegate_->OnChannelError();
 }

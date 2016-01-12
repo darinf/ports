@@ -61,6 +61,8 @@ class MessageView {
     offset_ += num_bytes;
   }
 
+  bool has_handles() const { return handles_; }
+
   ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
   Channel::MessagePtr TakeMessage() { return std::move(message_); }
 
@@ -110,12 +112,12 @@ class ChannelWin : public Channel,
       base::AutoLock lock(write_lock_);
       if (reject_writes_)
         return;
-      if (outgoing_messages_.empty()) {
-        if (!WriteNoLock(MessageView(std::move(message), 0)))
-          reject_writes_ = write_error = true;
-      } else {
-        outgoing_messages_.emplace_back(std::move(message), 0);
-      }
+
+      bool write_now = !delay_writes_ && outgoing_messages_.empty();
+      outgoing_messages_.emplace_back(std::move(message), 0);
+
+      if (write_now && !WriteNoLock(outgoing_messages_.front()))
+        reject_writes_ = write_error = true;
     }
     if (write_error)
       OnError();
@@ -135,12 +137,8 @@ class ChannelWin : public Channel,
   }
 
  private:
-  // TODO: There is a race here. It is not certain that the last reference
-  // will be dropped on the IO thread. We should modify Channel to enforce
-  // this via the extra param to RefCountedThreadSafe.
+  // May run on any thread.
   ~ChannelWin() override {
-    DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-    base::MessageLoop::current()->RemoveDestructionObserver(this);
     for (auto handle : incoming_platform_handles_)
       handle.CloseIfNecessary();
   }
@@ -149,12 +147,25 @@ class ChannelWin : public Channel,
     base::MessageLoop::current()->AddDestructionObserver(this);
     base::MessageLoopForIO::current()->RegisterIOHandler(
         handle_.get().handle, this);
+
+    // Now that we have registered our IOHandler, we can start writing.
+    {
+      base::AutoLock lock(write_lock_);
+      if (delay_writes_) {
+        delay_writes_ = false;
+        WriteNextNoLock();
+      }
+    }
+
+    // Keep this alive in case we synchronously run shutdown.
+    scoped_refptr<ChannelWin> keep_alive(this);
     ReadMore(0);
   }
 
   void ShutDownOnIOThread() {
-    // TODO: cancel overlapped IO
+    base::MessageLoop::current()->RemoveDestructionObserver(this);
 
+    CancelIo(handle_.get().handle);
     handle_.reset();
 
     // May destroy the |this| if it was the last reference.
@@ -180,6 +191,7 @@ class ChannelWin : public Channel,
       CHECK(context == &write_context_);
       OnWriteDone(static_cast<size_t>(bytes_transfered));
     }
+    Release();  // Balancing reference taken after ReadFile / WriteFile.
   }
 
   void OnReadDone(size_t bytes_read) {
@@ -203,113 +215,64 @@ class ChannelWin : public Channel,
     {
       base::AutoLock lock(write_lock_);
 
-      // How can this be empty at this point?
-      if (outgoing_messages_.empty())
-        return;
+      DCHECK(!outgoing_messages_.empty());
 
       MessageView& message_view = outgoing_messages_.front();
       message_view.advance_data_offset(bytes_written);
-      if (message_view.data_offset() == message_view.data_num_bytes())
+      if (message_view.data_num_bytes() == 0)
         outgoing_messages_.pop_front();
 
-      if (!FlushOutgoingMessagesNoLock())
+      if (!WriteNextNoLock())
         reject_writes_ = write_error = true;
     }
     if (write_error)
       OnError();
   }
 
-  void ReadMore(size_t next_read_size) {
-    bool read_error = false;
-    {
-      size_t buffer_capacity = 0;
-      size_t total_bytes_read = 0;
-      size_t bytes_read = 0;
-      do {
-        buffer_capacity = next_read_size;
-        char* buffer = GetReadBuffer(&buffer_capacity);
-        DCHECK_GT(buffer_capacity, 0u);
+  void ReadMore(size_t next_read_size_hint) {
+    size_t buffer_capacity = next_read_size_hint;
+    char* buffer = GetReadBuffer(&buffer_capacity);
+    DCHECK_GT(buffer_capacity, 0u);
 
-        DWORD read_result = 0;
-        BOOL ok = ReadFile(handle_.get().handle,
-                           buffer,
-                           static_cast<DWORD>(buffer_capacity),
-                           &read_result,
-                           &read_context_.overlapped);
+    BOOL ok = ReadFile(handle_.get().handle,
+                       buffer,
+                       static_cast<DWORD>(buffer_capacity),
+                       NULL,
+                       &read_context_.overlapped);
 
-        if (ok && read_result > 0) {
-          bytes_read = static_cast<size_t>(read_result);
-          total_bytes_read += bytes_read;
-          if (!OnReadComplete(bytes_read, &next_read_size)) {
-            read_error = true;
-            break;
-          }
-        } else if ((ok && read_result == 0) ||
-                   (GetLastError() != ERROR_IO_PENDING)) {
-          read_error = true;
-          break;
-        }
-      } while (bytes_read == buffer_capacity &&
-               total_bytes_read < kMaxBatchReadCapacity &&
-               next_read_size > 0);
-    }
-    if (read_error)
+    if (ok || GetLastError() == ERROR_IO_PENDING) {
+      AddRef();  // Will be balanced in OnIOCompleted
+    } else {
       OnError();
+    }
   }
 
   // Attempts to write a message directly to the channel. If the full message
   // cannot be written, it's queued and a wait is initiated to write the message
   // ASAP on the I/O thread.
-  bool WriteNoLock(MessageView message_view) {
-    size_t bytes_written = 0;
-    do {
-      message_view.advance_data_offset(bytes_written);
-
-      ScopedPlatformHandleVectorPtr handles = message_view.TakeHandles();
-      if (handles && handles->size()) {
-        DCHECK(false) << "not implemented";
-        return false;
-      }
-
-      DWORD write_result = 0;
-      BOOL ok = WriteFile(handle_.get().handle,
-                          message_view.data(),
-                          static_cast<DWORD>(message_view.data_num_bytes()),
-                          &write_result,
-                          &write_context_.overlapped);
-      if (!ok) {
-        if (GetLastError() != ERROR_IO_PENDING)
-          return false;
-        outgoing_messages_.emplace_back(std::move(message_view));
-        return true;
-      }
-
-      bytes_written = static_cast<size_t>(write_result);
-    } while (bytes_written < message_view.data_num_bytes());
-    return true;
-  }
-
-  bool FlushOutgoingMessagesNoLock() {
-    std::deque<MessageView> messages;
-    std::swap(outgoing_messages_, messages);
-
-    while (!messages.empty()) {
-      if (!WriteNoLock(std::move(messages.front())))
-        return false;
-
-      messages.pop_front();
-      if (!outgoing_messages_.empty()) {
-        // The message was requeued by WriteNoLock(), so we have to wait for
-        // pipe to become writable again. Repopulate the message queue and exit.
-        DCHECK_EQ(outgoing_messages_.size(), 1u);
-        MessageView message_view = std::move(outgoing_messages_.front());
-        std::swap(messages, outgoing_messages_);
-        outgoing_messages_.push_front(std::move(message_view));
-        return true;
-      }
+  bool WriteNoLock(const MessageView& message_view) {
+    if (message_view.has_handles()) {
+      DCHECK(false) << "not implemented";
+      return false;
     }
 
-    return true;
+    BOOL ok = WriteFile(handle_.get().handle,
+                        message_view.data(),
+                        static_cast<DWORD>(message_view.data_num_bytes()),
+                        NULL,
+                        &write_context_.overlapped);
+
+    if (ok || GetLastError() == ERROR_IO_PENDING) {
+      AddRef();  // Will be balanced in OnIOCompleted.
+      return true;
+    }
+    return false;
+  }
+
+  bool WriteNextNoLock() {
+    if (outgoing_messages_.empty())
+      return true;
+    return WriteNoLock(outgoing_messages_.front());
   }
 
   // Keeps the Channel alive at least until explicit shutdown on the IO thread.
@@ -325,6 +288,8 @@ class ChannelWin : public Channel,
 
   // Protects |reject_writes_| and |outgoing_messages_|.
   base::Lock write_lock_;
+
+  bool delay_writes_ = true;
 
   bool reject_writes_ = false;
   std::deque<MessageView> outgoing_messages_;
