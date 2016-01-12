@@ -70,7 +70,7 @@ class MultiprocessMessagePipeTest : public test::MultiprocessTestBase {
     MojoHandle h_;
   };
 };
-#if 0
+
 // For each message received, sends a reply message with the same contents
 // repeated twice, until the other end is closed or it receives "quitquitquit"
 // (which it doesn't reply to). It'll return the number of messages received,
@@ -120,7 +120,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoEcho, MultiprocessMessagePipeTest, h) {
 
   return rv;
 }
-#endif
+
 // Echos the primordial channel until "exit".
 DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, MultiprocessMessagePipeTest,
                              h) {
@@ -132,7 +132,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, MultiprocessMessagePipeTest,
   }
   return 0;
 }
-#if 0
+
 // Receives a pipe handle from the primordial channel and echos on it until
 // "exit". Used to test simple pipe transfer across processes via channels.
 DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceClient, MultiprocessMessagePipeTest,
@@ -301,8 +301,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_Basic) {
 #define MAYBE_QueueMessages QueueMessages
 #endif  // defined(OS_ANDROID)
 TEST_F(MultiprocessMessagePipeTest, MAYBE_QueueMessages) {
+  static const size_t kNumMessages = 1001;
   RUN_CHILD_ON_PIPE(EchoEcho, h)
-    static const size_t kNumMessages = 1001;
     for (size_t i = 0; i < kNumMessages; i++) {
       std::string write_buffer(i, 'A' + (i % 26));
       ASSERT_EQ(MOJO_RESULT_OK,
@@ -876,7 +876,7 @@ TEST_F(MultiprocessMessagePipeTest, PassMessagePipeLocal) {
   VerifyTransmission(p2, p3, "Easy come, easy go; will you let me go?");
   VerifyTransmission(p3, p2, "Bismillah! NO! We will not let you go!");
 }
-#endif
+
 TEST_F(MultiprocessMessagePipeTest, MultiprocessChannelPipe) {
   RUN_CHILD_ON_PIPE(ChannelEchoClient, h)
     VerifyEcho(h, "in an interstellar burst");
@@ -886,7 +886,7 @@ TEST_F(MultiprocessMessagePipeTest, MultiprocessChannelPipe) {
     WriteString(h, "exit");
   END_CHILD()
 }
-#if 0
+
 TEST_F(MultiprocessMessagePipeTest, PassMessagePipeCrossProcess) {
   RUN_CHILD_ON_PIPE(EchoServiceClient, h)
     CREATE_PIPE(p0, p1);
@@ -1017,7 +1017,7 @@ TEST_F(MultiprocessMessagePipeTest, MoreChildToChildPipes) {
     END_CHILD()
   END_CHILD()
 }
-#endif
+
 }  // namespace
 }  // namespace edk
 }  // namespace mojo

@@ -55,7 +55,8 @@ class MultiprocessTestBase : public testing::Test {
   void StartClientWithHandler(const std::string& client_name,
                               HandlerFunc handler) {
     ClientController& c = StartClient(client_name);
-    int expected_exit_code = handler(c.pipe());
+    int expected_exit_code;
+    handler(c.pipe(), &expected_exit_code);
     EXPECT_EQ(expected_exit_code, c.WaitForShutdown());
   }
 
@@ -108,12 +109,14 @@ class MultiprocessTestBase : public testing::Test {
 
 #define CREATE_PIPE(a, b) MojoHandle a, b; CreatePipe(&a, &b);
 
-#define RUN_CHILD_ON_PIPE(client_name, pipe_name) \
-    StartClientWithHandler(#client_name, [&](MojoHandle pipe_name) -> int {
+#define RUN_CHILD_ON_PIPE(client_name, pipe_name)                   \
+    StartClientWithHandler(                                         \
+        #client_name,                                               \
+        [&](MojoHandle pipe_name, int *expected_exit_code) { {
 
-#define END_CHILD() return 0; });
+#define END_CHILD() } *expected_exit_code = 0; });
 
-#define END_CHILD_AND_EXPECT_EXIT_CODE(code) return code; });
+#define END_CHILD_AND_EXPECT_EXIT_CODE(code) } *expected_exit_code = code; });
 
 // Use this to declare the child process's "main()" function for tests using
 // MultiprocessTestBase and MultiprocessTestHelper. It returns an |int|, which
