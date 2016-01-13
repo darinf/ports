@@ -12,6 +12,7 @@
 #include "crypto/random.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
+#include "mojo/edk/embedder/process_delegate.h"
 #include "mojo/edk/embedder/simple_platform_support.h"
 #include "mojo/edk/system/core.h"
 
@@ -26,6 +27,7 @@ namespace internal {
 Core* g_core;
 base::TaskRunner* g_io_thread_task_runner;
 PlatformSupport* g_platform_support;
+ProcessDelegate* g_process_delegate;
 
 // This is used to help negotiate message pipe connections over arbitrary
 // platform channels. The the embedder needs to know which end of the pipe it's
@@ -96,18 +98,23 @@ void InitIPCSupport(ProcessDelegate* process_delegate,
                     scoped_refptr<base::TaskRunner> io_thread_task_runner) {
   CHECK(internal::g_core);
   CHECK(!internal::g_io_thread_task_runner);
+  CHECK(!internal::g_process_delegate);
 
   // TODO: Get rid of this global. At worst, it's still accessible from g_core.
   internal::g_io_thread_task_runner = io_thread_task_runner.get();
   internal::g_io_thread_task_runner->AddRef();
 
   internal::g_core->SetIOTaskRunner(io_thread_task_runner);
+
+  internal::g_process_delegate = process_delegate;
 }
 
 void ShutdownIPCSupportOnIOThread() {
 }
 
 void ShutdownIPCSupport() {
+  CHECK(internal::g_process_delegate);
+  internal::g_process_delegate->OnShutdownComplete();
 }
 
 ScopedMessagePipeHandle CreateMessagePipe(
