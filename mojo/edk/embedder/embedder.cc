@@ -25,8 +25,15 @@ namespace internal {
 
 Core* g_core;
 base::TaskRunner* g_io_thread_task_runner;
-
 PlatformSupport* g_platform_support;
+
+// This is used to help negotiate message pipe connections over arbitrary
+// platform channels. The the embedder needs to know which end of the pipe it's
+// on so it can do the right thing.
+//
+// TODO: Remove this when people stop using mojo::embedder::CreateChannel()
+// and thus mojo::edk::CreateMessagePipe(ScopedPlatformHandle).
+bool g_is_parent_process = true;
 
 Core* GetCore() { return g_core; }
 
@@ -39,6 +46,7 @@ void PreInitializeParentProcess() {
 }
 
 void PreInitializeChildProcess() {
+  internal::g_is_parent_process = false;
 }
 
 ScopedPlatformHandle ChildProcessLaunched(base::ProcessHandle child_process) {
@@ -55,6 +63,7 @@ void ChildProcessLaunched(base::ProcessHandle child_process,
 
 void SetParentPipeHandle(ScopedPlatformHandle pipe) {
   CHECK(internal::g_core);
+  internal::g_is_parent_process = false;
   internal::g_core->InitChild(std::move(pipe));
 }
 
@@ -103,8 +112,13 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
-  NOTREACHED() << "Use Create{Parent, Child}MessagePipe with Ports EDK.";
-  return ScopedMessagePipeHandle();
+  DCHECK(internal::g_core);
+  if (internal::g_is_parent_process) {
+    return internal::g_core->CreateParentMessagePipe(
+        std::move(platform_handle));
+  } else {
+    return internal::g_core->CreateChildMessagePipe(std::move(platform_handle));
+  }
 }
 
 ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token) {

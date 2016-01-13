@@ -50,6 +50,15 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // Called in a child process exactly once during early initialization.
   void InitChild(ScopedPlatformHandle platform_handle);
 
+  // These each create message pipe endpoints connected to an endpoint in a
+  // remote embedder. |platform_handle| is used as a channel to negotiate the
+  // connection. This is only here to facilitate legacy embedder code. See
+  // mojo::edk::CreateMessagePipe in mojo/edk/embedder/embedder.h.
+  ScopedMessagePipeHandle CreateParentMessagePipe(
+      ScopedPlatformHandle platform_handle);
+  ScopedMessagePipeHandle CreateChildMessagePipe(
+      ScopedPlatformHandle platform_handle);
+
   // Creates a message pipe endpoint associated with |token|, which a child
   // holding the token can later locate and connect to.
   ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token);

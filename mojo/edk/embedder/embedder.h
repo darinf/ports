@@ -118,8 +118,17 @@ MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupportOnIOThread();
 // |OnShutdownComplete()|.
 MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupport();
 
-// An artifact of the old new EDK. This is only temporary until existing code
-// is ported. It crashes.
+// Creates a message pipe over an arbitrary platform channel. In order for this
+// to work properly each end of the channel must be passed to this function: one
+// end in a parent process and one end in a child process. In a child process,
+// either PreInitializeChildProcess() or SetParentPipe() must have been been
+// called at least once already.
+//
+// Note: This only exists for backwards compatibility with embedders that rely
+// on mojo::embedder::CreateChannel() behavior. If you have a means of passing
+// platform handles around, you can probably also pass strings around. If you
+// can pass strings around, use CreateParentMessagePipe() and
+// CreateChlidMessagePipe() instead (see below.)
 MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
 CreateMessagePipe(ScopedPlatformHandle platform_handle);
 
@@ -136,8 +145,8 @@ MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
 CreateChildMessagePipe(const std::string& token);
 
 // Generates a random ASCII token string for use with CreateParentMessagePipe()
-// and CreateChildMessagePipe() above.  The generated token is suitably random
-// so as to not have to worry about collisions with other generated tokens.
+// and CreateChildMessagePipe() above. The generated token is suitably random so
+// as to not have to worry about collisions with other generated tokens.
 MOJO_SYSTEM_IMPL_EXPORT std::string GenerateRandomToken();
 
 }  // namespace edk

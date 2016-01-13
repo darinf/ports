@@ -61,6 +61,8 @@ static_library("system") {
     "platform_handle_dispatcher.h",
     "ports_message.cc",
     "ports_message.h",
+    "remote_message_pipe_bootstrap.cc",
+    "remote_message_pipe_bootstrap.h",
     "shared_buffer_dispatcher.cc",
     "shared_buffer_dispatcher.h",
     "wait_set_dispatcher.cc",

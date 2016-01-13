@@ -17,6 +17,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "crypto/random.h"
+#include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/async_waiter.h"
 #include "mojo/edk/system/channel.h"
@@ -27,6 +28,7 @@
 #include "mojo/edk/system/message_pipe_dispatcher.h"
 #include "mojo/edk/system/platform_handle_dispatcher.h"
 #include "mojo/edk/system/ports/node.h"
+#include "mojo/edk/system/remote_message_pipe_bootstrap.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
 #include "mojo/edk/system/wait_set_dispatcher.h"
 #include "mojo/edk/system/waiter.h"
@@ -123,6 +125,29 @@ MojoResult Core::PassWrappedPlatformHandle(
   *platform_handle = phd->PassPlatformHandle();
   phd->Close();
   return MOJO_RESULT_OK;
+}
+
+ScopedMessagePipeHandle Core::CreateParentMessagePipe(
+    ScopedPlatformHandle platform_handle) {
+  std::string token = GenerateRandomToken();
+  ScopedMessagePipeHandle pipe_handle = CreateParentMessagePipe(token);
+  RemoteMessagePipeBootstrap::CreateForParent(
+      &node_controller_, std::move(platform_handle), token);
+  return pipe_handle;
+}
+
+ScopedMessagePipeHandle Core::CreateChildMessagePipe(
+    ScopedPlatformHandle platform_handle) {
+  ports::PortRef port;
+  node_controller_.node()->CreateUninitializedPort(&port);
+  MojoHandle handle = AddDispatcher(
+      new MessagePipeDispatcher(&node_controller_, port,
+                                false /* connected */));
+
+  RemoteMessagePipeBootstrap::CreateForChild(
+      &node_controller_, std::move(platform_handle), port);
+
+  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
 
 ScopedMessagePipeHandle Core::CreateParentMessagePipe(

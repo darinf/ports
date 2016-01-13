@@ -47,6 +47,9 @@ class NodeController : public ports::NodeDelegate,
   const ports::NodeName& name() const { return name_; }
   Core* core() const { return core_; }
   ports::Node* node() const { return node_.get(); }
+  scoped_refptr<base::TaskRunner> io_task_runner() const {
+    return io_task_runner_;
+  }
 
   // Called exactly once, shortly after construction, and before any other
   // methods are called on this object.
@@ -148,7 +151,6 @@ class NodeController : public ports::NodeDelegate,
   Core* const core_;
   const ports::NodeName name_;
   const scoped_ptr<ports::Node> node_;
-
   scoped_refptr<base::TaskRunner> io_task_runner_;
 
   // Guards |peers_| and |pending_peer_messages_|.
