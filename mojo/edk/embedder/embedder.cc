@@ -58,7 +58,7 @@ ScopedPlatformHandle ChildProcessLaunched(base::ProcessHandle child_process) {
 void ChildProcessLaunched(base::ProcessHandle child_process,
                           ScopedPlatformHandle server_pipe) {
   CHECK(internal::g_core);
-  internal::g_core->AddChild(std::move(server_pipe));
+  internal::g_core->AddChild(child_process, std::move(server_pipe));
 }
 
 void SetParentPipeHandle(ScopedPlatformHandle pipe) {

@@ -87,11 +87,13 @@ void NodeController::SetIOTaskRunner(
       base::Bind(&NodeController::DropAllPeers, base::Unretained(this)));
 }
 
-void NodeController::ConnectToChild(ScopedPlatformHandle platform_handle) {
+void NodeController::ConnectToChild(base::ProcessHandle process_handle,
+                                    ScopedPlatformHandle platform_handle) {
   io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&NodeController::ConnectToChildOnIOThread,
                  base::Unretained(this),
+                 process_handle,
                  base::Passed(&platform_handle)));
 }
 
@@ -147,6 +149,7 @@ void NodeController::ConnectToParentPort(const ports::PortRef& local_port,
 }
 
 void NodeController::ConnectToChildOnIOThread(
+    base::ProcessHandle process_handle,
     ScopedPlatformHandle platform_handle) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
@@ -157,6 +160,7 @@ void NodeController::ConnectToChildOnIOThread(
   GenerateRandomName(&token);
 
   channel->SetRemoteNodeName(token);
+  channel->SetRemoteProcessHandle(process_handle);
   channel->Start();
   channel->AcceptChild(name_, token);
 

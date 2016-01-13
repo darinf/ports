@@ -117,6 +117,11 @@ void NodeChannel::ShutDown() {
   }
 }
 
+void NodeChannel::SetRemoteProcessHandle(base::ProcessHandle process_handle) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+  remote_process_handle_ = process_handle;
+}
+
 void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   remote_node_name_ = name;

@@ -7,6 +7,7 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/process/process_handle.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
@@ -68,6 +69,8 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
   // Permanently stop the channel from sending or receiving messages.
   void ShutDown();
 
+  void SetRemoteProcessHandle(base::ProcessHandle process_handle);
+
   // Used for context in Delegate calls (via |from_node| arguments.)
   void SetRemoteNodeName(const ports::NodeName& name);
 
@@ -105,6 +108,8 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
 
   // Must only be accessed from |io_task_runner_|'s thread.
   ports::NodeName remote_node_name_;
+
+  base::ProcessHandle remote_process_handle_;
 
   DISALLOW_COPY_AND_ASSIGN(NodeChannel);
 };

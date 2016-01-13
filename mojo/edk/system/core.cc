@@ -56,8 +56,9 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
   return handles_.GetDispatcher(handle);
 }
 
-void Core::AddChild(ScopedPlatformHandle platform_handle) {
-  node_controller_.ConnectToChild(std::move(platform_handle));
+void Core::AddChild(base::ProcessHandle process_handle,
+                    ScopedPlatformHandle platform_handle) {
+  node_controller_.ConnectToChild(process_handle, std::move(platform_handle));
 }
 
 void Core::InitChild(ScopedPlatformHandle platform_handle) {

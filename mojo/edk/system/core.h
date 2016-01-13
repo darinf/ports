@@ -45,7 +45,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
 
   // Called in the parent process any time a new child is launched.
-  void AddChild(ScopedPlatformHandle platform_handle);
+  void AddChild(base::ProcessHandle process_handle,
+                ScopedPlatformHandle platform_handle);
 
   // Called in a child process exactly once during early initialization.
   void InitChild(ScopedPlatformHandle platform_handle);

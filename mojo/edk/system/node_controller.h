@@ -56,7 +56,8 @@ class NodeController : public ports::NodeDelegate,
   void SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner);
 
   // Connects this node to a child node. This node will initiate a handshake.
-  void ConnectToChild(ScopedPlatformHandle platform_handle);
+  void ConnectToChild(base::ProcessHandle process_handle,
+                      ScopedPlatformHandle platform_handle);
 
   // Connects this node to a parent node. The parent node will initiate a
   // handshake.
@@ -98,7 +99,8 @@ class NodeController : public ports::NodeDelegate,
     ports::PortRef local_port;
   };
 
-  void ConnectToChildOnIOThread(ScopedPlatformHandle platform_handle);
+  void ConnectToChildOnIOThread(base::ProcessHandle process_handle,
+                                ScopedPlatformHandle platform_handle);
   void ConnectToParentOnIOThread(ScopedPlatformHandle platform_handle);
   void RequestParentPortConnectionOnIOThread(const ports::PortRef& local_port,
                                              const std::string& token);
