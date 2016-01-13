@@ -71,8 +71,8 @@ class NodeController : public ports::NodeDelegate,
                   scoped_ptr<PortsMessage> message);
 
   // Reserves a port associated with |token|. A peer may associate one of their
-  // own ports with this one by sending us a LocatePort message with the same
-  // token value.
+  // own ports with this one by sending us a RequestPortConnection message with
+  // the same token value.
   //
   // Note that the reservation is made synchronously. In order to avoid races,
   // reservations should be acquired before |token| is communicated to any
