@@ -98,12 +98,9 @@ class ChannelWin : public Channel,
   }
 
   void ShutDownImpl() override {
-    if (io_task_runner_->RunsTasksOnCurrentThread()) {
-      ShutDownOnIOThread();
-    } else {
-      io_task_runner_->PostTask(
-          FROM_HERE, base::Bind(&ChannelWin::ShutDownOnIOThread, this));
-    }
+    // Always shut down asynchronously when called through the public interface.
+    io_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&ChannelWin::ShutDownOnIOThread, this));
   }
 
   void Write(MessagePtr message) override {

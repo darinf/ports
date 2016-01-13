@@ -98,12 +98,9 @@ class ChannelPosix : public Channel,
   }
 
   void ShutDownImpl() override {
-    if (io_task_runner_->RunsTasksOnCurrentThread()) {
-      ShutDownOnIOThread();
-    } else {
-      io_task_runner_->PostTask(
-          FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
-    }
+    // Always shut down asynchronously when called through the public interface.
+    io_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&ChannelPosix::ShutDownOnIOThread, this));
   }
 
   void Write(MessagePtr message) override {
@@ -203,40 +200,42 @@ class ChannelPosix : public Channel,
     CHECK_EQ(fd, handle_.get().handle);
 
     bool read_error = false;
-    {
-      size_t next_read_size = 0;
-      size_t buffer_capacity = 0;
-      size_t total_bytes_read = 0;
-      size_t bytes_read = 0;
-      do {
-        buffer_capacity = next_read_size;
-        char* buffer = GetReadBuffer(&buffer_capacity);
-        DCHECK_GT(buffer_capacity, 0u);
+    size_t next_read_size = 0;
+    size_t buffer_capacity = 0;
+    size_t total_bytes_read = 0;
+    size_t bytes_read = 0;
+    do {
+      buffer_capacity = next_read_size;
+      char* buffer = GetReadBuffer(&buffer_capacity);
+      DCHECK_GT(buffer_capacity, 0u);
 
-        ssize_t read_result = PlatformChannelRecvmsg(
-            handle_.get(),
-            buffer,
-            buffer_capacity,
-            &incoming_platform_handles_);
+      ssize_t read_result = PlatformChannelRecvmsg(
+          handle_.get(),
+          buffer,
+          buffer_capacity,
+          &incoming_platform_handles_);
 
-        if (read_result > 0) {
-          bytes_read = static_cast<size_t>(read_result);
-          total_bytes_read += bytes_read;
-          if (!OnReadComplete(bytes_read, &next_read_size)) {
-            read_error = true;
-            break;
-          }
-        } else if (read_result == 0 ||
-                   (errno != EAGAIN && errno != EWOULDBLOCK)) {
+      if (read_result > 0) {
+        bytes_read = static_cast<size_t>(read_result);
+        total_bytes_read += bytes_read;
+        if (!OnReadComplete(bytes_read, &next_read_size)) {
           read_error = true;
           break;
         }
-      } while (bytes_read == buffer_capacity &&
-               total_bytes_read < kMaxBatchReadCapacity &&
-               next_read_size > 0);
-    }
-    if (read_error)
+      } else if (read_result == 0 ||
+                 (errno != EAGAIN && errno != EWOULDBLOCK)) {
+        read_error = true;
+        break;
+      }
+    } while (bytes_read == buffer_capacity &&
+             total_bytes_read < kMaxBatchReadCapacity &&
+             next_read_size > 0);
+    if (read_error) {
+      // Stop receiving read notifications.
+      read_watcher_.reset();
+
       OnError();
+    }
   }
 
   void OnFileCanWriteWithoutBlocking(int fd) override {
