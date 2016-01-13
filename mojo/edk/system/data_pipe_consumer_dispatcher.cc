@@ -287,7 +287,7 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
   const SerializedState* state = static_cast<const SerializedState*>(data);
   size_t data_buffer_size = num_bytes - sizeof(SerializedState);
 
-  NodeController* node_controller = internal::g_core->node_controller();
+  NodeController* node_controller = internal::g_core->GetNodeController();
   ports::PortRef port;
   if (node_controller->node()->GetPort(ports[0], &port) != ports::OK)
     return nullptr;

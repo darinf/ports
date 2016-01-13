@@ -36,11 +36,12 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   explicit Core();
   virtual ~Core();
 
-  NodeController* node_controller() { return &node_controller_; }
-
   // Called exactly once, shortly after construction, and before any other
   // methods are called on this object.
   void SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner);
+
+  // Retrieves the NodeController for the current process.
+  NodeController* GetNodeController();
 
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
 
@@ -206,7 +207,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                               uint32_t *result_index,
                               HandleSignalsState* signals_states);
 
-  NodeController node_controller_;
+  // This is lazily initialized on first access. Always use GetNodeController()
+  // to access it.
+  scoped_ptr<NodeController> node_controller_;
 
   base::Lock handles_lock_;
   HandleTable handles_;

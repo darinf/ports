@@ -43,12 +43,18 @@ const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 
 }  // namespace
 
-Core::Core() : node_controller_(this) {}
+Core::Core() {}
 
 Core::~Core() {}
 
 void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
-  node_controller_.SetIOTaskRunner(io_task_runner);
+  GetNodeController()->SetIOTaskRunner(io_task_runner);
+}
+
+NodeController* Core::GetNodeController() {
+  if (!node_controller_)
+    node_controller_.reset(new NodeController(this));
+  return node_controller_.get();
 }
 
 scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
@@ -58,11 +64,12 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
 
 void Core::AddChild(base::ProcessHandle process_handle,
                     ScopedPlatformHandle platform_handle) {
-  node_controller_.ConnectToChild(process_handle, std::move(platform_handle));
+  GetNodeController()->ConnectToChild(process_handle,
+                                      std::move(platform_handle));
 }
 
 void Core::InitChild(ScopedPlatformHandle platform_handle) {
-  node_controller_.ConnectToParent(std::move(platform_handle));
+  GetNodeController()->ConnectToParent(std::move(platform_handle));
 }
 
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
@@ -76,10 +83,10 @@ bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
   for (size_t i = 0; i < message.num_ports(); ++i) {
     ports::PortRef port;
     CHECK_EQ(ports::OK,
-             node_controller_.node()->GetPort(message.ports()[i], &port));
+             GetNodeController()->node()->GetPort(message.ports()[i], &port));
 
     Dispatcher::DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(&node_controller_, port,
+    d.dispatcher = new MessagePipeDispatcher(GetNodeController(), port,
                                              true /* connected */);
   }
   return AddDispatchersFromTransit(dispatchers, handles);
@@ -133,20 +140,20 @@ ScopedMessagePipeHandle Core::CreateParentMessagePipe(
   std::string token = GenerateRandomToken();
   ScopedMessagePipeHandle pipe_handle = CreateParentMessagePipe(token);
   RemoteMessagePipeBootstrap::CreateForParent(
-      &node_controller_, std::move(platform_handle), token);
+      GetNodeController(), std::move(platform_handle), token);
   return pipe_handle;
 }
 
 ScopedMessagePipeHandle Core::CreateChildMessagePipe(
     ScopedPlatformHandle platform_handle) {
   ports::PortRef port;
-  node_controller_.node()->CreateUninitializedPort(&port);
+  GetNodeController()->node()->CreateUninitializedPort(&port);
   MojoHandle handle = AddDispatcher(
-      new MessagePipeDispatcher(&node_controller_, port,
+      new MessagePipeDispatcher(GetNodeController(), port,
                                 false /* connected */));
 
   RemoteMessagePipeBootstrap::CreateForChild(
-      &node_controller_, std::move(platform_handle), port);
+      GetNodeController(), std::move(platform_handle), port);
 
   return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
@@ -154,9 +161,9 @@ ScopedMessagePipeHandle Core::CreateChildMessagePipe(
 ScopedMessagePipeHandle Core::CreateParentMessagePipe(
     const std::string& token) {
   ports::PortRef port;
-  node_controller_.ReservePort(token, &port);
+  GetNodeController()->ReservePort(token, &port);
   MojoHandle handle = AddDispatcher(
-      new MessagePipeDispatcher(&node_controller_, port,
+      new MessagePipeDispatcher(GetNodeController(), port,
                                 false /* connected */));
   return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
@@ -164,17 +171,17 @@ ScopedMessagePipeHandle Core::CreateParentMessagePipe(
 ScopedMessagePipeHandle Core::CreateChildMessagePipe(
     const std::string& token) {
   ports::PortRef port;
-  node_controller_.node()->CreateUninitializedPort(&port);
+  GetNodeController()->node()->CreateUninitializedPort(&port);
 
   MojoHandle handle = AddDispatcher(
-      new MessagePipeDispatcher(&node_controller_, port,
+      new MessagePipeDispatcher(GetNodeController(), port,
                                 false /* connected */));
 
   // Note: It's important that we create the MPD before calling
   // ConnectToParentPort(), as the corresponding request and the parent's
   // response could otherwise race with MPD creation, and the pipe could miss
   // incoming messages.
-  node_controller_.ConnectToParentPort(port, token);
+  GetNodeController()->ConnectToParentPort(port, token);
 
   return ScopedMessagePipeHandle(MessagePipeHandle(handle));
 }
@@ -326,17 +333,17 @@ MojoResult Core::CreateMessagePipe(
     MojoHandle* message_pipe_handle0,
     MojoHandle* message_pipe_handle1) {
   ports::PortRef port0, port1;
-  node_controller_.node()->CreatePortPair(&port0, &port1);
+  GetNodeController()->node()->CreatePortPair(&port0, &port1);
   CHECK(message_pipe_handle0);
   CHECK(message_pipe_handle1);
   *message_pipe_handle0 = AddDispatcher(
-      new MessagePipeDispatcher(&node_controller_, port0,
+      new MessagePipeDispatcher(GetNodeController(), port0,
                                 true /* connected */));
   if (*message_pipe_handle0 == MOJO_HANDLE_INVALID)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   *message_pipe_handle1 = AddDispatcher(
-      new MessagePipeDispatcher(&node_controller_, port1,
+      new MessagePipeDispatcher(GetNodeController(), port1,
                                 true /* connected */));
   if (*message_pipe_handle1 == MOJO_HANDLE_INVALID) {
     scoped_refptr<Dispatcher> unused;
@@ -427,17 +434,17 @@ MojoResult Core::CreateDataPipe(
       options ? options : &default_options;
 
   ports::PortRef port0, port1;
-  node_controller_.node()->CreatePortPair(&port0, &port1);
+  GetNodeController()->node()->CreatePortPair(&port0, &port1);
   CHECK(data_pipe_producer_handle);
   CHECK(data_pipe_consumer_handle);
   *data_pipe_producer_handle = AddDispatcher(
-      new DataPipeProducerDispatcher(&node_controller_, port0,
+      new DataPipeProducerDispatcher(GetNodeController(), port0,
                                      *create_options));
   if (*data_pipe_producer_handle == MOJO_HANDLE_INVALID)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   *data_pipe_consumer_handle = AddDispatcher(
-      new DataPipeConsumerDispatcher(&node_controller_, port1,
+      new DataPipeConsumerDispatcher(GetNodeController(), port1,
                                      *create_options));
   if (*data_pipe_consumer_handle == MOJO_HANDLE_INVALID) {
     scoped_refptr<Dispatcher> unused;

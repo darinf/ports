@@ -437,10 +437,10 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
   ports::PortRef port;
   CHECK_EQ(
       ports::OK,
-      internal::g_core->node_controller()->node()->GetPort(ports[0], &port));
+      internal::g_core->GetNodeController()->node()->GetPort(ports[0], &port));
 
   // Note: disconnected ports cannot be serialized.
-  return new MessagePipeDispatcher(internal::g_core->node_controller(), port,
+  return new MessagePipeDispatcher(internal::g_core->GetNodeController(), port,
                                    true /* connected */);
 }
 
