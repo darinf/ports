@@ -147,8 +147,8 @@ void ChildProcessHost::DoLaunch() {
   if (start_sandboxed_)
     child_command_line.AppendSwitch(switches::kEnableSandbox);
 
-  node_channel_->PrepareToPassClientHandleToChildProcess(
-      &child_command_line, &handle_passing_info_);
+  node_channel_->PrepareToPassClientHandleToChildProcess(&child_command_line,
+                                                         &handle_passing_info_);
 
   child_command_line.AppendSwitchASCII(switches::kPrimordialPipeToken,
                                        primordial_pipe_token_);

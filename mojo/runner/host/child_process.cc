@@ -318,9 +318,9 @@ ScopedMessagePipeHandle InitializeHostMessagePipe(
             switches::kPrimordialPipeToken);
     host_message_pipe = edk::CreateChildMessagePipe(primordial_pipe_token);
   } else {
-    host_message_pipe = embedder::CreateChannel(std::move(platform_channel),
-                                                base::Bind(&DidCreateChannel),
-                                                io_task_runner);
+    host_message_pipe =
+        embedder::CreateChannel(std::move(platform_channel),
+                                base::Bind(&DidCreateChannel), io_task_runner);
   }
 
   return host_message_pipe;

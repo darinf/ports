@@ -322,9 +322,9 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_QueueMessages) {
       ASSERT_EQ(MOJO_RESULT_OK,
                 MojoWait(h, MOJO_HANDLE_SIGNAL_READABLE,
                          MOJO_DEADLINE_INDEFINITE, &hss));
-      // The child may or may not have closed its end of the message pipe and died
-      // (and we may or may not know it yet), so our end may or may not appear as
-      // writable.
+      // The child may or may not have closed its end of the message pipe and
+      // died (and we may or may not know it yet), so our end may or may not
+      // appear as writable.
       ASSERT_TRUE((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE));
       ASSERT_TRUE((hss.satisfiable_signals & MOJO_HANDLE_SIGNAL_READABLE));
 
@@ -594,7 +594,8 @@ TEST_P(MultiprocessMessagePipeTestWithPipeCount, PlatformHandlePassing) {
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoWriteMessage(h, message,
                                static_cast<uint32_t>(strlen(message)),
-                               &handles[0], static_cast<uint32_t>(handles.size()),
+                               &handles[0],
+                               static_cast<uint32_t>(handles.size()),
                                MOJO_WRITE_MESSAGE_FLAG_NONE));
 
     // Wait for it to become readable, which should fail.
@@ -684,7 +685,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipePassing) {
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoCreateMessagePipe(nullptr, &mp1, &mp2));
 
-    // Write a string into one end of the new message pipe and send the other end.
+    // Write a string into one end of the new message pipe and send the other
+    // end.
     const std::string hello("hello");
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoWriteMessage(mp1, &hello[0],
@@ -728,7 +730,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipeTwoPassing) {
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoCreateMessagePipe(nullptr, &mp2, &mp1));
 
-    // Write a string into one end of the new message pipe and send the other end.
+    // Write a string into one end of the new message pipe and send the other
+    // end.
     const std::string hello("hello");
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoWriteMessage(mp1, &hello[0],
@@ -825,7 +828,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_DataPipeConsumer) {
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoCreateMessagePipe(nullptr, &mp2, &mp1));
 
-    // Write a string into one end of the new message pipe and send the other end.
+    // Write a string into one end of the new message pipe and send the other
+    // end.
     const std::string hello("hello");
     ASSERT_EQ(MOJO_RESULT_OK,
               MojoWriteMessage(mp1, &hello[0],

@@ -1745,8 +1745,9 @@ TEST_F(DataPipeTest, MAYBE_Multiprocess) {
     ASSERT_TRUE(WriteAllData(producer_, kMultiprocessTestData, kTestDataSize));
 
     // Swap ends.
-    ASSERT_EQ(MOJO_RESULT_OK, MojoWriteMessage(server_mp, nullptr, 0, &producer_,
-                                               1, MOJO_WRITE_MESSAGE_FLAG_NONE));
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoWriteMessage(server_mp, nullptr, 0, &producer_, 1,
+                               MOJO_WRITE_MESSAGE_FLAG_NONE));
 
     // Receive the consumer from the other side.
     producer_ = MOJO_HANDLE_INVALID;
