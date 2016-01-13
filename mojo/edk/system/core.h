@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -190,8 +189,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   void GetActiveHandlesForTest(std::vector<MojoHandle>* handles);
 
  private:
-  using DispatcherMap = base::hash_map<MojoHandle, scoped_refptr<Dispatcher>>;
-
   MojoResult WaitManyInternal(const MojoHandle* handles,
                               const MojoHandleSignals* signals,
                               uint32_t num_handles,

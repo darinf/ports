@@ -120,7 +120,7 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   virtual void Write(MessagePtr message) = 0;
 
  protected:
-  Channel(Delegate* delegate);
+  explicit Channel(Delegate* delegate);
   virtual ~Channel();
 
   // Called by the implementation when it wants somewhere to stick data.

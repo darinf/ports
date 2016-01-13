@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <limits>
 
 #include "base/macros.h"
 #include "base/memory/aligned_memory.h"
@@ -32,9 +33,14 @@ Channel::Message::Message(size_t payload_size,
   data_ = static_cast<char*>(base::AlignedAlloc(size_,
                                                 kChannelMessageAlignment));
   Header* header = reinterpret_cast<Header*>(data_);
-  // TODO: Make sure these casts are safe.
+
+  DCHECK_LE(payload_size, std::numeric_limits<uint32_t>::max());
   header->num_bytes = static_cast<uint32_t>(size_);
-  header->num_handles = static_cast<uint16_t>(handles_ ? handles_->size() : 0);
+
+  size_t num_handles = handles_ ? handles_->size() : 0;
+  DCHECK_LE(num_handles, std::numeric_limits<uint16_t>::max());
+  header->num_handles = static_cast<uint16_t>(num_handles);
+
   header->padding = 0;
 }
 
@@ -43,8 +49,9 @@ Channel::Message::~Message() {
 }
 
 void Channel::Message::SetHandles(ScopedPlatformHandleVectorPtr handles) {
-  // TODO: Make sure this cast is safe.
-  header()->num_handles = static_cast<uint16_t>(handles ? handles->size() : 0);
+  size_t num_handles = handles ? handles->size() : 0;
+  DCHECK_LE(num_handles, std::numeric_limits<uint16_t>::max());
+  header()->num_handles = static_cast<uint16_t>(num_handles);
   std::swap(handles, handles_);
 }
 

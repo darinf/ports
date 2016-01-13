@@ -1640,7 +1640,6 @@ bool WriteAllData(MojoHandle producer,
     MojoResult result = MojoWriteData(producer, elements, &write_bytes,
                                       MOJO_WRITE_DATA_FLAG_NONE);
     if (result == MOJO_RESULT_OK) {
-      LOG(ERROR) << "Wrote " << write_bytes;
       num_bytes -= write_bytes;
       elements = static_cast<const uint8_t*>(elements) + write_bytes;
       if (num_bytes == 0)

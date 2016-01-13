@@ -141,13 +141,9 @@ class ChannelPosix : public Channel,
   }
 
  private:
-  // TODO: This could run on any thread. Need to move RemoveDestructionObserver
-  // to ShutdownOnIOThread.
   ~ChannelPosix() override {
-    DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
     DCHECK(!read_watcher_);
     DCHECK(!write_watcher_);
-    base::MessageLoop::current()->RemoveDestructionObserver(this);
     for (auto handle : incoming_platform_handles_)
       handle.CloseIfNecessary();
   }
@@ -185,6 +181,8 @@ class ChannelPosix : public Channel,
   }
 
   void ShutDownOnIOThread() {
+    base::MessageLoop::current()->RemoveDestructionObserver(this);
+
     read_watcher_.reset();
     write_watcher_.reset();
     handle_.reset();
