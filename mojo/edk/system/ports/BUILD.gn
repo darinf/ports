@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//testing/test.gni")
+
 source_set("ports") {
   sources = [
     "event.h",
@@ -28,9 +30,7 @@ source_set("ports") {
   ]
 }
 
-executable("mojo_system_ports_unittests") {
-  testonly = true
-
+test("mojo_system_ports_unittests") {
   sources = [
     "ports_unittest.cc",
   ]
