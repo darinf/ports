@@ -37,6 +37,9 @@ void Message::Parse(const void* bytes,
     case EventType::kObserveClosure:
       *num_header_bytes = sizeof(EventHeader) + sizeof(ObserveClosureEventData);
       break;
+    default:
+      CHECK(false) << "Bad event type";
+      return;
   }
 
   if (header->type == EventType::kUser) {

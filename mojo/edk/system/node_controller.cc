@@ -275,10 +275,30 @@ void NodeController::DropPeer(const ports::NodeName& name) {
 
 void NodeController::SendPeerMessage(const ports::NodeName& name,
                                      ports::ScopedMessage message) {
+  PortsMessage* ports_message = static_cast<PortsMessage*>(message.get());
+
+#if defined(OS_WIN)
+  if (ports_message->has_handles()) {
+    if (!parent_channel_) {
+      // Then we are the parent. XXX This is not quite right!
+      scoped_refptr<NodeChannel> peer = GetPeerChannel(name);
+      if (peer) {
+        peer->RelayPortsMessage(
+            name, ports_message->TakeChannelMessage());
+      } else {
+        DLOG(ERROR) << "Oops, unknown child!";
+      }
+    } else {
+      parent_channel_->RelayPortsMessage(
+          name, ports_message->TakeChannelMessage());
+    }
+    return;
+  }
+#endif
+
   scoped_refptr<NodeChannel> peer = GetPeerChannel(name);
   if (peer) {
-    peer->PortsMessage(
-        static_cast<PortsMessage*>(message.get())->TakeChannelMessage());
+    peer->PortsMessage(ports_message->TakeChannelMessage());
     return;
   }
 
@@ -355,7 +375,7 @@ void NodeController::AllocMessage(size_t num_header_bytes,
                                   size_t num_ports_bytes,
                                   ports::ScopedMessage* message) {
   message->reset(new PortsMessage(num_header_bytes, num_payload_bytes,
-                                  num_ports_bytes, nullptr, 0, nullptr));
+                                  num_ports_bytes, nullptr));
 }
 
 void NodeController::ForwardMessage(const ports::NodeName& node,
@@ -444,16 +464,17 @@ void NodeController::OnAcceptParent(const ports::NodeName& from_node,
   AddPeer(child_name, channel, false /* start_channel */);
 }
 
-void NodeController::OnPortsMessage(
-    const ports::NodeName& from_node,
-    const void* bytes,
-    size_t num_bytes,
-    ScopedPlatformHandleVectorPtr platform_handles) {
+void NodeController::OnPortsMessage(Channel::MessagePtr channel_message) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
+  void* data;
+  size_t num_data_bytes;
+  NodeChannel::GetPortsMessageData(
+      channel_message.get(), &data, &num_data_bytes);
+
   size_t num_header_bytes, num_payload_bytes, num_ports_bytes;
-  ports::Message::Parse(bytes,
-                        num_bytes,
+  ports::Message::Parse(data,
+                        num_data_bytes,
                         &num_header_bytes,
                         &num_payload_bytes,
                         &num_ports_bytes);
@@ -462,9 +483,8 @@ void NodeController::OnPortsMessage(
       new PortsMessage(num_header_bytes,
                        num_payload_bytes,
                        num_ports_bytes,
-                       bytes,
-                       num_bytes,
-                       std::move(platform_handles)));
+                       std::move(channel_message)));
+
   node_->AcceptMessage(std::move(message));
 }
 
@@ -592,6 +612,24 @@ void NodeController::OnIntroduce(const ports::NodeName& from_node,
   DVLOG(1) << "Adding new peer " << name << " via parent introduction.";
   AddPeer(name, channel, true /* start_channel */);
 }
+
+#if defined(OS_WIN)
+void NodeController::OnRelayPortsMessage(const ports::NodeName& destination,
+                                         Channel::MessagePtr message) {
+  if (destination == name_) {
+    // Great, we can deliver this message locally.
+    OnPortsMessage(std::move(message));
+    return;
+  }
+
+  scoped_refptr<NodeChannel> peer = GetPeerChannel(destination);
+  if (peer) {
+    peer->RelayPortsMessage(destination, std::move(message));
+  } else {
+    DLOG(ERROR) << "Dropping relay message to unknown node: " << destination;
+  }
+}
+#endif
 
 void NodeController::OnChannelError(const ports::NodeName& from_node) {
   if (io_task_runner_->RunsTasksOnCurrentThread()) {

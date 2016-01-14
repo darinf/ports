@@ -44,6 +44,17 @@ Channel::Message::Message(size_t payload_size,
   header->padding = 0;
 }
 
+Channel::Message::Message(const void* data, size_t data_num_bytes)
+    : size_(data_num_bytes) {
+  data_ = static_cast<char*>(base::AlignedAlloc(size_,
+                                                kChannelMessageAlignment));
+  memcpy(data_, data, data_num_bytes);
+
+  // Some sanity checks:
+  DCHECK_EQ(size_, header()->num_bytes);
+  DCHECK_EQ(0, header()->padding);
+}
+
 Channel::Message::~Message() {
   base::AlignedFree(data_);
 }

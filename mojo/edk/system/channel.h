@@ -39,6 +39,7 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     // |payload_size| bytes plus a header. Takes ownership of |handles|, which
     // may be null.
     Message(size_t payload_size, ScopedPlatformHandleVectorPtr handles);
+    Message(const void* data, size_t data_num_bytes);
     ~Message();
 
     const void* data() const { return data_; }
@@ -49,6 +50,8 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
 
     size_t payload_size() const { return header()->num_bytes - sizeof(Header); }
     size_t num_handles() const { return header()->num_handles; }
+
+    bool has_handles() const { return header()->num_handles > 0; }
 
     PlatformHandle* handles() {
       DCHECK(handles_);

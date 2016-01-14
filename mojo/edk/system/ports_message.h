@@ -16,16 +16,17 @@ namespace edk {
 
 class PortsMessage : public ports::Message {
  public:
+  // If |channel_message| is null, then a Channel::Message will be allocated.
+  // Otherwise, the given message will be used as the backing store.
   PortsMessage(size_t num_header_bytes,
                size_t num_payload_bytes,
                size_t num_ports_bytes,
-               const void* bytes,
-               size_t num_bytes,
-               ScopedPlatformHandleVectorPtr platform_handles);
+               Channel::MessagePtr channel_message);
   ~PortsMessage() override;
 
   PlatformHandle* handles() { return channel_message_->handles(); }
   size_t num_handles() const { return channel_message_->num_handles(); }
+  bool has_handles() const { return channel_message_->has_handles(); }
 
   void SetHandles(ScopedPlatformHandleVectorPtr handles) {
     channel_message_->SetHandles(std::move(handles));

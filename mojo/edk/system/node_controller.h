@@ -134,10 +134,7 @@ class NodeController : public ports::NodeDelegate,
   void OnAcceptParent(const ports::NodeName& from_node,
                       const ports::NodeName& token,
                       const ports::NodeName& child_name) override;
-  void OnPortsMessage(const ports::NodeName& from_node,
-                      const void* payload,
-                      size_t payload_size,
-                      ScopedPlatformHandleVectorPtr platform_handles) override;
+  void OnPortsMessage(Channel::MessagePtr message) override;
   void OnRequestPortConnection(const ports::NodeName& from_node,
                                const ports::PortName& connector_port_name,
                                const std::string& token) override;
@@ -149,6 +146,10 @@ class NodeController : public ports::NodeDelegate,
   void OnIntroduce(const ports::NodeName& from_node,
                    const ports::NodeName& name,
                    ScopedPlatformHandle channel_handle) override;
+#if defined(OS_WIN)
+  void OnRelayPortsMessage(const ports::NodeName& destination,
+                           Channel::MessagePtr message) override;
+#endif
   void OnChannelError(const ports::NodeName& from_node) override;
 
   // These are safe to access from any thread as long as the Node is alive.

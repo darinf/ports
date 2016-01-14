@@ -9,12 +9,19 @@
 #include <sstream>
 
 #include "base/logging.h"
+#include "base/rand_util.h"
 #include "mojo/edk/system/channel.h"
 
 namespace mojo {
 namespace edk {
 
 namespace {
+
+template <typename T>
+T Align(T t) {
+  const auto k = kChannelMessageAlignment;
+  return t + (k - (t % k)) % k;
+}
 
 enum class MessageType : uint32_t {
   ACCEPT_CHILD,
@@ -24,6 +31,10 @@ enum class MessageType : uint32_t {
   CONNECT_TO_PORT,
   REQUEST_INTRODUCTION,
   INTRODUCE,
+#if defined(OS_WIN)
+  RELAY_PORTS_MESSAGE,
+  RELAY_PORTS_MESSAGE_ACK,
+#endif
 };
 
 struct Header {
@@ -64,6 +75,20 @@ struct IntroductionData {
   ports::NodeName name;
 };
 
+#if defined(OS_WIN)
+// This struct is followed by an array of handles and then the message data.
+struct RelayPortsMessageData {
+  ports::NodeName destination;
+  uint32_t identifier;
+  uint32_t handles_num_bytes;
+};
+
+struct RelayPortsMessageAckData {
+  uint32_t identifier;
+  uint32_t padding;
+};
+#endif
+
 template <typename DataType>
 Channel::MessagePtr CreateMessage(MessageType type,
                                   size_t payload_size,
@@ -103,6 +128,13 @@ Channel::MessagePtr NodeChannel::CreatePortsMessage(
                        std::move(platform_handles), payload);
 }
 
+// static
+void NodeChannel::GetPortsMessageData(Channel::Message* message, void** data,
+                                      size_t* num_data_bytes) {
+  *data = reinterpret_cast<Header*>(message->mutable_payload()) + 1;
+  *num_data_bytes = message->payload_size() - sizeof(Header);
+}
+
 void NodeChannel::Start() {
   base::AutoLock lock(channel_lock_);
   DCHECK(channel_);
@@ -118,8 +150,10 @@ void NodeChannel::ShutDown() {
 }
 
 void NodeChannel::SetRemoteProcessHandle(base::ProcessHandle process_handle) {
+#if defined(OS_WIN)
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   remote_process_handle_ = process_handle;
+#endif
 }
 
 void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
@@ -239,6 +273,66 @@ void NodeChannel::Introduce(const ports::NodeName& name,
   channel_->Write(std::move(message));
 }
 
+#if defined(OS_WIN)
+void NodeChannel::RelayPortsMessage(const ports::NodeName& destination,
+                                    Channel::MessagePtr message) {
+  DCHECK(message->has_handles());
+
+  uint32_t identifier = static_cast<uint32_t>(
+      base::RandGenerator(std::numeric_limits<uint32_t>::max()));
+
+  size_t handles_num_bytes = Align(message->num_handles() * sizeof(HANDLE));
+  size_t num_bytes = sizeof(RelayPortsMessageData) + message->data_num_bytes() +
+                     handles_num_bytes;
+
+  RelayPortsMessageData* data;
+  Channel::MessagePtr relay_message = CreateMessage(
+      MessageType::RELAY_PORTS_MESSAGE, num_bytes, nullptr, &data);
+  data->destination = destination;
+  data->identifier = identifier;
+  data->handles_num_bytes = static_cast<uint32_t>(handles_num_bytes);
+
+  ScopedPlatformHandleVectorPtr handles = message->TakeHandles();
+
+  // Copy the handles.
+  HANDLE* handles_start =
+      reinterpret_cast<HANDLE*>(reinterpret_cast<char*>(data + 1));
+  for (size_t i = 0; i < handles->size(); ++i)
+    handles_start[i] = handles.get()->at(i).handle;
+
+  // Map the handles to the destination process if we are empowered to do so.
+  if (remote_process_handle_ != base::kNullProcessHandle) {
+    for (size_t i = 0; i < handles->size(); ++i) {
+      BOOL result = DuplicateHandle(base::GetCurrentProcessHandle(),
+                                    handles_start[i], remote_process_handle_,
+                                    &handles_start[i], 0, FALSE,
+                                    DUPLICATE_SAME_ACCESS);
+      DCHECK(result);
+    }
+  }
+
+  if (handles->size() * sizeof(HANDLE) < handles_num_bytes) {
+    memset(handles_start + handles->size(), 0,
+           handles_num_bytes - handles->size() * sizeof(HANDLE));
+  }
+
+  // Copy the message bytes.
+  memcpy(reinterpret_cast<char*>(handles_start) + handles_num_bytes,
+         message->data(),
+         message->data_num_bytes());
+
+  // Hold onto these handles until we receive the RelayPortsMessageAck. This
+  // way we avoid closing them at the wrong time or leaking them.
+  {
+    base::AutoLock lock(pending_handles_lock_);
+    pending_handles_.insert(
+        std::make_pair(identifier, std::move(handles)));
+  }
+
+  channel_->Write(std::move(relay_message));
+}
+#endif
+
 NodeChannel::NodeChannel(Delegate* delegate,
                          ScopedPlatformHandle platform_handle,
                          scoped_refptr<base::TaskRunner> io_task_runner)
@@ -276,11 +370,10 @@ void NodeChannel::OnChannelMessage(const void* payload,
     }
 
     case MessageType::PORTS_MESSAGE: {
-      const void* data;
-      GetMessagePayload(payload, &data);
-      delegate_->OnPortsMessage(remote_node_name_, data,
-                                payload_size - sizeof(Header),
-                                std::move(handles));
+      Channel::MessagePtr message(
+          new Channel::Message(payload_size, std::move(handles)));
+      memcpy(message->mutable_payload(), payload, payload_size);
+      delegate_->OnPortsMessage(std::move(message));
       break;
     }
 
@@ -324,6 +417,20 @@ void NodeChannel::OnChannelMessage(const void* payload,
       break;
     }
 
+#if defined(OS_WIN)
+    case MessageType::RELAY_PORTS_MESSAGE: {
+      OnRelayPortsMessage(payload, payload_size);
+      break;
+    }
+
+    case MessageType::RELAY_PORTS_MESSAGE_ACK: {
+      const RelayPortsMessageAckData* data;
+      GetMessagePayload(payload, &data);
+      OnRelayPortsMessageAck(data->identifier);
+      break;
+    }
+#endif
+
     default:
       DLOG(ERROR) << "Received unknown message type "
                   << static_cast<uint32_t>(header->type) << " from node "
@@ -343,6 +450,51 @@ void NodeChannel::OnChannelError() {
   ports::NodeName node_name = remote_node_name_;
   delegate_->OnChannelError(node_name);
 }
+
+#if defined(OS_WIN)
+void NodeChannel::OnRelayPortsMessage(const void* payload,
+                                      size_t payload_size) {
+  const RelayPortsMessageData* data;
+  GetMessagePayload(payload, &data);
+
+  const HANDLE* handles_start =
+      reinterpret_cast<const HANDLE*>(reinterpret_cast<const char*>(data + 1));
+  const char* message_start =
+      reinterpret_cast<const char*>(handles_start) + data->handles_num_bytes;
+  const char* message_end = static_cast<const char*>(payload) + payload_size;
+  size_t message_size = message_end - message_start;
+
+  // Maybe we should be killing the guy who sent us this message instead.
+  CHECK(message_end > message_start);
+
+  Channel::MessagePtr message(
+      new Channel::Message(message_start, message_size));
+
+  // Maybe we should be killing the guy who sent us this message instead.
+  CHECK(message->num_handles() * sizeof(HANDLE) <= data->handles_num_bytes);
+
+  ScopedPlatformHandleVectorPtr handles(new PlatformHandleVector());
+  for (size_t i = 0; i < message->num_handles(); ++i)
+    handles.get()->push_back(PlatformHandle(handles_start[i]));
+  message->SetHandles(std::move(handles));
+
+  // Send 'ack' message
+  RelayPortsMessageAckData* ack_data;
+  Channel::MessagePtr ack_message = CreateMessage(
+      MessageType::RELAY_PORTS_MESSAGE_ACK, sizeof(*ack_data), nullptr,
+      &ack_data);
+  ack_data->identifier = data->identifier;
+  ack_data->padding = 0;
+  channel_->Write(std::move(ack_message));
+
+  delegate_->OnRelayPortsMessage(data->destination, std::move(message));
+}
+
+void NodeChannel::OnRelayPortsMessageAck(uint32_t identifier) {
+  pending_handles_.erase(identifier);
+}
+
+#endif
 
 }  // namespace edk
 }  // namespace mojo

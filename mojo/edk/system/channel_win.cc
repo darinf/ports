@@ -252,11 +252,6 @@ class ChannelWin : public Channel,
   // cannot be written, it's queued and a wait is initiated to write the message
   // ASAP on the I/O thread.
   bool WriteNoLock(const MessageView& message_view) {
-    if (message_view.has_handles()) {
-      DCHECK(false) << "not implemented";
-      return false;
-    }
-
     BOOL ok = WriteFile(handle_.get().handle,
                         message_view.data(),
                         static_cast<DWORD>(message_view.data_num_bytes()),

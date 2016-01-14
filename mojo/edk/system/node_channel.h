@@ -5,11 +5,14 @@
 #ifndef MOJO_EDK_SYSTEM_NODE_CHANNEL_H_
 #define MOJO_EDK_SYSTEM_NODE_CHANNEL_H_
 
+#include <unordered_map>
+
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/process/process_handle.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
+#include "build/build_config.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/channel.h"
@@ -31,11 +34,7 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
     virtual void OnAcceptParent(const ports::NodeName& from_node,
                                 const ports::NodeName& token,
                                 const ports::NodeName& child_name) = 0;
-    virtual void OnPortsMessage(
-        const ports::NodeName& from_node,
-        const void* payload,
-        size_t payload_size,
-        ScopedPlatformHandleVectorPtr platform_handles) = 0;
+    virtual void OnPortsMessage(Channel::MessagePtr message) = 0;
     virtual void OnRequestPortConnection(
         const ports::NodeName& from_node,
         const ports::PortName& connector_port_name,
@@ -49,6 +48,10 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
     virtual void OnIntroduce(const ports::NodeName& from_name,
                              const ports::NodeName& name,
                              ScopedPlatformHandle channel_handle) = 0;
+#if defined(OS_WIN)
+    virtual void OnRelayPortsMessage(const ports::NodeName& destination,
+                                     Channel::MessagePtr message) = 0;
+#endif
 
     virtual void OnChannelError(const ports::NodeName& node) = 0;
   };
@@ -62,6 +65,9 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
       size_t payload_size,
       void** payload,
       ScopedPlatformHandleVectorPtr platform_handles);
+
+  static void GetPortsMessageData(Channel::Message* message, void** data,
+                                  size_t* num_data_bytes);
 
   // Start receiving messages.
   void Start();
@@ -86,6 +92,15 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
   void RequestIntroduction(const ports::NodeName& name);
   void Introduce(const ports::NodeName& name, ScopedPlatformHandle handle);
 
+#if defined(OS_WIN)
+  // Relay the message to the specified node via this channel.  This is used to
+  // pass windows handles between two processes that do not have permission to
+  // duplicate handles into the other's address space. The relay process is
+  // assumed to have that permission.
+  void RelayPortsMessage(const ports::NodeName& destination,
+                         Channel::MessagePtr message);
+#endif
+
  private:
   friend class base::RefCountedThreadSafe<NodeChannel>;
 
@@ -99,6 +114,11 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
                         size_t payload_size,
                         ScopedPlatformHandleVectorPtr handles) override;
   void OnChannelError() override;
+ 
+#if defined(OS_WIN)
+  void OnRelayPortsMessage(const void* payload, size_t payload_size);
+  void OnRelayPortsMessageAck(uint32_t identifier);
+#endif
 
   Delegate* const delegate_;
   const scoped_refptr<base::TaskRunner> io_task_runner_;
@@ -109,7 +129,12 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
   // Must only be accessed from |io_task_runner_|'s thread.
   ports::NodeName remote_node_name_;
 
-  base::ProcessHandle remote_process_handle_;
+#if defined(OS_WIN)
+  base::ProcessHandle remote_process_handle_ = base::kNullProcessHandle;
+  base::Lock pending_handles_lock_;
+  std::unordered_map<uint32_t /* identifier */,
+                     ScopedPlatformHandleVectorPtr> pending_handles_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(NodeChannel);
 };

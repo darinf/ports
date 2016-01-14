@@ -12,23 +12,23 @@ namespace edk {
 PortsMessage::PortsMessage(size_t num_header_bytes,
                            size_t num_payload_bytes,
                            size_t num_ports_bytes,
-                           const void* bytes,
-                           size_t num_bytes,
-                           ScopedPlatformHandleVectorPtr platform_handles)
+                           Channel::MessagePtr channel_message)
     : ports::Message(num_header_bytes,
                      num_payload_bytes,
                      num_ports_bytes) {
-  size_t size = num_header_bytes + num_payload_bytes + num_ports_bytes;
+  if (channel_message) {
+    channel_message_ = std::move(channel_message);
 
-  void* ptr;
-  channel_message_ = NodeChannel::CreatePortsMessage(
-      size, &ptr, std::move(platform_handles));
-
-  start_ = static_cast<char*>(ptr);
-  if (bytes) {
-    DCHECK_EQ(num_bytes,
-              num_header_bytes + num_payload_bytes + num_ports_bytes);
-    memcpy(start_, bytes, num_bytes);
+    void* data;
+    size_t num_data_bytes;
+    NodeChannel::GetPortsMessageData(channel_message_.get(), &data,
+                                     &num_data_bytes);
+    start_ = static_cast<char*>(data);
+  } else {
+    size_t size = num_header_bytes + num_payload_bytes + num_ports_bytes;
+    void* ptr;
+    channel_message_ = NodeChannel::CreatePortsMessage(size, &ptr, nullptr);
+    start_ = static_cast<char*>(ptr);
   }
 }
 
