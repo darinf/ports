@@ -133,7 +133,9 @@ class Node {
   int AddPortWithName(const PortName& port_name,
                       const scoped_refptr<Port>& port);
   void ErasePort(const PortName& port_name);
+  void ErasePort_Locked(const PortName& port_name);
   scoped_refptr<Port> GetPort(const PortName& port_name);
+  scoped_refptr<Port> GetPort_Locked(const PortName& port_name);
 
   void WillSendPort_Locked(Port* port,
                            const NodeName& to_node_name,
@@ -171,12 +173,12 @@ class Node {
   NodeName name_;
   NodeDelegate* delegate_;
 
-  // Guards |ports_|.
+  // Guards |ports_| as well as any operation which needs to hold multiple port
+  // locks simultaneously. Usage of this is subtle: it must NEVER be acquired
+  // after a Port lock is acquired, and it must ALWAYS be acquired before
+  // calling WillSendMessage_Locked or ForwardMessages_Locked.
   base::Lock ports_lock_;
   std::unordered_map<PortName, scoped_refptr<Port>> ports_;
-
-  // Guards multiple threads from sending ports simultaneously.
-  base::Lock send_with_ports_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };

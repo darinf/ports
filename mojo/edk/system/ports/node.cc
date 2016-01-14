@@ -258,6 +258,9 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage* message) {
 
   Port* port = port_ref.port();
   {
+    // We must acquire |ports_lock_| before grabbing any port locks, because
+    // WillSendMessage_Locked may need to lock multiple ports out of order.
+    base::AutoLock ports_lock(ports_lock_);
     base::AutoLock lock(port->lock);
 
     if (port->state != Port::kReceiving && port->state != Port::kUninitialized)
@@ -412,6 +415,9 @@ int Node::OnUserMessage(ScopedMessage message) {
   bool message_accepted = false;
 
   if (port) {
+    // We may want to forward messages once the port lock is held, so we must
+    // acquire |ports_lock_| first.
+    base::AutoLock ports_lock(ports_lock_);
     base::AutoLock lock(port->lock);
 
     // Reject spurious messages if we've already received the last expected
@@ -463,6 +469,9 @@ int Node::OnPortAccepted(const PortName& port_name) {
     return OOPS(ERROR_PORT_UNKNOWN);
 
   {
+    // We must hold |ports_lock_| before grabbing the port lock because
+    // ForwardMessages_Locked requires it to be held.
+    base::AutoLock ports_lock(ports_lock_);
     base::AutoLock lock(port->lock);
 
     DVLOG(1) << "PortAccepted at " << port_name << "@" << name_
@@ -573,6 +582,10 @@ int Node::OnObserveProxyAck(const PortName& port_name,
                                 // this is not an "Oops".
 
   {
+    // We must acquire |ports_lock_| before the port lock because it must be
+    // held for MaybeRemoveProxy_Locked.
+    base::AutoLock ports_lock(ports_lock_);
+
     base::AutoLock lock(port->lock);
 
     if (port->state != Port::kProxying)
@@ -608,6 +621,10 @@ int Node::OnObserveClosure(const PortName& port_name,
 
   bool notify_delegate = false;
   {
+    // We must acquire |ports_lock_| before the port lock because it must be
+    // held for MaybeRemoveProxy_Locked.
+    base::AutoLock ports_lock(ports_lock_);
+
     base::AutoLock lock(port->lock);
 
     port->peer_closed = true;
@@ -663,14 +680,22 @@ int Node::AddPortWithName(const PortName& port_name,
 
 void Node::ErasePort(const PortName& port_name) {
   base::AutoLock lock(ports_lock_);
+  return ErasePort_Locked(port_name);
+}
 
+void Node::ErasePort_Locked(const PortName& port_name) {
+  ports_lock_.AssertAcquired();
   ports_.erase(port_name);
   DVLOG(1) << "Deleted port " << port_name << "@" << name_;
 }
 
 scoped_refptr<Port> Node::GetPort(const PortName& port_name) {
   base::AutoLock lock(ports_lock_);
+  return GetPort_Locked(port_name);
+}
 
+scoped_refptr<Port> Node::GetPort_Locked(const PortName& port_name) {
+  ports_lock_.AssertAcquired();
   auto iter = ports_.find(port_name);
   if (iter == ports_.end())
     return nullptr;
@@ -682,6 +707,9 @@ void Node::WillSendPort_Locked(Port* port,
                                const NodeName& to_node_name,
                                PortName* port_name,
                                PortDescriptor* port_descriptor) {
+  ports_lock_.AssertAcquired();
+  port->lock.AssertAcquired();
+
   PortName local_port_name = *port_name;
 
   PortName new_port_name;
@@ -737,6 +765,9 @@ int Node::WillSendMessage_Locked(
     const PortName& port_name,
     Message* message,
     std::vector<scoped_refptr<Port>>* ports_taken) {
+  ports_lock_.AssertAcquired();
+  port->lock.AssertAcquired();
+
   DCHECK(message);
 
   // Messages may already have a sequence number if they're being forwarded
@@ -765,11 +796,8 @@ int Node::WillSendMessage_Locked(
       ports_taken->resize(message->num_ports());
 
     {
-      // Exclude other threads from locking multiple ports in arbitrary order.
-      base::AutoLock lock(send_with_ports_lock_);
-
       for (size_t i = 0; i < message->num_ports(); ++i) {
-        ports[i] = GetPort(message->ports()[i]);
+        ports[i] = GetPort_Locked(message->ports()[i]);
         if (ports_taken)
           ports_taken->at(i) = ports[i];
         ports[i]->lock.Acquire();
@@ -818,6 +846,9 @@ int Node::WillSendMessage_Locked(
 }
 
 int Node::ForwardMessages_Locked(Port* port, const PortName &port_name) {
+  ports_lock_.AssertAcquired();
+  port->lock.AssertAcquired();
+
   for (;;) {
     ScopedMessage message;
     port->message_queue.GetNextMessageIf(nullptr, &message);
@@ -835,6 +866,8 @@ int Node::ForwardMessages_Locked(Port* port, const PortName &port_name) {
 
 void Node::InitiateProxyRemoval_Locked(Port* port,
                                        const PortName& port_name) {
+  port->lock.AssertAcquired();
+
   // To remove this node, we start by notifying the connected graph that we are
   // a proxy. This allows whatever port is referencing this node to skip it.
   // Eventually, this node will receive ObserveProxyAck (or ObserveClosure if
@@ -853,6 +886,10 @@ void Node::InitiateProxyRemoval_Locked(Port* port,
 
 void Node::MaybeRemoveProxy_Locked(Port* port,
                                    const PortName& port_name) {
+  // |ports_lock_| must be held so we can potentilaly ErasePort_Locked().
+  ports_lock_.AssertAcquired();
+  port->lock.AssertAcquired();
+
   DCHECK(port->state == Port::kProxying);
 
   // Make sure we have seen ObserveProxyAck before removing the port.
@@ -861,7 +898,7 @@ void Node::MaybeRemoveProxy_Locked(Port* port,
 
   if (!CanAcceptMoreMessages(port)) {
     // This proxy port is done. We can now remove it!
-    ErasePort(port_name);
+    ErasePort_Locked(port_name);
 
     if (port->send_on_proxy_removal) {
       NodeName to_node = port->send_on_proxy_removal->first;
@@ -876,6 +913,8 @@ void Node::MaybeRemoveProxy_Locked(Port* port,
 }
 
 void Node::FlushOutgoingMessages_Locked(Port* port) {
+  port->lock.AssertAcquired();
+
   DCHECK(port->peer_node_name != kInvalidNodeName);
 
   // Rewrite the peer node names for all ports that are about to start proxying.
