@@ -62,6 +62,7 @@ bool PlatformHandleDispatcher::BeginTransit() {
 void PlatformHandleDispatcher::CompleteTransitAndClose() {
   base::AutoLock lock(lock_);
 
+  in_transit_ = false;
   is_closed_ = true;
 
   // The system has taken ownership of our handle.
