@@ -280,6 +280,13 @@ TEST_F(ConnectorTest, WriteToClosedPipe) {
   // Not observed yet because we haven't spun the message loop yet.
   EXPECT_FALSE(connector0.encountered_error());
 
+  // Write failures are not reported.
+  bool ok = connector0.Accept(&message);
+  EXPECT_TRUE(ok);
+
+  // Still not observed.
+  EXPECT_FALSE(connector0.encountered_error());
+
   // Spin the message loop, and then we should start observing the closed pipe.
   base::RunLoop run_loop;
   connector0.set_connection_error_handler(run_loop.QuitClosure());
