@@ -109,6 +109,8 @@ class NodeController : public ports::NodeDelegate,
                                              const std::string& token);
 
   scoped_refptr<NodeChannel> GetPeerChannel(const ports::NodeName& name);
+  scoped_refptr<NodeChannel> GetParentChannel();
+
   void AddPeer(const ports::NodeName& name,
                scoped_refptr<NodeChannel> channel,
                bool start_channel);
@@ -175,25 +177,27 @@ class NodeController : public ports::NodeDelegate,
   // Ports reserved by token.
   base::hash_map<std::string, ports::PortRef> reserved_ports_;
 
-  // All other fields below must only be accessed on the I/O thread, i.e., the
-  // thread on which core_->io_task_runner() runs tasks.
+  // Guards |parent_name_| and |bootstrap_parent_channel_|.
+  base::Lock parent_lock_;
 
   // The name of our parent node, if any.
   ports::NodeName parent_name_;
 
-  // The channel to our parent. This is also stored in |peers_| but kept here
-  // for convenient access.
-  scoped_refptr<NodeChannel> parent_channel_;
+  // A temporary reference to the parent channel before we know their name.
+  scoped_refptr<NodeChannel> bootstrap_parent_channel_;
+
+  // Guards |incoming_messages_|.
+  base::Lock messages_lock_;
+  std::queue<ports::ScopedMessage> incoming_messages_;
+
+  // All other fields below must only be accessed on the I/O thread, i.e., the
+  // thread on which core_->io_task_runner() runs tasks.
 
   // Channels to children during handshake.
   NodeMap pending_children_;
 
   // Port location requests which have been deferred until we have a parent.
   std::vector<PendingPortRequest> pending_port_requests_;
-
-  // Guards |incoming_messages_|.
-  base::Lock messages_lock_;
-  std::queue<ports::ScopedMessage> incoming_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(NodeController);
 };
