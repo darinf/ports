@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/synchronization/lock.h"
 #include "mojo/edk/system/ports/node_delegate.h"
 
 namespace mojo {
@@ -75,7 +76,7 @@ int Node::InitializePort(const PortRef& port_ref,
   Port* port = port_ref.port();
 
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
     if (port->state != Port::kUninitialized)
       return ERROR_PORT_STATE_UNEXPECTED;
 
@@ -117,7 +118,7 @@ int Node::SetUserData(const PortRef& port_ref,
                       const scoped_refptr<UserData>& user_data) {
   Port* port = port_ref.port();
 
-  std::lock_guard<std::mutex> guard(port->lock);
+  base::AutoLock lock(port->lock);
   if (port->state == Port::kClosed)
     return ERROR_PORT_STATE_UNEXPECTED;
 
@@ -130,7 +131,7 @@ int Node::GetUserData(const PortRef& port_ref,
                       scoped_refptr<UserData>* user_data) {
   Port* port = port_ref.port();
 
-  std::lock_guard<std::mutex> guard(port->lock);
+  base::AutoLock lock(port->lock);
   if (port->state == Port::kClosed)
     return ERROR_PORT_STATE_UNEXPECTED;
 
@@ -145,7 +146,7 @@ int Node::ClosePort(const PortRef& port_ref) {
 
   Port* port = port_ref.port();
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
     if (port->state != Port::kReceiving)
       return ERROR_PORT_STATE_UNEXPECTED;
 
@@ -171,7 +172,7 @@ int Node::ClosePort(const PortRef& port_ref) {
 int Node::GetStatus(const PortRef& port_ref, PortStatus* port_status) {
   Port* port = port_ref.port();
 
-  std::lock_guard<std::mutex> guard(port->lock);
+  base::AutoLock lock(port->lock);
 
   if (port->state != Port::kReceiving)
     return ERROR_PORT_STATE_UNEXPECTED;
@@ -194,7 +195,7 @@ int Node::GetMessageIf(const PortRef& port_ref,
 
   Port* port = port_ref.port();
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
 
     // This could also be treated like the port being unknown since the
     // embedder should no longer be referring to a port that has been sent.
@@ -218,7 +219,7 @@ int Node::GetMessageIf(const PortRef& port_ref,
       DCHECK(new_port) << "Port " << new_port_name << "@" << name_
                        << " does not exist!";
 
-      std::lock_guard<std::mutex> guard(new_port->lock);
+      base::AutoLock lock(new_port->lock);
 
       DCHECK(new_port->state == Port::kReceiving);
       new_port->message_queue.set_signalable(true);
@@ -256,7 +257,7 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
 
   Port* port = port_ref.port();
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
 
     if (port->state != Port::kReceiving && port->state != Port::kUninitialized)
       return ERROR_PORT_STATE_UNEXPECTED;
@@ -287,7 +288,7 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
 
   bool deliver_local_messages = false;
   {
-    std::lock_guard<std::mutex> guard(local_message_lock_);
+    base::AutoLock lock(local_message_lock_);
     if (!is_delivering_local_messages_)
       deliver_local_messages = is_delivering_local_messages_ = true;
     local_messages_.emplace(std::move(message));
@@ -300,7 +301,7 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
     ports::ScopedMessage next_message;
     for(;;) {
       {
-        std::lock_guard<std::mutex> guard(local_message_lock_);
+        base::AutoLock lock(local_message_lock_);
         if (local_messages_.empty()) {
           is_delivering_local_messages_ = false;
           return OK;
@@ -352,14 +353,14 @@ int Node::LostConnectionToNode(const NodeName& node_name) {
   std::vector<PortRef> ports_to_notify;
 
   {
-    std::lock_guard<std::mutex> guard(ports_lock_);
+    base::AutoLock ports_lock(ports_lock_);
 
     for (auto iter = ports_.begin(); iter != ports_.end(); ) {
       scoped_refptr<Port>& port = iter->second;
 
       bool remove_port = false;
       {
-        std::lock_guard<std::mutex> port_guard(port->lock);
+        base::AutoLock port_lock(port->lock);
 
         if (port->peer_node_name == node_name) {
           // We can no longer send messages to this port's peer. We assume we
@@ -430,7 +431,7 @@ int Node::OnUserMessage(ScopedMessage message) {
   bool message_accepted = false;
 
   if (port) {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
 
     // Reject spurious messages if we've already received the last expected
     // message.
@@ -481,7 +482,7 @@ int Node::OnPortAccepted(const PortName& port_name) {
     return OOPS(ERROR_PORT_UNKNOWN);
 
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
 
     DVLOG(1) << "PortAccepted at " << port_name << "@" << name_
              << " pointing to "
@@ -527,7 +528,7 @@ int Node::OnObserveProxy(const PortName& port_name,
            << event.proxy_to_node_name;
 
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
 
     if (port->peer_node_name == event.proxy_node_name &&
         port->peer_port_name == event.proxy_port_name) {
@@ -591,7 +592,7 @@ int Node::OnObserveProxyAck(const PortName& port_name,
                                 // this is not an "Oops".
 
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
 
     if (port->state != Port::kProxying)
       return OOPS(ERROR_PORT_STATE_UNEXPECTED);
@@ -626,7 +627,7 @@ int Node::OnObserveClosure(const PortName& port_name,
 
   bool notify_delegate = false;
   {
-    std::lock_guard<std::mutex> guard(port->lock);
+    base::AutoLock lock(port->lock);
 
     port->peer_closed = true;
     port->last_sequence_num_to_receive = last_sequence_num;
@@ -670,7 +671,7 @@ int Node::OnObserveClosure(const PortName& port_name,
 
 int Node::AddPortWithName(const PortName& port_name,
                           const scoped_refptr<Port>& port) {
-  std::lock_guard<std::mutex> guard(ports_lock_);
+  base::AutoLock lock(ports_lock_);
 
   if (!ports_.insert(std::make_pair(port_name, port)).second)
     return OOPS(ERROR_PORT_EXISTS);  // Suggests a bad UUID generator.
@@ -680,14 +681,14 @@ int Node::AddPortWithName(const PortName& port_name,
 }
 
 void Node::ErasePort(const PortName& port_name) {
-  std::lock_guard<std::mutex> guard(ports_lock_);
+  base::AutoLock lock(ports_lock_);
 
   ports_.erase(port_name);
   DVLOG(1) << "Deleted port " << port_name << "@" << name_;
 }
 
 scoped_refptr<Port> Node::GetPort(const PortName& port_name) {
-  std::lock_guard<std::mutex> guard(ports_lock_);
+  base::AutoLock lock(ports_lock_);
 
   auto iter = ports_.find(port_name);
   if (iter == ports_.end())
@@ -784,13 +785,13 @@ int Node::WillSendMessage_Locked(
 
     {
       // Exclude other threads from locking multiple ports in arbitrary order.
-      std::lock_guard<std::mutex> guard(send_with_ports_lock_);
+      base::AutoLock lock(send_with_ports_lock_);
 
       for (size_t i = 0; i < message->num_ports(); ++i) {
         ports[i] = GetPort(message->ports()[i]);
         if (ports_taken)
           ports_taken->at(i) = ports[i];
-        ports[i]->lock.lock();
+        ports[i]->lock.Acquire();
 
         int error = OK;
         if (ports[i]->state != Port::kReceiving)
@@ -801,7 +802,7 @@ int Node::WillSendMessage_Locked(
         if (error != OK) {
           // Oops, we cannot send this port.
           for (size_t j = 0; j <= i; ++j)
-            ports[i]->lock.unlock();
+            ports[i]->lock.Release();
           // Backpedal on the sequence number.
           port->next_sequence_num_to_send--;
           return error;
@@ -820,7 +821,7 @@ int Node::WillSendMessage_Locked(
     }
 
     for (size_t i = 0; i < message->num_ports(); ++i)
-      ports[i]->lock.unlock();
+      ports[i]->lock.Release();
   }
 
 #ifndef NDEBUG

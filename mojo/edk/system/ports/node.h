@@ -8,13 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <mutex>
 #include <queue>
 #include <unordered_map>
 #include <vector>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/synchronization/lock.h"
 #include "mojo/edk/system/ports/event.h"
 #include "mojo/edk/system/ports/hash_functions.h"
 #include "mojo/edk/system/ports/message.h"
@@ -169,14 +169,14 @@ class Node {
   NodeDelegate* delegate_;
 
   // Guards |ports_|.
-  std::mutex ports_lock_;
+  base::Lock ports_lock_;
   std::unordered_map<PortName, scoped_refptr<Port>> ports_;
 
   // Guards multiple threads from sending ports simultaneously.
-  std::mutex send_with_ports_lock_;
+  base::Lock send_with_ports_lock_;
 
   // Guards the fields below.
-  std::mutex local_message_lock_;
+  base::Lock local_message_lock_;
   bool is_delivering_local_messages_ = false;
   std::queue<ScopedMessage> local_messages_;
 

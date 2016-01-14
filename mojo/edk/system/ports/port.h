@@ -5,7 +5,6 @@
 #ifndef MOJO_EDK_SYSTEM_PORTS_PORT_H_
 #define MOJO_EDK_SYSTEM_PORTS_PORT_H_
 
-#include <mutex>
 #include <queue>
 #include <utility>
 #include <vector>
@@ -13,6 +12,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/synchronization/lock.h"
 #include "mojo/edk/system/ports/message_queue.h"
 #include "mojo/edk/system/ports/user_data.h"
 
@@ -30,7 +30,7 @@ class Port : public base::RefCountedThreadSafe<Port> {
     kClosed
   };
 
-  std::mutex lock;
+  base::Lock lock;
   State state;
   NodeName peer_node_name;
   PortName peer_port_name;
