@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "mojo/edk/system/ports/node_delegate.h"
 
 namespace mojo {
@@ -46,7 +47,7 @@ Node::~Node() {
 }
 
 int Node::GetPort(const PortName& port_name, PortRef* port_ref) {
-  std::shared_ptr<Port> port = GetPort(port_name);
+  scoped_refptr<Port> port = GetPort(port_name);
   if (!port)
     return ERROR_PORT_UNKNOWN;
 
@@ -58,8 +59,8 @@ int Node::CreateUninitializedPort(PortRef* port_ref) {
   PortName port_name;
   delegate_->GenerateRandomPortName(&port_name);
 
-  std::shared_ptr<Port> port = std::make_shared<Port>(kInitialSequenceNum,
-                                                      kInitialSequenceNum);
+  scoped_refptr<Port> port = make_scoped_refptr(new Port(kInitialSequenceNum,
+                                                         kInitialSequenceNum));
   int rv = AddPortWithName(port_name, port);
   if (rv != OK)
     return rv;
@@ -113,7 +114,7 @@ int Node::CreatePortPair(PortRef* port0_ref, PortRef* port1_ref) {
 }
 
 int Node::SetUserData(const PortRef& port_ref,
-                      std::shared_ptr<UserData> user_data) {
+                      const scoped_refptr<UserData>& user_data) {
   Port* port = port_ref.port();
 
   std::lock_guard<std::mutex> guard(port->lock);
@@ -126,7 +127,7 @@ int Node::SetUserData(const PortRef& port_ref,
 }
 
 int Node::GetUserData(const PortRef& port_ref,
-                      std::shared_ptr<UserData>* user_data) {
+                      scoped_refptr<UserData>* user_data) {
   Port* port = port_ref.port();
 
   std::lock_guard<std::mutex> guard(port->lock);
@@ -212,7 +213,7 @@ int Node::GetMessageIf(const PortRef& port_ref,
   if (*message) {
     for (size_t i = 0; i < (*message)->num_ports(); ++i) {
       const PortName& new_port_name = (*message)->ports()[i];
-      std::shared_ptr<Port> new_port = GetPort(new_port_name);
+      scoped_refptr<Port> new_port = GetPort(new_port_name);
 
       DCHECK(new_port) << "Port " << new_port_name << "@" << name_
                        << " does not exist!";
@@ -263,7 +264,7 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
     if (port->state == Port::kReceiving && port->peer_closed)
       return ERROR_PORT_PEER_CLOSED;
 
-    std::vector<std::shared_ptr<Port>> ports_taken;
+    std::vector<scoped_refptr<Port>> ports_taken;
     int rv = WillSendMessage_Locked(port, port_ref.name(), message.get(),
                                     &ports_taken);
     if (rv != OK)
@@ -354,7 +355,7 @@ int Node::LostConnectionToNode(const NodeName& node_name) {
     std::lock_guard<std::mutex> guard(ports_lock_);
 
     for (auto iter = ports_.begin(); iter != ports_.end(); ) {
-      std::shared_ptr<Port>& port = iter->second;
+      scoped_refptr<Port>& port = iter->second;
 
       bool remove_port = false;
       {
@@ -411,7 +412,7 @@ int Node::OnUserMessage(ScopedMessage message) {
              << port_name << "@" << name_;
 #endif
 
-  std::shared_ptr<Port> port = GetPort(port_name);
+  scoped_refptr<Port> port = GetPort(port_name);
 
   // Even if this port does not exist, cannot receive anymore messages or is
   // buffering or proxying messages, we still need these ports to be bound to
@@ -475,7 +476,7 @@ int Node::OnUserMessage(ScopedMessage message) {
 }
 
 int Node::OnPortAccepted(const PortName& port_name) {
-  std::shared_ptr<Port> port = GetPort(port_name);
+  scoped_refptr<Port> port = GetPort(port_name);
   if (!port)
     return OOPS(ERROR_PORT_UNKNOWN);
 
@@ -513,7 +514,7 @@ int Node::OnObserveProxy(const PortName& port_name,
   // The port may have already been closed locally, in which case the
   // ObserveClosure message will contain the last_sequence_num field.
   // We can then silently ignore this message.
-  std::shared_ptr<Port> port = GetPort(port_name);
+  scoped_refptr<Port> port = GetPort(port_name);
   if (!port) {
     DVLOG(1) << "ObserveProxy: " << port_name << "@" << name_ << " not found";
     return OK;
@@ -584,7 +585,7 @@ int Node::OnObserveProxyAck(const PortName& port_name,
   DVLOG(1) << "ObserveProxyAck at " << port_name << "@" << name_
            << " (last_sequence_num=" << last_sequence_num << ")";
 
-  std::shared_ptr<Port> port = GetPort(port_name);
+  scoped_refptr<Port> port = GetPort(port_name);
   if (!port)
     return ERROR_PORT_UNKNOWN;  // The port may have observed closure first, so
                                 // this is not an "Oops".
@@ -614,7 +615,7 @@ int Node::OnObserveProxyAck(const PortName& port_name,
 int Node::OnObserveClosure(const PortName& port_name,
                            uint64_t last_sequence_num) {
   // OK if the port doesn't exist, as it may have been closed already.
-  std::shared_ptr<Port> port = GetPort(port_name);
+  scoped_refptr<Port> port = GetPort(port_name);
   if (!port)
     return OK;
 
@@ -668,7 +669,7 @@ int Node::OnObserveClosure(const PortName& port_name,
 }
 
 int Node::AddPortWithName(const PortName& port_name,
-                          const std::shared_ptr<Port>& port) {
+                          const scoped_refptr<Port>& port) {
   std::lock_guard<std::mutex> guard(ports_lock_);
 
   if (!ports_.insert(std::make_pair(port_name, port)).second)
@@ -685,12 +686,12 @@ void Node::ErasePort(const PortName& port_name) {
   DVLOG(1) << "Deleted port " << port_name << "@" << name_;
 }
 
-std::shared_ptr<Port> Node::GetPort(const PortName& port_name) {
+scoped_refptr<Port> Node::GetPort(const PortName& port_name) {
   std::lock_guard<std::mutex> guard(ports_lock_);
 
   auto iter = ports_.find(port_name);
   if (iter == ports_.end())
-    return std::shared_ptr<Port>();
+    return nullptr;
 
   return iter->second;
 }
@@ -726,9 +727,9 @@ void Node::WillSendPort_Locked(Port* port,
 
 int Node::AcceptPort(const PortName& port_name,
                      const PortDescriptor& port_descriptor) {
-  std::shared_ptr<Port> port =
-      std::make_shared<Port>(port_descriptor.next_sequence_num_to_send,
-                             port_descriptor.next_sequence_num_to_receive);
+  scoped_refptr<Port> port = make_scoped_refptr(
+      new Port(port_descriptor.next_sequence_num_to_send,
+               port_descriptor.next_sequence_num_to_receive));
   port->state = Port::kReceiving;
   port->peer_node_name = port_descriptor.peer_node_name;
   port->peer_port_name = port_descriptor.peer_port_name;
@@ -753,7 +754,7 @@ int Node::WillSendMessage_Locked(
     Port* port,
     const PortName& port_name,
     Message* message,
-    std::vector<std::shared_ptr<Port>>* ports_taken) {
+    std::vector<scoped_refptr<Port>>* ports_taken) {
   DCHECK(message);
 
   // Messages may already have a sequence number if they're being forwarded
@@ -776,7 +777,7 @@ int Node::WillSendMessage_Locked(
     // Note: Another thread could be trying to send the same ports, so we need
     // to ensure that they are ours to send before we mutate their state.
 
-    std::vector<std::shared_ptr<Port>> ports;
+    std::vector<scoped_refptr<Port>> ports;
     ports.resize(message->num_ports());
     if (ports_taken)
       ports_taken->resize(message->num_ports());
@@ -896,7 +897,7 @@ void Node::FlushOutgoingMessages_Locked(Port* port) {
   DCHECK(port->peer_node_name != kInvalidNodeName);
 
   // Rewrite the peer node names for all ports that are about to start proxying.
-  std::vector<std::shared_ptr<Port>> outgoing_ports;
+  std::vector<scoped_refptr<Port>> outgoing_ports;
   std::swap(outgoing_ports, port->outgoing_ports);
   for (const auto& outgoing_port : outgoing_ports)
     outgoing_port->peer_node_name = port->peer_node_name;

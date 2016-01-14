@@ -7,6 +7,7 @@
 #include <limits>
 
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/core.h"
@@ -52,9 +53,10 @@ class MessagePipeDispatcher::PortObserverThunk
  public:
   explicit PortObserverThunk(scoped_refptr<MessagePipeDispatcher> dispatcher)
       : dispatcher_(dispatcher) {}
-  ~PortObserverThunk() override {}
 
  private:
+  ~PortObserverThunk() override {}
+
   // NodeController::PortObserver:
   void OnPortStatusChanged() override { dispatcher_->OnPortStatusChanged(); }
 
@@ -75,8 +77,9 @@ MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
   // OnPortStatusChanged (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
   base::AutoLock lock(signal_lock_);
-  node_controller_->SetPortObserver(port_,
-                                    std::make_shared<PortObserverThunk>(this));
+  node_controller_->SetPortObserver(
+      port_,
+      make_scoped_refptr(new PortObserverThunk(this)));
 }
 
 Dispatcher::Type MessagePipeDispatcher::GetType() const {

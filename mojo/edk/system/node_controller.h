@@ -36,8 +36,10 @@ class NodeController : public ports::NodeDelegate,
  public:
   class PortObserver : public ports::UserData {
    public:
-    ~PortObserver() override {}
     virtual void OnPortStatusChanged() = 0;
+
+   protected:
+    ~PortObserver() override {}
   };
 
   // |core| owns and out-lives us.
@@ -65,7 +67,7 @@ class NodeController : public ports::NodeDelegate,
 
   // Sets a port's observer.
   void SetPortObserver(const ports::PortRef& port,
-                       std::shared_ptr<PortObserver> observer);
+                       const scoped_refptr<PortObserver>& observer);
 
   scoped_ptr<PortsMessage> AllocMessage(size_t num_payload_bytes,
                                         size_t num_ports);

@@ -7,8 +7,7 @@
 
 #include <stddef.h>
 
-#include <memory>
-
+#include "base/memory/scoped_ptr.h"
 #include "mojo/edk/system/ports/name.h"
 
 namespace mojo {
@@ -67,7 +66,7 @@ class Message {
   size_t num_payload_bytes_;
 };
 
-typedef std::unique_ptr<Message> ScopedMessage;
+using ScopedMessage = scoped_ptr<Message>;
 
 }  // namespace ports
 }  // namespace edk

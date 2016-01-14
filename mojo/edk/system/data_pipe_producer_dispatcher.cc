@@ -11,6 +11,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
@@ -41,9 +42,10 @@ class DataPipeProducerDispatcher::PortObserverThunk
   explicit PortObserverThunk(
       scoped_refptr<DataPipeProducerDispatcher> dispatcher)
       : dispatcher_(dispatcher) {}
-  ~PortObserverThunk() override {}
 
  private:
+  ~PortObserverThunk() override {}
+
   // NodeController::PortObserver:
   void OnPortStatusChanged() override { dispatcher_->OnPortStatusChanged(); }
 
@@ -62,8 +64,9 @@ DataPipeProducerDispatcher::DataPipeProducerDispatcher(
   // OnPortStatusChanged (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
   base::AutoLock lock(lock_);
-  node_controller_->SetPortObserver(port_,
-                                    std::make_shared<PortObserverThunk>(this));
+  node_controller_->SetPortObserver(
+      port_,
+      make_scoped_refptr(new PortObserverThunk(this)));
 }
 
 Dispatcher::Type DataPipeProducerDispatcher::GetType() const {

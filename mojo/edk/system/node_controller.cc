@@ -107,9 +107,9 @@ void NodeController::ConnectToParent(ScopedPlatformHandle platform_handle) {
 
 void NodeController::SetPortObserver(
     const ports::PortRef& port,
-    std::shared_ptr<PortObserver> observer) {
+    const scoped_refptr<PortObserver>& observer) {
   DCHECK(observer);
-  node_->SetUserData(port, std::move(observer));
+  node_->SetUserData(port, observer);
 }
 
 scoped_ptr<PortsMessage> NodeController::AllocMessage(size_t num_payload_bytes,
@@ -384,7 +384,7 @@ void NodeController::ForwardMessage(const ports::NodeName& node,
 }
 
 void NodeController::PortStatusChanged(const ports::PortRef& port) {
-  std::shared_ptr<ports::UserData> user_data;
+  scoped_refptr<ports::UserData> user_data;
   node_->GetUserData(port, &user_data);
 
   PortObserver* observer = static_cast<PortObserver*>(user_data.get());

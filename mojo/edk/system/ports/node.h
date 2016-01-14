@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "mojo/edk/system/ports/event.h"
 #include "mojo/edk/system/ports/hash_functions.h"
 #include "mojo/edk/system/ports/message.h"
@@ -72,9 +73,9 @@ class Node {
 
   // User data associated with the port.
   int SetUserData(const PortRef& port_ref,
-                  std::shared_ptr<UserData> user_data);
+                  const scoped_refptr<UserData>& user_data);
   int GetUserData(const PortRef& port_ref,
-                  std::shared_ptr<UserData>* user_data);
+                  scoped_refptr<UserData>* user_data);
 
   // Prevents further messages from being sent from this port or delivered to
   // this port. The port is removed, and the port's peer is notified of the
@@ -127,9 +128,9 @@ class Node {
   int OnObserveClosure(const PortName& port_name, uint64_t last_sequence_num);
 
   int AddPortWithName(const PortName& port_name,
-                      const std::shared_ptr<Port>& port);
+                      const scoped_refptr<Port>& port);
   void ErasePort(const PortName& port_name);
-  std::shared_ptr<Port> GetPort(const PortName& port_name);
+  scoped_refptr<Port> GetPort(const PortName& port_name);
 
   void WillSendPort_Locked(Port* port,
                            const NodeName& to_node_name,
@@ -141,7 +142,7 @@ class Node {
   int WillSendMessage_Locked(Port* port,
                              const PortName& port_name,
                              Message* message,
-                             std::vector<std::shared_ptr<Port>>* ports_taken);
+                             std::vector<scoped_refptr<Port>>* ports_taken);
   int ForwardMessages_Locked(Port* port, const PortName& port_name);
   void InitiateProxyRemoval_Locked(Port* port, const PortName& port_name);
   void MaybeRemoveProxy_Locked(Port* port, const PortName& port_name);
@@ -169,7 +170,7 @@ class Node {
 
   // Guards |ports_|.
   std::mutex ports_lock_;
-  std::unordered_map<PortName, std::shared_ptr<Port>> ports_;
+  std::unordered_map<PortName, scoped_refptr<Port>> ports_;
 
   // Guards multiple threads from sending ports simultaneously.
   std::mutex send_with_ports_lock_;

@@ -5,8 +5,7 @@
 #ifndef MOJO_EDK_SYSTEM_PORTS_PORT_REF_H_
 #define MOJO_EDK_SYSTEM_PORTS_PORT_REF_H_
 
-#include <memory>
-
+#include "base/memory/ref_counted.h"
 #include "mojo/edk/system/ports/name.h"
 
 namespace mojo {
@@ -20,7 +19,7 @@ class PortRef {
  public:
   ~PortRef();
   PortRef();
-  PortRef(const PortName& name, std::shared_ptr<Port> port);
+  PortRef(const PortName& name, const scoped_refptr<Port>& port);
 
   PortRef(const PortRef& other);
   PortRef& operator=(const PortRef& other);
@@ -32,7 +31,7 @@ class PortRef {
   Port* port() const { return port_.get(); }
 
   PortName name_;
-  std::shared_ptr<Port> port_;
+  scoped_refptr<Port> port_;
 };
 
 }  // namespace ports

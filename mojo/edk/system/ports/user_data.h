@@ -5,12 +5,16 @@
 #ifndef MOJO_EDK_SYSTEM_PORTS_USER_DATA_H_
 #define MOJO_EDK_SYSTEM_PORTS_USER_DATA_H_
 
+#include "base/memory/ref_counted.h"
+
 namespace mojo {
 namespace edk {
 namespace ports {
 
-class UserData {
- public:
+class UserData : public base::RefCountedThreadSafe<UserData> {
+ protected:
+  friend class base::RefCountedThreadSafe<UserData>;
+
   virtual ~UserData() {}
 };
 
