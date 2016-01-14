@@ -42,7 +42,7 @@ class HandleTable {
       uint32_t num_handles,
       std::vector<Dispatcher::DispatcherInTransit>* dispatchers);
 
-  void CompleteTransit(
+  void CompleteTransitAndClose(
       const std::vector<Dispatcher::DispatcherInTransit>& dispatchers);
   void CancelTransit(
       const std::vector<Dispatcher::DispatcherInTransit>& dispatchers);

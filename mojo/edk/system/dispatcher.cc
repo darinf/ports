@@ -124,16 +124,16 @@ void Dispatcher::StartSerialize(uint32_t* num_bytes,
   *num_platform_handles = 0;
 }
 
-bool Dispatcher::EndSerializeAndClose(void* destination,
-                                      ports::PortName* ports,
-                                      PlatformHandleVector* handles) {
+bool Dispatcher::EndSerialize(void* destination,
+                              ports::PortName* ports,
+                              PlatformHandleVector* handles) {
   LOG(ERROR) << "Attempting to serialize a non-transferrable dispatcher.";
   return true;
 }
 
 bool Dispatcher::BeginTransit() { return true; }
 
-void Dispatcher::CompleteTransit() {}
+void Dispatcher::CompleteTransitAndClose() {}
 
 void Dispatcher::CancelTransit() {}
 

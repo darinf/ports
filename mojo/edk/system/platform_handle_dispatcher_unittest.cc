@@ -80,6 +80,7 @@ TEST(PlatformHandleDispatcherTest, Serialization) {
   uint32_t num_bytes = 0;
   uint32_t num_ports = 0;
   uint32_t num_handles = 0;
+  EXPECT_TRUE(dispatcher->BeginTransit());
   dispatcher->StartSerialize(&num_bytes, &num_ports, &num_handles);
 
   EXPECT_EQ(0u, num_bytes);
@@ -87,7 +88,8 @@ TEST(PlatformHandleDispatcherTest, Serialization) {
   EXPECT_EQ(1u, num_handles);
 
   ScopedPlatformHandleVectorPtr handles(new PlatformHandleVector);
-  dispatcher->EndSerializeAndClose(nullptr, nullptr, handles.get());
+  EXPECT_TRUE(dispatcher->EndSerialize(nullptr, nullptr, handles.get()));
+  dispatcher->CompleteTransitAndClose();
 
   EXPECT_TRUE(handles->at(0).is_valid());
 

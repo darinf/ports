@@ -81,7 +81,7 @@ MojoResult DataPipeConsumerDispatcher::ReadData(void* elements,
                                                 uint32_t* num_bytes,
                                                 MojoReadDataFlags flags) {
   base::AutoLock lock(lock_);
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   if (in_two_phase_read_)
@@ -139,7 +139,7 @@ MojoResult DataPipeConsumerDispatcher::BeginReadData(const void** buffer,
                                                      uint32_t* buffer_num_bytes,
                                                      MojoReadDataFlags flags) {
   base::AutoLock lock(lock_);
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   if (in_two_phase_read_)
@@ -165,7 +165,7 @@ MojoResult DataPipeConsumerDispatcher::BeginReadData(const void** buffer,
 
 MojoResult DataPipeConsumerDispatcher::EndReadData(uint32_t num_bytes_read) {
   base::AutoLock lock(lock_);
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   if (!in_two_phase_read_)
@@ -211,6 +211,11 @@ MojoResult DataPipeConsumerDispatcher::AddAwakable(
     uintptr_t context,
     HandleSignalsState* signals_state) {
   base::AutoLock lock(lock_);
+  if (in_transit_) {
+    if (signals_state)
+      *signals_state = HandleSignalsState();
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  }
   HandleSignalsState state = GetHandleSignalsStateNoLock();
   if (state.satisfies(signals)) {
     if (signals_state)
@@ -231,9 +236,11 @@ void DataPipeConsumerDispatcher::RemoveAwakable(
     Awakable* awakable,
     HandleSignalsState* signals_state) {
   base::AutoLock lock(lock_);
-  awakable_list_.Remove(awakable);
-  if (signals_state)
+  if (in_transit_)
+    *signals_state = HandleSignalsState();
+  else
     *signals_state = GetHandleSignalsStateNoLock();
+  awakable_list_.Remove(awakable);
 }
 
 void DataPipeConsumerDispatcher::StartSerialize(uint32_t* num_bytes,
@@ -244,34 +251,45 @@ void DataPipeConsumerDispatcher::StartSerialize(uint32_t* num_bytes,
   *num_handles = 0;
 }
 
-bool DataPipeConsumerDispatcher::EndSerializeAndClose(
+bool DataPipeConsumerDispatcher::EndSerialize(
     void* destination,
     ports::PortName* ports,
     PlatformHandleVector* platform_handles) {
   SerializedState* state = static_cast<SerializedState*>(destination);
   memcpy(&state->options, &options_, sizeof(MojoCreateDataPipeOptions));
+
+  base::AutoLock lock(lock_);
   state->error = error_;
 
+  // Note: |data_.size()| Should be the same as it was when StartSerialize()
+  // was last called, because |data_| cannot be modified while |in_transit_| is
+  // held true.
   memcpy(state + 1, data_.data(), data_.size());
-
   ports[0] = port_.name();
-
-  port_transferred_ = true;
-  CloseNoLock();
-
   return true;
 }
 
 bool DataPipeConsumerDispatcher::BeginTransit() {
-  lock_.Acquire();
-  return !in_two_phase_read_;
+  base::AutoLock lock(lock_);
+  if (in_transit_)
+    return false;
+  in_transit_ = !in_two_phase_read_;
+  return in_transit_;
 }
 
-void DataPipeConsumerDispatcher::CompleteTransit() {
-  lock_.Release();
+void DataPipeConsumerDispatcher::CompleteTransitAndClose() {
+  base::AutoLock lock(lock_);
+  in_transit_ = false;
+  port_transferred_ = true;
+  CloseNoLock();
 }
 
-void DataPipeConsumerDispatcher::CancelTransit() { lock_.Release(); }
+void DataPipeConsumerDispatcher::CancelTransit() {
+  base::AutoLock lock(lock_);
+  in_transit_ = false;
+
+  UpdateSignalsStateNoLock();
+}
 
 // static
 scoped_refptr<DataPipeConsumerDispatcher>
@@ -307,11 +325,13 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
   return dispatcher;
 }
 
-DataPipeConsumerDispatcher::~DataPipeConsumerDispatcher() {}
+DataPipeConsumerDispatcher::~DataPipeConsumerDispatcher() {
+  DCHECK(port_closed_ && !in_transit_);
+}
 
 MojoResult DataPipeConsumerDispatcher::CloseNoLock() {
   lock_.AssertAcquired();
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
   port_closed_ = true;
 
@@ -353,7 +373,7 @@ void DataPipeConsumerDispatcher::UpdateSignalsStateNoLock() {
     error_ = true;
   }
 
-  if (port_status.has_messages) {
+  if (port_status.has_messages && !in_transit_) {
     ports::ScopedMessage message;
     do {
       int rv = node_controller_->node()->GetMessageIf(port_, nullptr, &message);

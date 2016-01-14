@@ -51,11 +51,11 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
   void StartSerialize(uint32_t* num_bytes,
                       uint32_t* num_ports,
                       uint32_t* num_handles) override;
-  bool EndSerializeAndClose(void* destination,
-                            ports::PortName* ports,
-                            PlatformHandleVector* handles) override;
+  bool EndSerialize(void* destination,
+                    ports::PortName* ports,
+                    PlatformHandleVector* handles) override;
   bool BeginTransit() override;
-  void CompleteTransit() override;
+  void CompleteTransitAndClose() override;
   void CancelTransit() override;
 
   static scoped_refptr<DataPipeConsumerDispatcher>
@@ -94,6 +94,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
   // resize data_ since it's being used. So instead we store it temporarly.
   std::vector<char> data_received_during_two_phase_read_;
 
+  bool in_transit_ = false;
   bool error_ = false;
   bool port_closed_ = false;
   bool port_transferred_ = false;

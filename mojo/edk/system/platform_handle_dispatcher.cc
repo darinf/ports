@@ -26,7 +26,7 @@ Dispatcher::Type PlatformHandleDispatcher::GetType() const {
 
 MojoResult PlatformHandleDispatcher::Close() {
   base::AutoLock lock(lock_);
-  if (is_closed_)
+  if (is_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
   is_closed_ = true;
   platform_handle_.reset();
@@ -41,16 +41,36 @@ void PlatformHandleDispatcher::StartSerialize(uint32_t* num_bytes,
   *num_handles = 1;
 }
 
-bool PlatformHandleDispatcher::EndSerializeAndClose(
-    void* destination,
-    ports::PortName* ports,
-    PlatformHandleVector* handles) {
+bool PlatformHandleDispatcher::EndSerialize(void* destination,
+                                            ports::PortName* ports,
+                                            PlatformHandleVector* handles) {
   base::AutoLock lock(lock_);
   if (is_closed_)
     return false;
-  handles->push_back(platform_handle_.release());
-  is_closed_ = true;
+  handles->push_back(platform_handle_.get());
   return true;
+}
+
+bool PlatformHandleDispatcher::BeginTransit() {
+  base::AutoLock lock(lock_);
+  if (in_transit_)
+    return false;
+  in_transit_ = !is_closed_;
+  return in_transit_;
+}
+
+void PlatformHandleDispatcher::CompleteTransitAndClose() {
+  base::AutoLock lock(lock_);
+
+  is_closed_ = true;
+
+  // The system has taken ownership of our handle.
+  ignore_result(platform_handle_.release());
+}
+
+void PlatformHandleDispatcher::CancelTransit() {
+  base::AutoLock lock(lock_);
+  in_transit_ = false;
 }
 
 // static
@@ -75,7 +95,7 @@ PlatformHandleDispatcher::PlatformHandleDispatcher(
     : platform_handle_(std::move(platform_handle)) {}
 
 PlatformHandleDispatcher::~PlatformHandleDispatcher() {
-  DCHECK(is_closed_);
+  DCHECK(is_closed_ && !in_transit_);
   DCHECK(!platform_handle_.is_valid());
 }
 

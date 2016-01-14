@@ -95,13 +95,13 @@ MojoResult HandleTable::BeginTransit(
   return MOJO_RESULT_OK;
 }
 
-void HandleTable::CompleteTransit(
+void HandleTable::CompleteTransitAndClose(
     const std::vector<Dispatcher::DispatcherInTransit>& dispatchers) {
   for (const auto& dispatcher : dispatchers) {
     auto it = handles_.find(dispatcher.local_handle);
     DCHECK(it != handles_.end() && it->second.busy);
     handles_.erase(it);
-    dispatcher.dispatcher->CompleteTransit();
+    dispatcher.dispatcher->CompleteTransitAndClose();
   }
 }
 

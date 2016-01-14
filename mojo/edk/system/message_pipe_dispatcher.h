@@ -55,11 +55,11 @@ class MessagePipeDispatcher : public Dispatcher {
   void StartSerialize(uint32_t* num_bytes,
                       uint32_t* num_ports,
                       uint32_t* num_handles) override;
-  bool EndSerializeAndClose(void* destination,
-                            ports::PortName* ports,
-                            PlatformHandleVector* handles) override;
+  bool EndSerialize(void* destination,
+                    ports::PortName* ports,
+                    PlatformHandleVector* handles) override;
   bool BeginTransit() override;
-  void CompleteTransit() override;
+  void CompleteTransitAndClose() override;
   void CancelTransit() override;
 
   static scoped_refptr<Dispatcher> Deserialize(
@@ -86,6 +86,10 @@ class MessagePipeDispatcher : public Dispatcher {
 
   // Guards access to all the fields below.
   mutable base::Lock signal_lock_;
+
+  // This is not the same is |port_transferred_|. It's only held true between
+  // BeginTransit() and Complete/CancelTransit().
+  bool in_transit_ = false;
 
   bool port_connected_ = false;
   bool port_transferred_ = false;

@@ -179,7 +179,14 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // number of platform handles and ports needed to transfer this dispatcher
   // across a message pipe.
   //
-  // Must eventually be followed by a call to EndSerializeAndClose().
+  // Must eventually be followed by a call to EndSerializeAndClose(). Note that
+  // StartSerialize() and EndSerialize() are always called in sequence, and
+  // only between calls to BeginTransit() and either (but not both)
+  // CompleteTransitAndClose() or CancelTransit().
+  //
+  // For this reason it is IMPERATIVE that the implementation ensure a
+  // consistent serializable state between BeginTransit() and
+  // CompleteTransitAndClose()/CancelTransit().
   virtual void StartSerialize(uint32_t* num_bytes,
                               uint32_t* num_ports,
                               uint32_t* num_platform_handles);
@@ -187,19 +194,28 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // Serializes this dispatcher into |destination|, |ports|, and |handles|.
   // Returns true iff successful, false otherwise. In either case the dispatcher
   // will close.
-  virtual bool EndSerializeAndClose(void* destination,
-                                    ports::PortName* ports,
-                                    PlatformHandleVector* handles);
+  //
+  // NOTE: Transit MAY still fail after this call returns. Implementations
+  // should not assume PlatformHandle ownership has transferred until
+  // CompleteTransitAndClose() is called. In other words, if CancelTransit() is
+  // called, the implementation should retain its PlatformHandles in working
+  // condition.
+  virtual bool EndSerialize(void* destination,
+                            ports::PortName* ports,
+                            PlatformHandleVector* handles);
 
   // Does whatever is necessary to begin transit of the dispatcher.  This
   // should return |true| if transit is OK, or false if the underlying resource
   // is deemed busy by the implementation.
   virtual bool BeginTransit();
 
-  // Does whatever is necessary to complete transit of the dispatcher.
-  virtual void CompleteTransit();
+  // Does whatever is necessary to complete transit of the dispatcher, including
+  // closure. This is only called upon successfully transmitting an outgoing
+  // message containing this serialized dispatcher.
+  virtual void CompleteTransitAndClose();
 
-  // Does whatever is necessary to cancel transit of the dispatcher.
+  // Does whatever is necessary to cancel transit of the dispatcher. The
+  // dispatcher should remain in a working state and resume normal operation.
   virtual void CancelTransit();
 
   // Deserializes a specific dispatcher type from an incoming message.

@@ -124,9 +124,14 @@ scoped_ptr<PortsMessage> NodeController::AllocMessage(size_t num_payload_bytes,
 }
 
 int NodeController::SendMessage(const ports::PortRef& port,
-                                scoped_ptr<PortsMessage> message) {
-  ports::ScopedMessage ports_message(message.release());
-  return node_->SendMessage(port, std::move(ports_message));
+                                scoped_ptr<PortsMessage>* message) {
+  ports::ScopedMessage ports_message(message->release());
+  int rv = node_->SendMessage(port, &ports_message);
+  if (rv != ports::OK) {
+    DCHECK(ports_message);
+    message->reset(static_cast<PortsMessage*>(ports_message.release()));
+  }
+  return rv;
 }
 
 void NodeController::ReservePort(const std::string& token,

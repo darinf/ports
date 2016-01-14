@@ -222,6 +222,15 @@ MojoResult WaitSetDispatcher::GetReadyDispatchers(
   return MOJO_RESULT_OK;
 }
 
+HandleSignalsState WaitSetDispatcher::GetHandleSignalsState() const {
+  HandleSignalsState rv;
+  rv.satisfiable_signals = MOJO_HANDLE_SIGNAL_READABLE;
+  base::AutoLock locker(awoken_lock_);
+  if (!awoken_queue_.empty() || !processed_dispatchers_.empty())
+    rv.satisfied_signals = MOJO_HANDLE_SIGNAL_READABLE;
+  return rv;
+}
+
 MojoResult WaitSetDispatcher::AddAwakable(Awakable* awakable,
                                           MojoHandleSignals signals,
                                           uintptr_t context,
@@ -251,13 +260,9 @@ void WaitSetDispatcher::RemoveAwakable(Awakable* awakable,
     *signals_state = GetHandleSignalsState();
 }
 
-HandleSignalsState WaitSetDispatcher::GetHandleSignalsState() const {
-  HandleSignalsState rv;
-  rv.satisfiable_signals = MOJO_HANDLE_SIGNAL_READABLE;
-  base::AutoLock locker(awoken_lock_);
-  if (!awoken_queue_.empty() || !processed_dispatchers_.empty())
-    rv.satisfied_signals = MOJO_HANDLE_SIGNAL_READABLE;
-  return rv;
+bool WaitSetDispatcher::BeginTransit() {
+  // You can't transfer wait sets!
+  return false;
 }
 
 WaitSetDispatcher::~WaitSetDispatcher() {

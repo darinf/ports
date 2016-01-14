@@ -13,6 +13,7 @@
 #include "base/macros.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/system_impl_export.h"
 
@@ -70,9 +71,12 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
   void StartSerialize(uint32_t* num_bytes,
                       uint32_t* num_ports,
                       uint32_t* num_platform_handles) override;
-  bool EndSerializeAndClose(void* destination,
-                            ports::PortName* ports,
-                            PlatformHandleVector* handles) override;
+  bool EndSerialize(void* destination,
+                    ports::PortName* ports,
+                    PlatformHandleVector* handles) override;
+  bool BeginTransit() override;
+  void CompleteTransitAndClose() override;
+  void CancelTransit() override;
 
  private:
   static scoped_refptr<SharedBufferDispatcher> CreateInternal(
@@ -96,6 +100,12 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
 
   // Guards access to |shared_buffer_|.
   base::Lock lock_;
+
+  bool in_transit_ = false;
+
+  // We keep a copy of the buffer's platform handle during transit so we can
+  // close it if something goes wrong.
+  ScopedPlatformHandle handle_for_transit_;
 
   scoped_refptr<PlatformSharedBuffer> shared_buffer_;
 

@@ -72,9 +72,10 @@ class NodeController : public ports::NodeDelegate,
   scoped_ptr<PortsMessage> AllocMessage(size_t num_payload_bytes,
                                         size_t num_ports);
 
-  // Sends a message on a port to its peer.
+  // Sends a message on a port to its peer. If message send fails, |message|
+  // is left intact. Otherwise ownership is transferred and it's reset.
   int SendMessage(const ports::PortRef& port_ref,
-                  scoped_ptr<PortsMessage> message);
+                  scoped_ptr<PortsMessage>* message);
 
   // Reserves a port associated with |token|. A peer may associate one of their
   // own ports with this one by sending us a RequestPortConnection message with

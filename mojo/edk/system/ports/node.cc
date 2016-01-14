@@ -249,9 +249,10 @@ int Node::AllocMessage(size_t num_payload_bytes,
   return OK;
 }
 
-int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
-  for (size_t i = 0; i < message->num_ports(); ++i) {
-    if (message->ports()[i] == port_ref.name())
+int Node::SendMessage(const PortRef& port_ref, ScopedMessage* message) {
+  ScopedMessage& m = *message;
+  for (size_t i = 0; i < m->num_ports(); ++i) {
+    if (m->ports()[i] == port_ref.name())
       return ERROR_PORT_CANNOT_SEND_SELF;
   }
 
@@ -266,13 +267,18 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
       return ERROR_PORT_PEER_CLOSED;
 
     std::vector<scoped_refptr<Port>> ports_taken;
-    int rv = WillSendMessage_Locked(port, port_ref.name(), message.get(),
+    int rv = WillSendMessage_Locked(port, port_ref.name(), m.get(),
                                     &ports_taken);
     if (rv != OK)
       return rv;
 
+    // Beyond this point there's no sense in returning anything but OK. Even if
+    // message forwarding or acceptance fails, there's nothing the embedder can
+    // do to recover. Assume that failure beyond this point must be treated as a
+    // transport failure.
+
     if (port->state == Port::kUninitialized) {
-      port->outgoing_messages.emplace(std::move(message));
+      port->outgoing_messages.emplace(std::move(m));
       std::copy(ports_taken.begin(), ports_taken.end(),
                 std::back_inserter(port->outgoing_ports));
       return OK;
@@ -281,40 +287,15 @@ int Node::SendMessage(const PortRef& port_ref, ScopedMessage message) {
     CHECK_EQ(port->state, Port::kReceiving);
 
     if (port->peer_node_name != name_) {
-      delegate_->ForwardMessage(port->peer_node_name, std::move(message));
+      delegate_->ForwardMessage(port->peer_node_name, std::move(m));
       return OK;
     }
   }
 
-  bool deliver_local_messages = false;
-  {
-    base::AutoLock lock(local_message_lock_);
-    if (!is_delivering_local_messages_)
-      deliver_local_messages = is_delivering_local_messages_ = true;
-    local_messages_.emplace(std::move(message));
-  }
-
-  if (deliver_local_messages) {
-    // Flush the local message queue. Note that any given call to AcceptMessage
-    // may result in further calls to SendMessage. Re-entrancy into SendMessage
-    // is allowed because we prevent re-entrancy into this specific code path.
-    ports::ScopedMessage next_message;
-    for(;;) {
-      {
-        base::AutoLock lock(local_message_lock_);
-        if (local_messages_.empty()) {
-          is_delivering_local_messages_ = false;
-          return OK;
-        }
-
-        next_message = std::move(local_messages_.front());
-        local_messages_.pop();
-      }
-
-      int rv = AcceptMessage(std::move(next_message));
-      if (rv != OK)
-        return rv;
-    }
+  int rv = AcceptMessage(std::move(m));
+  if (rv != OK) {
+    // See comment above for why we don't return an error in this case.
+    DVLOG(2) << "AcceptMessage failed: " << rv;
   }
 
   return OK;

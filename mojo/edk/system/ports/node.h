@@ -110,7 +110,10 @@ class Node {
   // Sends a message from the specified port to its peer. Note that the message
   // notification may arrive synchronously (via PortStatusChanged() on the
   // delegate) if the peer is local to this Node.
-  int SendMessage(const PortRef& port_ref, ScopedMessage message);
+  //
+  // If send fails for any reason, |message| is left unchanged. On success,
+  // ownserhip is transferred and |message| is reset.
+  int SendMessage(const PortRef& port_ref, ScopedMessage* message);
 
   // Corresponding to NodeDelegate::ForwardMessage.
   int AcceptMessage(ScopedMessage message);
@@ -174,11 +177,6 @@ class Node {
 
   // Guards multiple threads from sending ports simultaneously.
   base::Lock send_with_ports_lock_;
-
-  // Guards the fields below.
-  base::Lock local_message_lock_;
-  bool is_delivering_local_messages_ = false;
-  std::queue<ScopedMessage> local_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(Node);
 };

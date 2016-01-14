@@ -99,7 +99,7 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     MojoWriteMessageFlags flags) {
   {
     base::AutoLock lock(signal_lock_);
-    if (port_closed_)
+    if (port_closed_ || in_transit_)
       return MOJO_RESULT_INVALID_ARGUMENT;
   }
 
@@ -141,6 +141,7 @@ MojoResult MessagePipeDispatcher::WriteMessage(
   DCHECK_LE(header_size, std::numeric_limits<uint32_t>::max());
   header->header_size = static_cast<uint32_t>(header_size);
 
+  bool cancel_transit = false;
   if (num_dispatchers > 0) {
     ScopedPlatformHandleVectorPtr handles(new PlatformHandleVector);
     size_t port_index = 0;
@@ -154,10 +155,9 @@ MojoResult MessagePipeDispatcher::WriteMessage(
       dh->num_platform_handles = dispatcher_info[i].num_handles;
 
       std::vector<ports::PortName> ports(dispatcher_info[i].num_ports);
-      if (!d->EndSerializeAndClose(dispatcher_data, ports.data(),
-                                   handles.get())) {
-        // TODO: fail in a more useful manner?
-        LOG(ERROR) << "Failed to serialize dispatcher.";
+      if (!d->EndSerialize(dispatcher_data, ports.data(), handles.get())) {
+        cancel_transit = true;
+        break;
       }
 
       if (!ports.empty()) {
@@ -170,33 +170,54 @@ MojoResult MessagePipeDispatcher::WriteMessage(
           static_cast<char*>(dispatcher_data) + dh->num_bytes);
     }
 
-    message->SetHandles(std::move(handles));
-  }
-
-  // Copy the message body.
-  void* message_body = static_cast<void*>(
-      static_cast<char*>(message->mutable_payload_bytes()) + header_size);
-  memcpy(message_body, bytes, num_bytes);
-
-  int rv = node_controller_->SendMessage(port_, std::move(message));
-
-  if (rv != ports::OK) {
-    if (rv == ports::ERROR_PORT_UNKNOWN ||
-        rv == ports::ERROR_PORT_STATE_UNEXPECTED ||
-        rv == ports::ERROR_PORT_CANNOT_SEND_PEER)
-      return MOJO_RESULT_INVALID_ARGUMENT;
-
-    if (rv == ports::ERROR_PORT_PEER_CLOSED) {
-      base::AutoLock lock(signal_lock_);
-      awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
-      return MOJO_RESULT_FAILED_PRECONDITION;
+    if (!cancel_transit) {
+      message->SetHandles(std::move(handles));
+    } else {
+      // Release any platform handles we've accumulated. Their dispatchers
+      // retain ownership when transit is canceled, so these are not actually
+      // leaking.
+      handles->clear();
     }
-
-    NOTREACHED();
-    return MOJO_RESULT_UNKNOWN;
   }
 
-  return MOJO_RESULT_OK;
+  MojoResult result = MOJO_RESULT_OK;
+  if (!cancel_transit) {
+    // Copy the message body.
+    void* message_body = static_cast<void*>(
+        static_cast<char*>(message->mutable_payload_bytes()) + header_size);
+    memcpy(message_body, bytes, num_bytes);
+
+    int rv = node_controller_->SendMessage(port_, &message);
+    if (rv != ports::OK) {
+      base::AutoLock lock(signal_lock_);
+      if (rv == ports::ERROR_PORT_UNKNOWN ||
+          rv == ports::ERROR_PORT_STATE_UNEXPECTED ||
+          rv == ports::ERROR_PORT_CANNOT_SEND_PEER) {
+        result = MOJO_RESULT_INVALID_ARGUMENT;
+      } else if (rv == ports::ERROR_PORT_PEER_CLOSED) {
+        awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
+        result = MOJO_RESULT_INVALID_ARGUMENT;
+      }
+
+      NOTREACHED();
+      result = MOJO_RESULT_UNKNOWN;
+      cancel_transit = true;
+    } else {
+      DCHECK(!message);
+    }
+  }
+
+  if (cancel_transit) {
+    // We ended up not sending the message. Release all the platform handles.
+    // Their dipatchers retain ownership when transit is canceled, so these are
+    // not actually leaking.
+    DCHECK(message);
+    Channel::MessagePtr m = message->TakeChannelMessage();
+    ScopedPlatformHandleVectorPtr handles = m->TakeHandles();
+    handles->clear();
+  }
+
+  return result;
 }
 
 MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
@@ -206,7 +227,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
                                               MojoReadMessageFlags flags) {
   {
     base::AutoLock lock(signal_lock_);
-    if (port_closed_)
+    if (port_closed_ || in_transit_)
       return MOJO_RESULT_INVALID_ARGUMENT;
 
     if (!port_connected_)
@@ -356,7 +377,7 @@ MojoResult MessagePipeDispatcher::AddAwakable(
     HandleSignalsState* signals_state) {
   base::AutoLock lock(signal_lock_);
 
-  if (port_closed_) {
+  if (port_closed_ || in_transit_) {
     if (signals_state)
       *signals_state = HandleSignalsState();
     return MOJO_RESULT_INVALID_ARGUMENT;
@@ -381,14 +402,12 @@ MojoResult MessagePipeDispatcher::AddAwakable(
 void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
                                            HandleSignalsState* signals_state) {
   base::AutoLock lock(signal_lock_);
-  if (port_closed_) {
+  if (port_closed_ || in_transit_) {
     if (signals_state)
       *signals_state = HandleSignalsState();
-    return;
-  }
-
-  if (signals_state)
+  } else if (signals_state) {
     *signals_state = GetHandleSignalsStateNoLock();
+  }
   awakables_.Remove(awakable);
 }
 
@@ -400,30 +419,34 @@ void MessagePipeDispatcher::StartSerialize(uint32_t* num_bytes,
   *num_handles = 0;
 }
 
-bool MessagePipeDispatcher::EndSerializeAndClose(
-    void* destination,
-    ports::PortName* ports,
-    PlatformHandleVector* handles) {
-  *ports = port_.name();
-  // Note: We don't actually close a serialized MPD until CompleteTransit()
-  // since sending might fail at the ports layer and we want to keep the MPD
-  // alive in that case. This is OK because the signal lock is held.
+bool MessagePipeDispatcher::EndSerialize(void* destination,
+                                         ports::PortName* ports,
+                                         PlatformHandleVector* handles) {
+  ports[0] = port_.name();
   return true;
 }
 
 bool MessagePipeDispatcher::BeginTransit() {
-  signal_lock_.Acquire();
-  return port_connected_;
+  base::AutoLock lock(signal_lock_);
+  if (in_transit_)
+    return false;
+  in_transit_ = port_connected_;
+  return in_transit_;
 }
 
-void MessagePipeDispatcher::CompleteTransit() {
+void MessagePipeDispatcher::CompleteTransitAndClose() {
+  base::AutoLock lock(signal_lock_);
+  in_transit_ = false;
   port_transferred_ = true;
   CloseNoLock();
-  signal_lock_.Release();
 }
 
 void MessagePipeDispatcher::CancelTransit() {
-  signal_lock_.Release();
+  base::AutoLock lock(signal_lock_);
+  in_transit_ = false;
+
+  // Something may have happened while we were waiting for potential transit.
+  awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
 }
 
 // static
@@ -448,11 +471,12 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
+  DCHECK(port_closed_ && !in_transit_);
 }
 
 MojoResult MessagePipeDispatcher::CloseNoLock() {
   signal_lock_.AssertAcquired();
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   port_closed_ = true;
@@ -479,7 +503,7 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
 
   ports::PortStatus port_status;
   if (node_controller_->node()->GetStatus(port_, &port_status) != ports::OK) {
-    CHECK(port_transferred_ || port_closed_);
+    CHECK(in_transit_ || port_transferred_ || port_closed_);
     return HandleSignalsState();
   }
 

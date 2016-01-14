@@ -82,10 +82,10 @@ MojoResult DataPipeProducerDispatcher::WriteData(const void* elements,
                                                  uint32_t* num_bytes,
                                                  MojoWriteDataFlags flags) {
   base::AutoLock lock(lock_);
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  if (InTwoPhaseWrite())
+  if (InTwoPhaseWriteNoLock())
     return MOJO_RESULT_BUSY;
   if (error_)
     return MOJO_RESULT_FAILED_PRECONDITION;
@@ -128,10 +128,10 @@ MojoResult DataPipeProducerDispatcher::BeginWriteData(
     uint32_t* buffer_num_bytes,
     MojoWriteDataFlags flags) {
   base::AutoLock lock(lock_);
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  if (InTwoPhaseWrite())
+  if (InTwoPhaseWriteNoLock())
     return MOJO_RESULT_BUSY;
   if (error_)
     return MOJO_RESULT_FAILED_PRECONDITION;
@@ -153,10 +153,10 @@ MojoResult DataPipeProducerDispatcher::BeginWriteData(
 MojoResult DataPipeProducerDispatcher::EndWriteData(
     uint32_t num_bytes_written) {
   base::AutoLock lock(lock_);
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  if (!InTwoPhaseWrite())
+  if (!InTwoPhaseWriteNoLock())
     return MOJO_RESULT_FAILED_PRECONDITION;
 
   // Note: Allow successful completion of the two-phase write even if the other
@@ -191,6 +191,11 @@ MojoResult DataPipeProducerDispatcher::AddAwakable(
     uintptr_t context,
     HandleSignalsState* signals_state) {
   base::AutoLock lock(lock_);
+  if (in_transit_) {
+    if (signals_state)
+      *signals_state = HandleSignalsState();
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  }
   HandleSignalsState state = GetHandleSignalsStateNoLock();
   if (state.satisfies(signals)) {
     if (signals_state)
@@ -211,9 +216,11 @@ void DataPipeProducerDispatcher::RemoveAwakable(
     Awakable* awakable,
     HandleSignalsState* signals_state) {
   base::AutoLock lock(lock_);
-  awakable_list_.Remove(awakable);
-  if (signals_state)
+  if (in_transit_)
+    *signals_state = HandleSignalsState();
+  else
     *signals_state = GetHandleSignalsStateNoLock();
+  awakable_list_.Remove(awakable);
 }
 
 void DataPipeProducerDispatcher::StartSerialize(uint32_t* num_bytes,
@@ -224,31 +231,39 @@ void DataPipeProducerDispatcher::StartSerialize(uint32_t* num_bytes,
   *num_handles = 0;
 }
 
-bool DataPipeProducerDispatcher::EndSerializeAndClose(
+bool DataPipeProducerDispatcher::EndSerialize(
     void* destination,
     ports::PortName* ports,
     PlatformHandleVector* platform_handles) {
   SerializedState* state = static_cast<SerializedState*>(destination);
   memcpy(&state->options, &options_, sizeof(MojoCreateDataPipeOptions));
 
+  base::AutoLock lock(lock_);
   ports[0] = port_.name();
-
-  port_transferred_ = true;
-  CloseNoLock();
-
   return true;
 }
 
 bool DataPipeProducerDispatcher::BeginTransit() {
-  lock_.Acquire();
-  return !InTwoPhaseWrite();
+  base::AutoLock lock(lock_);
+  if (in_transit_)
+    return false;
+  in_transit_ = !InTwoPhaseWriteNoLock();
+  return in_transit_;
 }
 
-void DataPipeProducerDispatcher::CompleteTransit() {
-  lock_.Release();
+void DataPipeProducerDispatcher::CompleteTransitAndClose() {
+  base::AutoLock lock(lock_);
+  port_transferred_ = true;
+  in_transit_ = false;
+  CloseNoLock();
 }
 
-void DataPipeProducerDispatcher::CancelTransit() { lock_.Release(); }
+void DataPipeProducerDispatcher::CancelTransit() {
+  base::AutoLock lock(lock_);
+  in_transit_ = false;
+
+  awakable_list_.AwakeForStateChange(GetHandleSignalsStateNoLock());
+}
 
 // static
 scoped_refptr<DataPipeProducerDispatcher>
@@ -274,11 +289,13 @@ DataPipeProducerDispatcher::Deserialize(const void* data,
   return new DataPipeProducerDispatcher(node_controller, port, state->options);
 }
 
-DataPipeProducerDispatcher::~DataPipeProducerDispatcher() {}
+DataPipeProducerDispatcher::~DataPipeProducerDispatcher() {
+  DCHECK(port_closed_ && !in_transit_);
+}
 
 MojoResult DataPipeProducerDispatcher::CloseNoLock() {
   lock_.AssertAcquired();
-  if (port_closed_)
+  if (port_closed_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
   port_closed_ = true;
 
@@ -294,7 +311,7 @@ HandleSignalsState DataPipeProducerDispatcher::GetHandleSignalsStateNoLock()
   lock_.AssertAcquired();
   HandleSignalsState rv;
   if (!error_) {
-    if (!InTwoPhaseWrite())
+    if (!InTwoPhaseWriteNoLock())
       rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
     rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
   } else {
@@ -323,7 +340,7 @@ bool DataPipeProducerDispatcher::WriteDataIntoMessagesNoLock(
         node_controller_->AllocMessage(num_bytes, 0);
     memcpy(message->mutable_payload_bytes(),
            static_cast<const char*>(elements) + offset, message_num_bytes);
-    int rv = node_controller_->SendMessage(port_, std::move(message));
+    int rv = node_controller_->SendMessage(port_, &message);
     if (rv != ports::OK) {
       error_ = true;
       return false;
@@ -333,6 +350,10 @@ bool DataPipeProducerDispatcher::WriteDataIntoMessagesNoLock(
   }
 
   return true;
+}
+
+bool DataPipeProducerDispatcher::InTwoPhaseWriteNoLock() const {
+  return !two_phase_data_.empty();
 }
 
 void DataPipeProducerDispatcher::OnPortStatusChanged() {
@@ -350,10 +371,6 @@ void DataPipeProducerDispatcher::OnPortStatusChanged() {
   }
 
   awakable_list_.AwakeForStateChange(GetHandleSignalsStateNoLock());
-}
-
-bool DataPipeProducerDispatcher::InTwoPhaseWrite() const {
-  return !two_phase_data_.empty();
 }
 
 }  // namespace edk

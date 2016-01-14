@@ -136,7 +136,7 @@ Dispatcher::Type SharedBufferDispatcher::GetType() const {
 
 MojoResult SharedBufferDispatcher::Close() {
   base::AutoLock lock(lock_);
-  if (!shared_buffer_)
+  if (!shared_buffer_ || in_transit_)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   shared_buffer_ = nullptr;
@@ -153,6 +153,8 @@ MojoResult SharedBufferDispatcher::DuplicateBufferHandle(
 
   // Note: Since this is "duplicate", we keep our ref to |shared_buffer_|.
   base::AutoLock lock(lock_);
+  if (in_transit_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
   *new_dispatcher = CreateInternal(shared_buffer_);
   return MOJO_RESULT_OK;
 }
@@ -169,9 +171,11 @@ MojoResult SharedBufferDispatcher::MapBuffer(
 
   base::AutoLock lock(lock_);
   DCHECK(shared_buffer_);
-  if (!shared_buffer_->IsValidMap(static_cast<size_t>(offset),
-                                  static_cast<size_t>(num_bytes)))
+  if (in_transit_ ||
+      !shared_buffer_->IsValidMap(static_cast<size_t>(offset),
+                                  static_cast<size_t>(num_bytes))) {
     return MOJO_RESULT_INVALID_ARGUMENT;
+  }
 
   DCHECK(mapping);
   *mapping = shared_buffer_->MapNoCheck(static_cast<size_t>(offset),
@@ -190,28 +194,43 @@ void SharedBufferDispatcher::StartSerialize(uint32_t* num_bytes,
   *num_platform_handles = 1;
 }
 
-bool SharedBufferDispatcher::EndSerializeAndClose(
-    void* destination,
-    ports::PortName* ports,
-    PlatformHandleVector* handles) {
+bool SharedBufferDispatcher::EndSerialize(void* destination,
+                                          ports::PortName* ports,
+                                          PlatformHandleVector* handles) {
   SerializedSharedBufferDispatcher* serialization =
       static_cast<SerializedSharedBufferDispatcher*>(destination);
-  {
-    base::AutoLock lock(lock_);
-    serialization->num_bytes = shared_buffer_->GetNumBytes();
-    ScopedPlatformHandle handle(
-        shared_buffer_->HasOneRef()
-            ? shared_buffer_->PassPlatformHandle()
-            : shared_buffer_->DuplicatePlatformHandle());
-    if (!handle.is_valid()) {
-      shared_buffer_ = nullptr;
-      return false;
-    }
-    handles->push_back(handle.release());
+  base::AutoLock lock(lock_);
+  serialization->num_bytes = shared_buffer_->GetNumBytes();
+
+  handle_for_transit_ = shared_buffer_->DuplicatePlatformHandle();
+  if (!handle_for_transit_.is_valid()) {
+    shared_buffer_ = nullptr;
+    return false;
   }
 
-  Close();
+  handles->push_back(handle_for_transit_.get());
   return true;
+}
+
+bool SharedBufferDispatcher::BeginTransit() {
+  base::AutoLock lock(lock_);
+  if (in_transit_)
+    return false;
+  in_transit_ = shared_buffer_ != nullptr;
+  return in_transit_;
+}
+
+void SharedBufferDispatcher::CompleteTransitAndClose() {
+  base::AutoLock lock(lock_);
+  in_transit_ = false;
+  shared_buffer_ = nullptr;
+  ignore_result(handle_for_transit_.release());
+}
+
+void SharedBufferDispatcher::CancelTransit() {
+  base::AutoLock lock(lock_);
+  in_transit_ = false;
+  handle_for_transit_.reset();
 }
 
 SharedBufferDispatcher::SharedBufferDispatcher(
@@ -221,6 +240,7 @@ SharedBufferDispatcher::SharedBufferDispatcher(
 }
 
 SharedBufferDispatcher::~SharedBufferDispatcher() {
+  DCHECK(!shared_buffer_ && !in_transit_);
 }
 
 // static

@@ -51,11 +51,11 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
   void StartSerialize(uint32_t* num_bytes,
                       uint32_t* num_ports,
                       uint32_t* num_handles) override;
-  bool EndSerializeAndClose(void* destination,
-                            ports::PortName* ports,
-                            PlatformHandleVector* handles) override;
+  bool EndSerialize(void* destination,
+                    ports::PortName* ports,
+                    PlatformHandleVector* handles) override;
   bool BeginTransit() override;
-  void CompleteTransit() override;
+  void CompleteTransitAndClose() override;
   void CancelTransit() override;
 
   static scoped_refptr<DataPipeProducerDispatcher>
@@ -75,8 +75,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
   MojoResult CloseNoLock();
   HandleSignalsState GetHandleSignalsStateNoLock() const;
   bool WriteDataIntoMessagesNoLock(const void* elements, uint32_t num_bytes);
+  bool InTwoPhaseWriteNoLock() const;
   void OnPortStatusChanged();
-  bool InTwoPhaseWrite() const;
 
   const MojoCreateDataPipeOptions options_;
   NodeController* const node_controller_;
@@ -88,6 +88,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
 
   std::vector<char> two_phase_data_;
 
+  bool in_transit_ = false;
   bool error_ = false;
   bool port_closed_ = false;
   bool port_transferred_ = false;

@@ -395,7 +395,7 @@ MojoResult Core::WriteMessage(MojoHandle message_pipe_handle,
   {
     base::AutoLock lock(handles_lock_);
     if (rv == MOJO_RESULT_OK) {
-      handles_.CompleteTransit(dispatchers);
+      handles_.CompleteTransitAndClose(dispatchers);
     } else {
       handles_.CancelTransit(dispatchers);
     }

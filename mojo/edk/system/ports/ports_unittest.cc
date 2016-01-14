@@ -20,7 +20,9 @@ namespace edk {
 namespace ports {
 namespace test {
 
-static void LogMessage(const Message* message) {
+namespace {
+
+void LogMessage(const Message* message) {
   std::stringstream ports;
   for (size_t i = 0; i < message->num_ports(); ++i) {
     if (i > 0)
@@ -66,19 +68,18 @@ struct TaskComparator {
   }
 };
 
-static std::priority_queue<Task*,
-                           std::vector<Task*>,
-                           TaskComparator> task_queue;
-static Node* node_map[2];
+std::priority_queue<Task*, std::vector<Task*>, TaskComparator> task_queue;
+Node* node_map[2];
 
-static Node* GetNode(const NodeName& name) {
+Node* GetNode(const NodeName& name) {
   return node_map[name.v1];
 }
-static void SetNode(const NodeName& name, Node* node) {
+
+void SetNode(const NodeName& name, Node* node) {
   node_map[name.v1] = node;
 }
 
-static void PumpTasks() {
+void PumpTasks() {
   while (!task_queue.empty()) {
     Task* task = task_queue.top();
     task_queue.pop();
@@ -90,7 +91,7 @@ static void PumpTasks() {
   }
 }
 
-static void DiscardPendingTasks() {
+void DiscardPendingTasks() {
   while (!task_queue.empty()) {
     Task* task = task_queue.top();
     task_queue.pop();
@@ -98,30 +99,34 @@ static void DiscardPendingTasks() {
   }
 }
 
-static ScopedMessage NewStringMessage(const std::string& s) {
+int SendStringMessage(Node* node, const PortRef& port, const std::string& s) {
   size_t size = s.size() + 1;
   ScopedMessage message;
   EXPECT_EQ(OK, node_map[0]->AllocMessage(size, 0, &message));
   memcpy(message->mutable_payload_bytes(), s.data(), size);
-  return message;
+  return node->SendMessage(port, &message);
 }
 
-static ScopedMessage NewStringMessageWithPort(const std::string& s,
-                                              const PortName& port_name) {
+int SendStringMessageWithPort(Node* node,
+                              const PortRef& port,
+                              const std::string& s,
+                              const PortName& sent_port_name) {
   size_t size = s.size() + 1;
   ScopedMessage message;
   EXPECT_EQ(OK, node_map[0]->AllocMessage(size, 1, &message));
   memcpy(message->mutable_payload_bytes(), s.data(), size);
-  message->mutable_ports()[0] = port_name;
-  return message;
+  message->mutable_ports()[0] = sent_port_name;
+  return node->SendMessage(port ,&message);
 }
 
-static ScopedMessage NewStringMessageWithPort(const std::string& s,
-                                              const PortRef& port) {
-  return NewStringMessageWithPort(s, port.name());
+int SendStringMessageWithPort(Node* node,
+                              const PortRef& port,
+                              const std::string& s,
+                              const PortRef& sent_port) {
+  return SendStringMessageWithPort(node, port, s, sent_port.name());
 }
 
-static const char* ToString(const ScopedMessage& message) {
+const char* ToString(const ScopedMessage& message) {
   return static_cast<const char*>(message->payload_bytes());
 }
 
@@ -196,7 +201,7 @@ class TestNodeDelegate : public NodeDelegate {
           PortRef received_port;
           node->GetPort(message->ports()[i], &received_port);
 
-          node->SendMessage(received_port, NewStringMessage(buf.str()));
+          SendStringMessage(node, received_port, buf.str());
 
           // Avoid leaking these ports.
           node->ClosePort(received_port);
@@ -231,6 +236,8 @@ class PortsTest : public testing::Test {
   }
 };
 
+}  // namespace
+
 TEST_F(PortsTest, Basic1) {
   NodeName node0_name(0, 1);
   TestNodeDelegate node0_delegate(node0_name);
@@ -252,7 +259,7 @@ TEST_F(PortsTest, Basic1) {
   // Transfer a port from node0 to node1.
   PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", a1)));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "hello", a1));
 
   EXPECT_EQ(OK, node0.ClosePort(a0));
 
@@ -280,8 +287,8 @@ TEST_F(PortsTest, Basic2) {
 
   PortRef b0, b1;
   EXPECT_EQ(OK, node0.CreatePortPair(&b0, &b1));
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", b1)));
-  EXPECT_EQ(OK, node0.SendMessage(b0, NewStringMessage("hello again")));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "hello", b1));
+  EXPECT_EQ(OK, SendStringMessage(&node0, b0, "hello again"));
 
   // This may cause a SendMessage(b1) failure.
   EXPECT_EQ(OK, node0.ClosePort(b0));
@@ -311,16 +318,16 @@ TEST_F(PortsTest, Basic3) {
   // Transfer a port from node0 to node1.
   PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hello", a1)));
-  EXPECT_EQ(OK, node0.SendMessage(a0, NewStringMessage("hello again")));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "hello", a1));
+  EXPECT_EQ(OK, SendStringMessage(&node0, a0, "hello again"));
 
   // Transfer a0 as well.
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("foo", a0)));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "foo", a0));
 
   PortRef b0, b1;
   EXPECT_EQ(OK, node0.CreatePortPair(&b0, &b1));
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("bar", b1)));
-  EXPECT_EQ(OK, node0.SendMessage(b0, NewStringMessage("baz")));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "bar", b1));
+  EXPECT_EQ(OK, SendStringMessage(&node0, b0, "baz"));
 
   // This may cause a SendMessage(b1) failure.
   EXPECT_EQ(OK, node0.ClosePort(b0));
@@ -354,7 +361,7 @@ TEST_F(PortsTest, LostConnectionToNode1) {
 
   PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("foo", a1)));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "foo", a1));
 
   PumpTasks();
 
@@ -389,7 +396,7 @@ TEST_F(PortsTest, LostConnectionToNode2) {
 
   PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("take a1", a1)));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "take a1", a1));
 
   PumpTasks();
 
@@ -441,7 +448,7 @@ TEST_F(PortsTest, GetMessage2) {
   PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
-  EXPECT_EQ(OK, node0.SendMessage(a1, NewStringMessage("1")));
+  EXPECT_EQ(OK, SendStringMessage(&node0, a1, "1"));
 
   ScopedMessage message;
   EXPECT_EQ(OK, node0.GetMessage(a0, &message));
@@ -471,7 +478,7 @@ TEST_F(PortsTest, GetMessage3) {
   };
 
   for (size_t i = 0; i < sizeof(kStrings)/sizeof(kStrings[0]); ++i)
-    EXPECT_EQ(OK, node0.SendMessage(a1, NewStringMessage(kStrings[i])));
+    EXPECT_EQ(OK, SendStringMessage(&node0, a1, kStrings[i]));
 
   ScopedMessage message;
   for (size_t i = 0; i < sizeof(kStrings)/sizeof(kStrings[0]); ++i) {
@@ -511,7 +518,7 @@ TEST_F(PortsTest, Delegation1) {
   PortRef a0, a1;
   EXPECT_EQ(OK, node0.CreatePortPair(&a0, &a1));
 
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("a1", a1)));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "a1", a1));
 
   PumpTasks();
 
@@ -523,11 +530,11 @@ TEST_F(PortsTest, Delegation1) {
   // This is "a1" from the point of view of node1.
   PortName a2_name = message->ports()[0];
 
-  EXPECT_EQ(OK, node1.SendMessage(x1, NewStringMessageWithPort("a2", a2_name)));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node1, x1, "a2", a2_name));
 
   PumpTasks();
 
-  EXPECT_EQ(OK, node0.SendMessage(a0, NewStringMessage("hello")));
+  EXPECT_EQ(OK, SendStringMessage(&node0, a0, "hello"));
 
   PumpTasks();
 
@@ -584,13 +591,13 @@ TEST_F(PortsTest, Delegation2) {
     EXPECT_EQ(OK, node0.CreatePortPair(&E, &F));
 
     // Pass D over A to B.
-    EXPECT_EQ(OK, node0.SendMessage(A, NewStringMessageWithPort("1", D)));
+    EXPECT_EQ(OK, SendStringMessageWithPort(&node0, A, "1", D));
 
     // Pass F over C to D.
-    EXPECT_EQ(OK, node0.SendMessage(C, NewStringMessageWithPort("1", F)));
+    EXPECT_EQ(OK, SendStringMessageWithPort(&node0, C, "1", F));
 
     // This message should find its way to node1.
-    EXPECT_EQ(OK, node0.SendMessage(E, NewStringMessage("hello")));
+    EXPECT_EQ(OK, SendStringMessage(&node0, E, "hello"));
 
     PumpTasks();
 
@@ -629,8 +636,8 @@ TEST_F(PortsTest, SendUninitialized1) {
 
   // Send a message on each port and expect neither to arrive yet.
 
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessage("it can wait")));
-  EXPECT_EQ(OK, node1.SendMessage(x1, NewStringMessage("hello eventually")));
+  EXPECT_EQ(OK, SendStringMessage(&node0, x0, "it can wait"));
+  EXPECT_EQ(OK, SendStringMessage(&node1, x1, "hello eventually"));
 
   PumpTasks();
 
@@ -677,7 +684,7 @@ TEST_F(PortsTest, SendUninitialized2) {
 
   // Send B over the uninitialized x0 port and expect it to not yet be received.
 
-  EXPECT_EQ(OK, node0.SendMessage(x0, NewStringMessageWithPort("hi", B)));
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "hi", B));
 
   PumpTasks();
 
@@ -685,7 +692,7 @@ TEST_F(PortsTest, SendUninitialized2) {
   EXPECT_FALSE(node1_delegate.GetSavedMessage(&message));
 
   // Send a message over A to B while B is waiting to be sent to x1.
-  EXPECT_EQ(OK, node0.SendMessage(A, NewStringMessage("hey")));
+  EXPECT_EQ(OK, SendStringMessage(&node0, A, "hey"));
 
   PumpTasks();
 
@@ -712,7 +719,7 @@ TEST_F(PortsTest, SendUninitialized2) {
   // Send a message over the previously received port and expect it to get back
   // to A.
 
-  EXPECT_EQ(OK, node1.SendMessage(received_port, NewStringMessage("bye")));
+  EXPECT_EQ(OK, SendStringMessage(&node1, received_port, "bye"));
 
   PumpTasks();
 
@@ -734,12 +741,12 @@ TEST_F(PortsTest, SendFailure) {
   // Try to send A over itself.
 
   EXPECT_EQ(ERROR_PORT_CANNOT_SEND_SELF,
-            node0.SendMessage(A, NewStringMessageWithPort("oops", A)));
+            SendStringMessageWithPort(&node0, A, "oops", A));
 
   // Try to send B over A.
 
   EXPECT_EQ(ERROR_PORT_CANNOT_SEND_PEER,
-            node0.SendMessage(A, NewStringMessageWithPort("nope", B)));
+            SendStringMessageWithPort(&node0, A, "nope", B));
 
   PumpTasks();
 
@@ -749,8 +756,8 @@ TEST_F(PortsTest, SendFailure) {
 
   // Both A and B should still work.
 
-  EXPECT_EQ(OK, node0.SendMessage(A, NewStringMessage("hi")));
-  EXPECT_EQ(OK, node0.SendMessage(B, NewStringMessage("hey")));
+  EXPECT_EQ(OK, SendStringMessage(&node0, A, "hi"));
+  EXPECT_EQ(OK, SendStringMessage(&node0, B, "hey"));
 
   PumpTasks();
 
