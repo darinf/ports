@@ -75,8 +75,6 @@ class MultiprocessMessagePipeTest : public test::MultiprocessTestBase {
 // repeated twice, until the other end is closed or it receives "quitquitquit"
 // (which it doesn't reply to). It'll return the number of messages received,
 // not including any "quitquitquit" message, modulo 100.
-//
-// TODO: Convert this client to use the DEFINE_TEST_CLIENT_WITH_PIPE macro.
 DEFINE_TEST_CLIENT_WITH_PIPE(EchoEcho, MultiprocessMessagePipeTest, h) {
   const std::string quitquitquit("quitquitquit");
   int rv = 0;
