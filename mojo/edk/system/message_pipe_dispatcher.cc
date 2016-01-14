@@ -197,10 +197,10 @@ MojoResult MessagePipeDispatcher::WriteMessage(
       } else if (rv == ports::ERROR_PORT_PEER_CLOSED) {
         awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
         result = MOJO_RESULT_INVALID_ARGUMENT;
+      } else {
+        NOTREACHED();
+        result = MOJO_RESULT_UNKNOWN;
       }
-
-      NOTREACHED();
-      result = MOJO_RESULT_UNKNOWN;
       cancel_transit = true;
     } else {
       DCHECK(!message);
@@ -214,7 +214,8 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     DCHECK(message);
     Channel::MessagePtr m = message->TakeChannelMessage();
     ScopedPlatformHandleVectorPtr handles = m->TakeHandles();
-    handles->clear();
+    if (handles)
+      handles->clear();
   }
 
   return result;
