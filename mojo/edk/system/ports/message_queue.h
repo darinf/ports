@@ -10,6 +10,7 @@
 #include <functional>
 #include <vector>
 
+#include "base/macros.h"
 #include "mojo/edk/system/ports/message.h"
 
 namespace mojo {
@@ -19,6 +20,10 @@ namespace ports {
 const uint64_t kInitialSequenceNum = 1;
 const uint64_t kInvalidSequenceNum = 0xFFFFFFFF;
 
+// An incoming message queue for a port. MessageQueue keeps track of the highest
+// known sequence number and can indicate whether the next sequential message is
+// available. Thus the queue enforces message ordering for the consumer without
+// enforcing it for the producer (see AcceptMessage() below.)
 class MessageQueue {
  public:
   explicit MessageQueue();
@@ -50,6 +55,8 @@ class MessageQueue {
   std::vector<ScopedMessage> heap_;
   uint64_t next_sequence_num_;
   bool signalable_ = true;
+
+  DISALLOW_COPY_AND_ASSIGN(MessageQueue);
 };
 
 }  // namespace ports
