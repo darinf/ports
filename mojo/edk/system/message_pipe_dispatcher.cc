@@ -264,9 +264,6 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
           *num_bytes = bytes_available;
         }
 
-        DCHECK_EQ(header->num_dispatchers,
-                  message.num_ports() + message.num_handles());
-
         uint32_t handles_to_read = 0;
         uint32_t handles_available = header->num_dispatchers;
         if (num_handles) {
@@ -317,8 +314,6 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
   size_t header_size = sizeof(MessageHeader) +
       header->num_dispatchers * sizeof(DispatcherHeader);
   DCHECK_GE(message->num_payload_bytes(), header_size);
-  DCHECK_EQ(message->num_ports() + message->num_handles(),
-            header->num_dispatchers);
 
   const void* dispatcher_data = &dispatcher_headers[header->num_dispatchers];
 
