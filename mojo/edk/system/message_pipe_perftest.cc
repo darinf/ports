@@ -15,7 +15,7 @@
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/test_utils.h"
-#include "mojo/edk/test/multiprocess_test_base.h"
+#include "mojo/edk/test/mojo_test_base.h"
 #include "mojo/edk/test/test_utils.h"
 #include "mojo/public/c/system/functions.h"
 #include "mojo/public/cpp/system/message_pipe.h"
@@ -25,7 +25,7 @@ namespace mojo {
 namespace edk {
 namespace {
 
-class MultiprocessMessagePipePerfTest : public test::MultiprocessTestBase {
+class MultiprocessMessagePipePerfTest : public test::MojoTestBase {
  public:
   MultiprocessMessagePipePerfTest()
       : message_count_(0),
