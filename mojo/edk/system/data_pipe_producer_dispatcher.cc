@@ -216,9 +216,9 @@ void DataPipeProducerDispatcher::RemoveAwakable(
     Awakable* awakable,
     HandleSignalsState* signals_state) {
   base::AutoLock lock(lock_);
-  if (in_transit_)
+  if (in_transit_ && signals_state)
     *signals_state = HandleSignalsState();
-  else
+  else if (signals_state)
     *signals_state = GetHandleSignalsStateNoLock();
   awakable_list_.Remove(awakable);
 }
