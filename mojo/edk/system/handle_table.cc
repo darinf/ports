@@ -83,14 +83,14 @@ MojoResult HandleTable::BeginTransit(
       return MOJO_RESULT_INVALID_ARGUMENT;
     if (it->second.busy)
       return MOJO_RESULT_BUSY;
-    it->second.busy = true;
 
-    dispatchers->emplace_back();
-    Dispatcher::DispatcherInTransit& d = dispatchers->back();
+    Dispatcher::DispatcherInTransit d;
     d.local_handle = handles[i];
     d.dispatcher = it->second.dispatcher;
     if (!d.dispatcher->BeginTransit())
       return MOJO_RESULT_BUSY;
+    it->second.busy = true;
+    dispatchers->push_back(d);
   }
   return MOJO_RESULT_OK;
 }
