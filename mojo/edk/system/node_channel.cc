@@ -273,7 +273,8 @@ void NodeChannel::Introduce(const ports::NodeName& name,
     BOOL result = DuplicateHandle(base::GetCurrentProcessHandle(),
                                   handles[0], remote_process_handle_,
                                   &handles[0], 0, FALSE,
-                                  DUPLICATE_CLOSE_SOURCE);
+                                  DUPLICATE_CLOSE_SOURCE |
+                                      DUPLICATE_SAME_ACCESS);
     DCHECK(result);
     ignore_result(handle.release());
   }
