@@ -19,6 +19,8 @@
 #include "crypto/random.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/embedder_internal.h"
+#include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/platform_support.h"
 #include "mojo/edk/system/async_waiter.h"
 #include "mojo/edk/system/channel.h"
 #include "mojo/edk/system/configuration.h"
@@ -422,34 +424,47 @@ MojoResult Core::CreateDataPipe(
     const MojoCreateDataPipeOptions* options,
     MojoHandle* data_pipe_producer_handle,
     MojoHandle* data_pipe_consumer_handle) {
-  // TODO: Use the new data pipe impl when it's ready.
+  if (options && options->struct_size != sizeof(MojoCreateDataPipeOptions))
+    return MOJO_RESULT_INVALID_ARGUMENT;
 
-  MojoCreateDataPipeOptions default_options;
-  default_options.struct_size = sizeof(MojoCreateDataPipeOptions);
-  default_options.flags = 0;
-  default_options.element_num_bytes = 1;
-  default_options.capacity_num_bytes = 64 * 1024;
+  MojoCreateDataPipeOptions create_options;
+  create_options.struct_size = sizeof(MojoCreateDataPipeOptions);
+  create_options.flags = options ? options->flags : 0;
+  create_options.element_num_bytes = options ? options->element_num_bytes : 1;
+  // TODO: Use Configuration to get default data pipe capacity.
+  create_options.capacity_num_bytes =
+      options && options->capacity_num_bytes ? options->capacity_num_bytes
+                                             : 64 * 1024;
 
-  const MojoCreateDataPipeOptions* create_options =
-      options ? options : &default_options;
+  // TODO: Broker through the parent when necessary.
+  scoped_refptr<PlatformSharedBuffer> ring_buffer =
+      node_controller_->CreateSharedBuffer(create_options.capacity_num_bytes);
+  if (!ring_buffer)
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   ports::PortRef port0, port1;
   GetNodeController()->node()->CreatePortPair(&port0, &port1);
+
   CHECK(data_pipe_producer_handle);
   CHECK(data_pipe_consumer_handle);
-  *data_pipe_producer_handle = AddDispatcher(
-      new DataPipeProducerDispatcher(GetNodeController(), port0,
-                                     *create_options));
-  if (*data_pipe_producer_handle == MOJO_HANDLE_INVALID)
-    return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
-  *data_pipe_consumer_handle = AddDispatcher(
-      new DataPipeConsumerDispatcher(GetNodeController(), port1,
-                                     *create_options));
-  if (*data_pipe_consumer_handle == MOJO_HANDLE_INVALID) {
-    scoped_refptr<Dispatcher> unused;
-    unused->Close();
-    handles_.GetAndRemoveDispatcher(*data_pipe_producer_handle, &unused);
+  scoped_refptr<Dispatcher> producer = new DataPipeProducerDispatcher(
+      GetNodeController(), port0, ring_buffer, create_options,
+      true /* initialized */);
+  scoped_refptr<Dispatcher> consumer = new DataPipeConsumerDispatcher(
+      GetNodeController(), port1, ring_buffer, create_options,
+      true /* initialized */);
+
+  *data_pipe_producer_handle = AddDispatcher(producer);
+  *data_pipe_consumer_handle = AddDispatcher(consumer);
+  if (*data_pipe_producer_handle == MOJO_HANDLE_INVALID ||
+      *data_pipe_consumer_handle == MOJO_HANDLE_INVALID) {
+    if (*data_pipe_producer_handle != MOJO_HANDLE_INVALID) {
+      scoped_refptr<Dispatcher> unused;
+      handles_.GetAndRemoveDispatcher(*data_pipe_producer_handle, &unused);
+    }
+    producer->Close();
+    consumer->Close();
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
   }
 

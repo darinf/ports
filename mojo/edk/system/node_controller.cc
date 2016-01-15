@@ -12,7 +12,9 @@
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "crypto/random.h"
+#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
+#include "mojo/edk/embedder/platform_support.h"
 #include "mojo/edk/system/core.h"
 #include "mojo/edk/system/ports_message.h"
 
@@ -143,6 +145,12 @@ void NodeController::ReservePort(const std::string& token,
 
   base::AutoLock lock(reserved_ports_lock_);
   reserved_ports_.insert(std::make_pair(token, *port_ref));
+}
+
+scoped_refptr<PlatformSharedBuffer> NodeController::CreateSharedBuffer(
+    size_t num_bytes) {
+  // TODO: Broker through the parent over a sync channel. :(
+  return internal::g_platform_support->CreateSharedBuffer(num_bytes);
 }
 
 void NodeController::ConnectToParentPort(const ports::PortRef& local_port,

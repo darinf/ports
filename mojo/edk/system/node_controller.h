@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
+#include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/node_channel.h"
 #include "mojo/edk/system/ports/hash_functions.h"
@@ -91,6 +92,9 @@ class NodeController : public ports::NodeDelegate,
   // reserved a port for it.
   void ConnectToParentPort(const ports::PortRef& local_port,
                            const std::string& token);
+
+  // Creates a new shared buffer for use in the current process.
+  scoped_refptr<PlatformSharedBuffer> CreateSharedBuffer(size_t num_bytes);
 
  private:
   using NodeMap = std::unordered_map<ports::NodeName,

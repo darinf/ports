@@ -41,6 +41,8 @@ static_library("system") {
     "core.h",
     "data_pipe_consumer_dispatcher.cc",
     "data_pipe_consumer_dispatcher.h",
+    "data_pipe_control_message.cc",
+    "data_pipe_control_message.h",
     "data_pipe_producer_dispatcher.cc",
     "data_pipe_producer_dispatcher.h",
     "dispatcher.cc",

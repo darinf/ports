@@ -10,7 +10,9 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/system/awakable_list.h"
 #include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/ports/port_ref.h"
@@ -19,6 +21,7 @@
 namespace mojo {
 namespace edk {
 
+struct DataPipeControlMessage;
 class NodeController;
 
 // This is the Dispatcher implementation for the producer handle for data
@@ -27,9 +30,12 @@ class NodeController;
 class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
     : public Dispatcher {
  public:
-  DataPipeProducerDispatcher(NodeController* node_controller,
-                             const ports::PortRef& port,
-                             const MojoCreateDataPipeOptions& options);
+  DataPipeProducerDispatcher(
+      NodeController* node_controller,
+      const ports::PortRef& port,
+      scoped_refptr<PlatformSharedBuffer> shared_ring_buffer,
+      const MojoCreateDataPipeOptions& options,
+      bool initialized);
 
   // Dispatcher:
   Type GetType() const override;
@@ -72,26 +78,39 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
 
   ~DataPipeProducerDispatcher() override;
 
+  void OnSharedBufferCreated(const scoped_refptr<PlatformSharedBuffer>& buffer);
+  void InitializeNoLock();
+  void NotifyWriteNoLock(uint32_t num_bytes);
   MojoResult CloseNoLock();
   HandleSignalsState GetHandleSignalsStateNoLock() const;
-  bool WriteDataIntoMessagesNoLock(const void* elements, uint32_t num_bytes);
-  bool InTwoPhaseWriteNoLock() const;
   void OnPortStatusChanged();
+  void UpdateSignalsStateNoLock();
+  bool ProcessMessageNoLock(const DataPipeControlMessage& message,
+                            ScopedPlatformHandleVectorPtr handles);
 
   const MojoCreateDataPipeOptions options_;
   NodeController* const node_controller_;
-  const ports::PortRef port_;
+  const ports::PortRef control_port_;
 
+  // Guards access to the fields below.
   mutable base::Lock lock_;
 
   AwakableList awakable_list_;
 
-  std::vector<char> two_phase_data_;
+  bool buffer_requested_ = false;
+
+  scoped_refptr<PlatformSharedBuffer> shared_ring_buffer_;
+  scoped_ptr<PlatformSharedBufferMapping> ring_buffer_mapping_;
+  ScopedPlatformHandle buffer_handle_for_transit_;
 
   bool in_transit_ = false;
-  bool error_ = false;
-  bool port_closed_ = false;
-  bool port_transferred_ = false;
+  bool is_closed_ = false;
+  bool peer_closed_ = false;
+  bool transferred_ = false;
+  bool in_two_phase_write_ = false;
+
+  uint32_t write_offset_ = 0;
+  uint32_t available_capacity_;
 
   DISALLOW_COPY_AND_ASSIGN(DataPipeProducerDispatcher);
 };

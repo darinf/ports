@@ -38,7 +38,7 @@ const size_t kMaxPoll = 100;
 // Used in Multiprocess test.
 const size_t kMultiprocessCapacity = 37;
 const char kMultiprocessTestData[] = "hello i'm a string that is 36 bytes";
-const int kMultiprocessMaxIter = 513;
+const int kMultiprocessMaxIter = 100;
 
 class DataPipeTest : public test::MultiprocessTestBase {
  public:
@@ -950,14 +950,11 @@ TEST_F(DataPipeTest, AllOrNone) {
   ASSERT_EQ(0u, num_bytes);
 }
 
-/*
-jam: this is testing that the implementation uses a circular buffer, which we
-don't use currently.
 // Tests that |ProducerWriteData()| and |ConsumerReadData()| writes and reads,
 // respectively, as much as possible, even if it may have to "wrap around" the
 // internal circular buffer. (Note that the two-phase write and read need not do
 // this.)
-TYPED_TEST(DataPipeImplTest, WrapAround) {
+TEST_F(DataPipeTest, WrapAround) {
   unsigned char test_data[1000];
   for (size_t i = 0; i < MOJO_ARRAYSIZE(test_data); i++)
     test_data[i] = static_cast<unsigned char>(i);
@@ -968,119 +965,80 @@ TYPED_TEST(DataPipeImplTest, WrapAround) {
       1u,                                       // |element_num_bytes|.
       100u                                      // |capacity_num_bytes|.
   };
-  MojoCreateDataPipeOptions validated_options = {};
-  // This test won't be valid if |ValidateCreateOptions()| decides to give the
-  // pipe more space.
-  ASSERT_EQ(MOJO_RESULT_OK, DataPipe::ValidateCreateOptions(
-                                &options, &validated_options));
-  ASSERT_EQ(100u, validated_options.capacity_num_bytes);
-  this->Create(options);
-  this->DoTransfer();
 
-  Waiter waiter;
-  HandleSignalsState hss;
-
-  // Add waiter.
-  waiter.Init();
-  ASSERT_EQ(MOJO_RESULT_OK,
-            this->ConsumerAddAwakable(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 1,
-                                      nullptr));
+  ASSERT_EQ(MOJO_RESULT_OK, Create(&options));
+  MojoHandleSignalsState hss;
 
   // Write 20 bytes.
   uint32_t num_bytes = 20u;
-  ASSERT_EQ(MOJO_RESULT_OK,
-            this->ProducerWriteData(&test_data[0], &num_bytes, false));
+  ASSERT_EQ(MOJO_RESULT_OK, WriteData(&test_data[0], &num_bytes, true));
   ASSERT_EQ(20u, num_bytes);
 
   // Wait for data.
-  // TODO(vtl): (See corresponding TODO in AllOrNone.)
-  ASSERT_EQ(MOJO_RESULT_OK, waiter.Wait(test::TinyDeadline(), nullptr));
-  hss = HandleSignalsState();
-  this->ConsumerRemoveAwakable(&waiter, &hss);
-  ASSERT_EQ(MOJO_HANDLE_SIGNAL_READABLE, hss.satisfied_signals);
+  ASSERT_EQ(MOJO_RESULT_OK,
+            MojoWait(consumer_, MOJO_HANDLE_SIGNAL_READABLE,
+                     MOJO_DEADLINE_INDEFINITE, &hss));
+  ASSERT_TRUE((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE) != 0);
   ASSERT_EQ(MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED,
             hss.satisfiable_signals);
 
   // Read 10 bytes.
   unsigned char read_buffer[1000] = {0};
   num_bytes = 10u;
-  ASSERT_EQ(MOJO_RESULT_OK,
-            this->ConsumerReadData(read_buffer, &num_bytes, false, false));
+  ASSERT_EQ(MOJO_RESULT_OK, ReadData(read_buffer, &num_bytes, true));
   ASSERT_EQ(10u, num_bytes);
   ASSERT_EQ(0, memcmp(read_buffer, &test_data[0], 10u));
 
-  if (this->IsStrictCircularBuffer()) {
-    // Check that a two-phase write can now only write (at most) 80 bytes. (This
-    // checks an implementation detail; this behavior is not guaranteed.)
-    void* write_buffer_ptr = nullptr;
-    num_bytes = 0u;
-    ASSERT_EQ(MOJO_RESULT_OK,
-              this->ProducerBeginWriteData(&write_buffer_ptr, &num_bytes,
-                                           false));
-    EXPECT_TRUE(write_buffer_ptr);
-    ASSERT_EQ(80u, num_bytes);
-    ASSERT_EQ(MOJO_RESULT_OK, this->ProducerEndWriteData(0u));
-  }
+  // Check that a two-phase write can now only write (at most) 80 bytes. (This
+  // checks an implementation detail; this behavior is not guaranteed.)
+  void* write_buffer_ptr = nullptr;
+  num_bytes = 0u;
+  ASSERT_EQ(MOJO_RESULT_OK,
+            BeginWriteData(&write_buffer_ptr, &num_bytes, false));
+  EXPECT_TRUE(write_buffer_ptr);
+  ASSERT_EQ(80u, num_bytes);
+  ASSERT_EQ(MOJO_RESULT_OK, EndWriteData(0));
 
-  // TODO(vtl): (See corresponding TODO in TwoPhaseAllOrNone.)
   size_t total_num_bytes = 0;
-  for (size_t i = 0; i < kMaxPoll; i++) {
-    // Write as much data as we can (using |ProducerWriteData()|). We should
-    // write 90 bytes (eventually).
-    num_bytes = 200u;
-    MojoResult result = this->ProducerWriteData(
-        &test_data[20 + total_num_bytes], &num_bytes, false);
-    if (result == MOJO_RESULT_OK) {
-      total_num_bytes += num_bytes;
-      if (total_num_bytes >= 90u)
-        break;
-    } else {
-      ASSERT_EQ(MOJO_RESULT_OUT_OF_RANGE, result);
-    }
+  while (total_num_bytes < 90) {
+    // Wait to write.
+    ASSERT_EQ(MOJO_RESULT_OK,
+              MojoWait(producer_, MOJO_HANDLE_SIGNAL_WRITABLE,
+                       MOJO_DEADLINE_INDEFINITE, &hss));
+    ASSERT_EQ(hss.satisfied_signals, MOJO_HANDLE_SIGNAL_WRITABLE);
+    ASSERT_EQ(hss.satisfiable_signals,
+              MOJO_HANDLE_SIGNAL_WRITABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED);
 
-    test::Sleep(test::EpsilonDeadline());
+    // Write as much as we can.
+    num_bytes = 100;
+    ASSERT_EQ(MOJO_RESULT_OK,
+              WriteData(&test_data[20 + total_num_bytes], &num_bytes, false));
+    total_num_bytes += num_bytes;
   }
+
   ASSERT_EQ(90u, total_num_bytes);
 
-  // TODO(vtl): (See corresponding TODO in TwoPhaseAllOrNone.)
-  for (size_t i = 0; i < kMaxPoll; i++) {
-    // We have 100.
-    num_bytes = 0u;
-    ASSERT_EQ(MOJO_RESULT_OK,
-              this->ConsumerQueryData(&num_bytes));
-    if (num_bytes >= 100u)
-      break;
-
-    test::Sleep(test::EpsilonDeadline());
-  }
+  num_bytes = 0;
+  ASSERT_EQ(MOJO_RESULT_OK, QueryData(&num_bytes));
   ASSERT_EQ(100u, num_bytes);
 
-  if (this->IsStrictCircularBuffer()) {
-    // Check that a two-phase read can now only read (at most) 90 bytes. (This
-    // checks an implementation detail; this behavior is not guaranteed.)
-    const void* read_buffer_ptr = nullptr;
-    num_bytes = 0u;
-    ASSERT_EQ(MOJO_RESULT_OK,
-              this->ConsumerBeginReadData(&read_buffer_ptr, &num_bytes, false));
-    EXPECT_TRUE(read_buffer_ptr);
-    ASSERT_EQ(90u, num_bytes);
-    ASSERT_EQ(MOJO_RESULT_OK, this->ConsumerEndReadData(0u));
-  }
+  // Check that a two-phase read can now only read (at most) 90 bytes. (This
+  // checks an implementation detail; this behavior is not guaranteed.)
+  const void* read_buffer_ptr = nullptr;
+  num_bytes = 0;
+  ASSERT_EQ(MOJO_RESULT_OK, BeginReadData(&read_buffer_ptr, &num_bytes, false));
+  EXPECT_TRUE(read_buffer_ptr);
+  ASSERT_EQ(90u, num_bytes);
+  ASSERT_EQ(MOJO_RESULT_OK, EndReadData(0));
 
-  // Read as much as possible (using |ConsumerReadData()|). We should read 100
-  // bytes.
+  // Read as much as possible. We should read 100 bytes.
   num_bytes = static_cast<uint32_t>(MOJO_ARRAYSIZE(read_buffer) *
                                     sizeof(read_buffer[0]));
   memset(read_buffer, 0, num_bytes);
-  ASSERT_EQ(MOJO_RESULT_OK,
-            this->ConsumerReadData(read_buffer, &num_bytes, false, false));
+  ASSERT_EQ(MOJO_RESULT_OK, ReadData(read_buffer, &num_bytes));
   ASSERT_EQ(100u, num_bytes);
   ASSERT_EQ(0, memcmp(read_buffer, &test_data[10], 100u));
-
-  this->ProducerClose();
-  this->ConsumerClose();
 }
-*/
 
 // Tests the behavior of writing (simple and two-phase), closing the producer,
 // then reading (simple and two-phase).

@@ -10,7 +10,11 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/platform_handle_vector.h"
+#include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/awakable_list.h"
 #include "mojo/edk/system/dispatcher.h"
 #include "mojo/edk/system/ports/port_ref.h"
@@ -19,6 +23,7 @@
 namespace mojo {
 namespace edk {
 
+struct DataPipeControlMessage;
 class NodeController;
 
 // This is the Dispatcher implementation for the consumer handle for data
@@ -27,9 +32,12 @@ class NodeController;
 class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
     : public Dispatcher {
  public:
-  DataPipeConsumerDispatcher(NodeController* node_controller,
-                             const ports::PortRef& port,
-                             const MojoCreateDataPipeOptions& options);
+  DataPipeConsumerDispatcher(
+      NodeController* node_controller,
+      const ports::PortRef& control_port,
+      scoped_refptr<PlatformSharedBuffer> shared_ring_buffer,
+      const MojoCreateDataPipeOptions& options,
+      bool initialized);
 
   // Dispatcher:
   Type GetType() const override;
@@ -72,6 +80,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
 
   ~DataPipeConsumerDispatcher() override;
 
+  void InitializeNoLock();
+  void NotifyReadNoLock(uint32_t num_bytes);
   MojoResult CloseNoLock();
   HandleSignalsState GetHandleSignalsStateNoLock() const;
   void OnPortStatusChanged();
@@ -79,25 +89,27 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
 
   const MojoCreateDataPipeOptions options_;
   NodeController* const node_controller_;
-  const ports::PortRef port_;
+  const ports::PortRef control_port_;
 
+  // Guards access to the fields below.
   mutable base::Lock lock_;
 
-  // Queue of incoming messages.
-  std::vector<char> data_;
   AwakableList awakable_list_;
+
+  scoped_refptr<PlatformSharedBuffer> shared_ring_buffer_;
+  scoped_ptr<PlatformSharedBufferMapping> ring_buffer_mapping_;
+  ScopedPlatformHandle buffer_handle_for_transit_;
 
   bool in_two_phase_read_ = false;
   uint32_t two_phase_max_bytes_read_ = 0;
 
-  // If we get data from the port while we're in two-phase read, we can't
-  // resize data_ since it's being used. So instead we store it temporarly.
-  std::vector<char> data_received_during_two_phase_read_;
-
   bool in_transit_ = false;
-  bool error_ = false;
-  bool port_closed_ = false;
-  bool port_transferred_ = false;
+  bool is_closed_ = false;
+  bool peer_closed_ = false;
+  bool transferred_ = false;
+
+  uint32_t read_offset_ = 0;
+  uint32_t bytes_available_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(DataPipeConsumerDispatcher);
 };
