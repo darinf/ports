@@ -15,7 +15,7 @@
 #include "mojo/edk/embedder/simple_platform_support.h"
 #include "mojo/edk/system/test_utils.h"
 #include "mojo/edk/system/waiter.h"
-#include "mojo/edk/test/multiprocess_test_base.h"
+#include "mojo/edk/test/mojo_test_base.h"
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/functions.h"
 #include "mojo/public/c/system/message_pipe.h"
@@ -40,7 +40,7 @@ const size_t kMultiprocessCapacity = 37;
 const char kMultiprocessTestData[] = "hello i'm a string that is 36 bytes";
 const int kMultiprocessMaxIter = 100;
 
-class DataPipeTest : public test::MultiprocessTestBase {
+class DataPipeTest : public test::MojoTestBase {
  public:
   DataPipeTest() : producer_(MOJO_HANDLE_INVALID),
                    consumer_(MOJO_HANDLE_INVALID) {}

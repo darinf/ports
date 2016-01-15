@@ -136,7 +136,6 @@ source_set("test_utils") {
 # TODO(use_chrome_edk): remove "2"
 test("mojo_system_unittests2") {
   sources = [
-    #"../test/multiprocess_test_helper_unittest.cc",
     "awakable_list_unittest.cc",
     "core_test_base.cc",
     "core_test_base.h",
@@ -146,10 +145,10 @@ test("mojo_system_unittests2") {
     "message_pipe_test_utils.h",
     "message_pipe_unittest.cc",
     "multiprocess_message_pipe_unittest.cc",
-    "multiprocess_shared_buffer_unittest.cc",
     "options_validation_unittest.cc",
     "platform_handle_dispatcher_unittest.cc",
     "shared_buffer_dispatcher_unittest.cc",
+    "shared_buffer_unittest.cc",
     "wait_set_dispatcher_unittest.cc",
     "waiter_test_utils.cc",
     "waiter_test_utils.h",

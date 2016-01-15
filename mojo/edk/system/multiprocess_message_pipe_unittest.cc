@@ -6,32 +6,27 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/bind.h"
 #include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/location.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "build/build_config.h"
-#include "mojo/edk/embedder/embedder.h"
-#include "mojo/edk/embedder/platform_channel_pair.h"
-#include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
-#include "mojo/edk/system/dispatcher.h"
-#include "mojo/edk/system/message_pipe_test_utils.h"
-#include "mojo/edk/system/platform_handle_dispatcher.h"
-#include "mojo/edk/system/raw_channel.h"
-#include "mojo/edk/system/shared_buffer_dispatcher.h"
+#include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/test_utils.h"
-#include "mojo/edk/test/multiprocess_test_base.h"
+#include "mojo/edk/test/mojo_test_base.h"
 #include "mojo/edk/test/test_utils.h"
+#include "mojo/public/c/system/buffer.h"
+#include "mojo/public/c/system/functions.h"
+#include "mojo/public/c/system/types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 
@@ -39,7 +34,7 @@ namespace mojo {
 namespace edk {
 namespace {
 
-class MultiprocessMessagePipeTest : public test::MultiprocessTestBase {
+class MultiprocessMessagePipeTest : public test::MojoTestBase {
  protected:
   // Convenience class for tests which will control command-driven children.
   // See the CommandDrivenClient definition below.
@@ -48,23 +43,23 @@ class MultiprocessMessagePipeTest : public test::MultiprocessTestBase {
     explicit CommandDrivenClientController(MojoHandle h) : h_(h) {}
 
     void Send(const std::string& command) {
-      WriteString(h_, command);
-      EXPECT_EQ("ok", ReadString(h_));
+      WriteMessage(h_, command);
+      EXPECT_EQ("ok", ReadMessage(h_));
     }
 
     void SendHandle(const std::string& name, MojoHandle p) {
-      WriteStringWithHandles(h_, "take:" + name, &p, 1);
-      EXPECT_EQ("ok", ReadString(h_));
+      WriteMessageWithHandles(h_, "take:" + name, &p, 1);
+      EXPECT_EQ("ok", ReadMessage(h_));
     }
 
     MojoHandle RetrieveHandle(const std::string& name) {
-      WriteString(h_, "return:" + name);
+      WriteMessage(h_, "return:" + name);
       MojoHandle p;
-      EXPECT_EQ("ok", ReadStringWithHandles(h_, &p, 1));
+      EXPECT_EQ("ok", ReadMessageWithHandles(h_, &p, 1));
       return p;
     }
 
-    void Exit() { WriteString(h_, "exit"); }
+    void Exit() { WriteMessage(h_, "exit"); }
 
    private:
     MojoHandle h_;
@@ -725,7 +720,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_DataPipeConsumer) {
 }
 
 TEST_F(MultiprocessMessagePipeTest, CreateMessagePipe) {
-  CREATE_PIPE(p0, p1);
+  MojoHandle p0, p1;
+  CreateMessagePipe(&p0, &p1);
   VerifyTransmission(p0, p1, "hey man");
   VerifyTransmission(p1, p0, "slow down");
   VerifyTransmission(p0, p1, std::string(10 * 1024 * 1024, 'a'));
@@ -733,18 +729,21 @@ TEST_F(MultiprocessMessagePipeTest, CreateMessagePipe) {
 }
 
 TEST_F(MultiprocessMessagePipeTest, PassMessagePipeLocal) {
-  CREATE_PIPE(p0, p1);
+  MojoHandle p0, p1;
+  CreateMessagePipe(&p0, &p1);
   VerifyTransmission(p0, p1, "testing testing");
   VerifyTransmission(p1, p0, "one two three");
 
-  CREATE_PIPE(p2, p3);
+  MojoHandle p2, p3;
+
+  CreateMessagePipe(&p2, &p3);
   VerifyTransmission(p2, p3, "testing testing");
   VerifyTransmission(p3, p2, "one two three");
 
   // Pass p2 over p0 to p1.
   const std::string message = "ceci n'est pas une pipe";
-  WriteStringWithHandles(p0, message, &p2, 1);
-  EXPECT_EQ(message, ReadStringWithHandles(p1, &p2, 1));
+  WriteMessageWithHandles(p0, message, &p2, 1);
+  EXPECT_EQ(message, ReadMessageWithHandles(p1, &p2, 1));
 
   // Verify that the received handle (now in p2) still works.
   VerifyTransmission(p2, p3, "Easy come, easy go; will you let me go?");
@@ -755,10 +754,10 @@ TEST_F(MultiprocessMessagePipeTest, PassMessagePipeLocal) {
 DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, MultiprocessMessagePipeTest,
                              h) {
   for (;;) {
-    std::string message = ReadString(h);
+    std::string message = ReadMessage(h);
     if (message == "exit")
       break;
-    WriteString(h, message);
+    WriteMessage(h, message);
   }
   return 0;
 }
@@ -769,7 +768,7 @@ TEST_F(MultiprocessMessagePipeTest, MultiprocessChannelPipe) {
     VerifyEcho(h, "i am back to save the universe");
     VerifyEcho(h, std::string(10 * 1024 * 1024, 'o'));
 
-    WriteString(h, "exit");
+    WriteMessage(h, "exit");
   END_CHILD()
 }
 
@@ -778,28 +777,29 @@ TEST_F(MultiprocessMessagePipeTest, MultiprocessChannelPipe) {
 DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceClient, MultiprocessMessagePipeTest,
                              h) {
   MojoHandle p;
-  ReadStringWithHandles(h, &p, 1);
+  ReadMessageWithHandles(h, &p, 1);
   for (;;) {
-    std::string message = ReadString(p);
+    std::string message = ReadMessage(p);
     if (message == "exit")
       break;
-    WriteString(p, message);
+    WriteMessage(p, message);
   }
   return 0;
 }
 
 TEST_F(MultiprocessMessagePipeTest, PassMessagePipeCrossProcess) {
   RUN_CHILD_ON_PIPE(EchoServiceClient, h)
-    CREATE_PIPE(p0, p1);
+    MojoHandle p0, p1;
+    CreateMessagePipe(&p0, &p1);
 
     // Pass one end of the pipe to the other process.
-    WriteStringWithHandles(h, "here take this", &p1, 1);
+    WriteMessageWithHandles(h, "here take this", &p1, 1);
 
     VerifyEcho(p0, "and you may ask yourself");
     VerifyEcho(p0, "where does that highway go?");
     VerifyEcho(p0, std::string(20 * 1024 * 1024, 'i'));
 
-    WriteString(p0, "exit");
+    WriteMessage(p0, "exit");
   END_CHILD()
 }
 
@@ -808,7 +808,7 @@ TEST_F(MultiprocessMessagePipeTest, PassMessagePipeCrossProcess) {
 DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient,
                              MultiprocessMessagePipeTest, h) {
   MojoHandle p;
-  ReadStringWithHandles(h, &p, 1);
+  ReadMessageWithHandles(h, &p, 1);
 
   std::vector<MojoHandle> handles(2);
   handles[0] = h;
@@ -823,17 +823,17 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient,
     DCHECK_LE(index, handles.size());
     if (index == 0) {
       // If data is available on the first pipe, it should be an exit command.
-      EXPECT_EQ(std::string("exit"), ReadString(h));
+      EXPECT_EQ(std::string("exit"), ReadMessage(h));
       break;
     } else if (index == 1) {
       // If the second pipe, it should be a new handle requesting echo service.
       MojoHandle echo_request;
-      ReadStringWithHandles(p, &echo_request, 1);
+      ReadMessageWithHandles(p, &echo_request, 1);
       handles.push_back(echo_request);
       signals.push_back(MOJO_HANDLE_SIGNAL_READABLE);
     } else {
       // Otherwise it was one of our established echo pipes. Echo!
-      WriteString(handles[index], ReadString(handles[index]));
+      WriteMessage(handles[index], ReadMessage(handles[index]));
     }
   }
   return 0;
@@ -841,16 +841,20 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient,
 
 TEST_F(MultiprocessMessagePipeTest, PassMoarMessagePipesCrossProcess) {
   RUN_CHILD_ON_PIPE(EchoServiceFactoryClient, h)
-    CREATE_PIPE(echo_factory_proxy, echo_factory_request);
-    WriteStringWithHandles(
+    MojoHandle echo_factory_proxy, echo_factory_request;
+    CreateMessagePipe(&echo_factory_proxy, &echo_factory_request);
+    WriteMessageWithHandles(
         h, "gief factory naow plz", &echo_factory_request, 1);
 
-    CREATE_PIPE(echo_proxy_a, echo_request_a);
-    CREATE_PIPE(echo_proxy_b, echo_request_b);
+    MojoHandle echo_proxy_a, echo_request_a;
+    CreateMessagePipe(&echo_proxy_a, &echo_request_a);
 
-    WriteStringWithHandles(echo_factory_proxy, "give me an echo service plz!",
+    MojoHandle echo_proxy_b, echo_request_b;
+    CreateMessagePipe(&echo_proxy_b, &echo_request_b);
+
+    WriteMessageWithHandles(echo_factory_proxy, "give me an echo service plz!",
                            &echo_request_a, 1);
-    WriteStringWithHandles(echo_factory_proxy, "give me one too!",
+    WriteMessageWithHandles(echo_factory_proxy, "give me one too!",
                            &echo_request_b, 1);
 
     VerifyEcho(echo_proxy_a, "i came here for an argument");
@@ -860,16 +864,17 @@ TEST_F(MultiprocessMessagePipeTest, PassMoarMessagePipesCrossProcess) {
     VerifyEcho(echo_proxy_b, "wubalubadubdub");
     VerifyEcho(echo_proxy_b, "wubalubadubdub");
 
-    CREATE_PIPE(echo_proxy_c, echo_request_c);
+    MojoHandle echo_proxy_c, echo_request_c;
+    CreateMessagePipe(&echo_proxy_c, &echo_request_c);
 
-    WriteStringWithHandles(echo_factory_proxy, "hook me up also thanks",
+    WriteMessageWithHandles(echo_factory_proxy, "hook me up also thanks",
                            &echo_request_c, 1);
 
     VerifyEcho(echo_proxy_a, "the frobinators taste like frobinators");
     VerifyEcho(echo_proxy_b, "beep bop boop");
     VerifyEcho(echo_proxy_c, "zzzzzzzzzzzzzzzzzzzzzzzzzz");
 
-    WriteString(h, "exit");
+    WriteMessage(h, "exit");
   END_CHILD()
 }
 
@@ -879,8 +884,8 @@ TEST_F(MultiprocessMessagePipeTest, ChannelPipesWithMultipleChildren) {
       VerifyEcho(a, "hello child 0");
       VerifyEcho(b, "hello child 1");
 
-      WriteString(a, "exit");
-      WriteString(b, "exit");
+      WriteMessage(a, "exit");
+      WriteMessage(b, "exit");
     END_CHILD()
   END_CHILD()
 }
@@ -891,7 +896,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
   base::hash_map<std::string, MojoHandle> named_pipes;
   for (;;) {
     MojoHandle p;
-    auto parts = base::SplitString(ReadStringWithOptionalHandle(h, &p), ":",
+    auto parts = base::SplitString(ReadMessageWithOptionalHandle(h, &p), ":",
                                    base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
     CHECK(!parts.empty());
     std::string command = parts[0];
@@ -900,7 +905,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
       CHECK_EQ(parts.size(), 2u);
       CHECK_NE(p, MOJO_HANDLE_INVALID);
       named_pipes[parts[1]] = p;
-      WriteString(h, "ok");
+      WriteMessage(h, "ok");
     } else if (command == "return") {
       // Return a pipe.
       CHECK_EQ(parts.size(), 2u);
@@ -908,7 +913,7 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
       p = named_pipes[parts[1]];
       CHECK_NE(p, MOJO_HANDLE_INVALID);
       named_pipes.erase(parts[1]);
-      WriteStringWithHandles(h, "ok", &p, 1);
+      WriteMessageWithHandles(h, "ok", &p, 1);
     } else if (command == "say") {
       // Say something to a named pipe.
       CHECK_EQ(parts.size(), 3u);
@@ -916,8 +921,8 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
       p = named_pipes[parts[1]];
       CHECK_NE(p, MOJO_HANDLE_INVALID);
       CHECK(!parts[2].empty());
-      WriteString(p, parts[2]);
-      WriteString(h, "ok");
+      WriteMessage(p, parts[2]);
+      WriteMessage(h, "ok");
     } else if (command == "hear") {
       // Expect to read something from a named pipe.
       CHECK_EQ(parts.size(), 3u);
@@ -925,8 +930,8 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
       p = named_pipes[parts[1]];
       CHECK_NE(p, MOJO_HANDLE_INVALID);
       CHECK(!parts[2].empty());
-      CHECK_EQ(parts[2], ReadString(p));
-      WriteString(h, "ok");
+      CHECK_EQ(parts[2], ReadMessage(p));
+      WriteMessage(h, "ok");
     } else if (command == "pass") {
       // Pass one named pipe over another named pipe.
       CHECK_EQ(parts.size(), 3u);
@@ -936,18 +941,18 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
       CHECK_NE(p, MOJO_HANDLE_INVALID);
       CHECK_NE(carrier, MOJO_HANDLE_INVALID);
       named_pipes.erase(parts[1]);
-      WriteStringWithHandles(carrier, "got a pipe for ya", &p, 1);
-      WriteString(h, "ok");
+      WriteMessageWithHandles(carrier, "got a pipe for ya", &p, 1);
+      WriteMessage(h, "ok");
     } else if (command == "catch") {
       // Expect to receive one named pipe from another named pipe.
       CHECK_EQ(parts.size(), 3u);
       CHECK_EQ(p, MOJO_HANDLE_INVALID);
       MojoHandle carrier = named_pipes[parts[2]];
       CHECK_NE(carrier, MOJO_HANDLE_INVALID);
-      ReadStringWithHandles(carrier, &p, 1);
+      ReadMessageWithHandles(carrier, &p, 1);
       CHECK_NE(p, MOJO_HANDLE_INVALID);
       named_pipes[parts[1]] = p;
-      WriteString(h, "ok");
+      WriteMessage(h, "ok");
     } else if (command == "exit") {
       CHECK_EQ(parts.size(), 1u);
       break;
@@ -963,7 +968,8 @@ TEST_F(MultiprocessMessagePipeTest, ChildToChildPipes) {
       CommandDrivenClientController b(h1);
 
       // Create a pipe and pass each end to a different client.
-      CREATE_PIPE(p0, p1);
+      MojoHandle p0, p1;
+      CreateMessagePipe(&p0, &p1);
       a.SendHandle("x", p0);
       b.SendHandle("y", p1);
 
@@ -989,16 +995,21 @@ TEST_F(MultiprocessMessagePipeTest, MoreChildToChildPipes) {
 
           // Connect a to b and c to d
 
-          CREATE_PIPE(p0, p1);
+          MojoHandle p0, p1;
+
+          CreateMessagePipe(&p0, &p1);
           a.SendHandle("b_pipe", p0);
           b.SendHandle("a_pipe", p1);
 
-          CREATE_PIPE(p2, p3);
+          MojoHandle p2, p3;
+
+          CreateMessagePipe(&p2, &p3);
           c.SendHandle("d_pipe", p2);
           d.SendHandle("c_pipe", p3);
 
           // Connect b to c via a and d
-          CREATE_PIPE(p4, p5);
+          MojoHandle p4, p5;
+          CreateMessagePipe(&p4, &p5);
           a.SendHandle("d_pipe", p4);
           d.SendHandle("a_pipe", p5);
 
@@ -1017,7 +1028,8 @@ TEST_F(MultiprocessMessagePipeTest, MoreChildToChildPipes) {
           c.Send("hear:b_pipe:it's a beautiful day");
 
           // Create x and y and have b and c exchange them.
-          CREATE_PIPE(x, y);
+          MojoHandle x, y;
+          CreateMessagePipe(&x, &y);
           b.SendHandle("x", x);
           c.SendHandle("y", y);
           b.Send("pass:x:c_pipe");

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/edk/test/multiprocess_test_base.h"
+#include "mojo/edk/test/mojo_test_base.h"
 
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -16,48 +16,47 @@ namespace mojo {
 namespace edk {
 namespace test {
 
-MultiprocessTestBase::MultiprocessTestBase() {}
+MojoTestBase::MojoTestBase() {}
 
-MultiprocessTestBase::~MultiprocessTestBase() {}
+MojoTestBase::~MojoTestBase() {}
 
-MultiprocessTestBase::ClientController& MultiprocessTestBase::StartClient(
+MojoTestBase::ClientController& MojoTestBase::StartClient(
     const std::string& client_name) {
   clients_.push_back(
       make_scoped_ptr(new ClientController(client_name, this)));
   return *clients_.back();
 }
 
-MultiprocessTestBase::ClientController::ClientController(
+MojoTestBase::ClientController::ClientController(
     const std::string& client_name,
-    MultiprocessTestBase* test)
+    MojoTestBase* test)
     : test_(test) {
   helper_.StartChild(client_name);
   pipe_ = std::move(helper_.parent_message_pipe);
 }
 
-MultiprocessTestBase::ClientController::~ClientController() {
+MojoTestBase::ClientController::~ClientController() {
   CHECK(was_shutdown_)
       << "Test clients should be waited on explicitly with WaitForShutdown().";
 }
 
-int MultiprocessTestBase::ClientController::WaitForShutdown() {
+int MojoTestBase::ClientController::WaitForShutdown() {
   was_shutdown_ = true;
   return helper_.WaitForChildShutdown();
 }
 
 // static
-void MultiprocessTestBase::CreatePipe(MojoHandle *p0, MojoHandle* p1) {
+void MojoTestBase::CreateMessagePipe(MojoHandle *p0, MojoHandle* p1) {
   MojoCreateMessagePipe(nullptr, p0, p1);
   CHECK_NE(*p0, MOJO_HANDLE_INVALID);
   CHECK_NE(*p1, MOJO_HANDLE_INVALID);
 }
 
 // static
-void MultiprocessTestBase::WriteStringWithHandles(
-    MojoHandle mp,
-    const std::string& message,
-    const MojoHandle *handles,
-    uint32_t num_handles) {
+void MojoTestBase::WriteMessageWithHandles(MojoHandle mp,
+                                           const std::string& message,
+                                           const MojoHandle *handles,
+                                           uint32_t num_handles) {
   CHECK_EQ(MojoWriteMessage(mp, message.data(),
                             static_cast<uint32_t>(message.size()),
                             handles, num_handles, MOJO_WRITE_MESSAGE_FLAG_NONE),
@@ -65,13 +64,12 @@ void MultiprocessTestBase::WriteStringWithHandles(
 }
 
 // static
-void MultiprocessTestBase::WriteString(MojoHandle mp,
-                                       const std::string& message) {
-  WriteStringWithHandles(mp, message, nullptr, 0);
+void MojoTestBase::WriteMessage(MojoHandle mp, const std::string& message) {
+  WriteMessageWithHandles(mp, message, nullptr, 0);
 }
 
 // static
-std::string MultiprocessTestBase::ReadStringWithHandles(
+std::string MojoTestBase::ReadMessageWithHandles(
     MojoHandle mp,
     MojoHandle* handles,
     uint32_t expected_num_handles) {
@@ -97,9 +95,8 @@ std::string MultiprocessTestBase::ReadStringWithHandles(
 }
 
 // static
-std::string MultiprocessTestBase::ReadStringWithOptionalHandle(
-    MojoHandle mp,
-    MojoHandle* handle) {
+std::string MojoTestBase::ReadMessageWithOptionalHandle(MojoHandle mp,
+                                                        MojoHandle* handle) {
   CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
                     nullptr),
            MOJO_RESULT_OK);
@@ -129,14 +126,14 @@ std::string MultiprocessTestBase::ReadStringWithOptionalHandle(
 }
 
 // static
-std::string MultiprocessTestBase::ReadString(MojoHandle mp) {
-  return ReadStringWithHandles(mp, nullptr, 0);
+std::string MojoTestBase::ReadMessage(MojoHandle mp) {
+  return ReadMessageWithHandles(mp, nullptr, 0);
 }
 
 // static
-void MultiprocessTestBase::ReadString(MojoHandle mp,
-                                      char* data,
-                                      size_t num_bytes) {
+void MojoTestBase::ReadMessage(MojoHandle mp,
+                               char* data,
+                               size_t num_bytes) {
   CHECK_EQ(MojoWait(mp, MOJO_HANDLE_SIGNAL_READABLE, MOJO_DEADLINE_INDEFINITE,
                     nullptr),
            MOJO_RESULT_OK);
@@ -157,18 +154,18 @@ void MultiprocessTestBase::ReadString(MojoHandle mp,
 }
 
 // static
-void MultiprocessTestBase::VerifyTransmission(MojoHandle source,
-                                              MojoHandle dest,
-                                              const std::string& message) {
-  WriteString(source, message);
+void MojoTestBase::VerifyTransmission(MojoHandle source,
+                                      MojoHandle dest,
+                                      const std::string& message) {
+  WriteMessage(source, message);
 
   // We don't use EXPECT_EQ; failures on really long messages make life hard.
-  EXPECT_TRUE(message == ReadString(dest));
+  EXPECT_TRUE(message == ReadMessage(dest));
 }
 
 // static
-void MultiprocessTestBase::VerifyEcho(MojoHandle mp,
-                                      const std::string& message) {
+void MojoTestBase::VerifyEcho(MojoHandle mp,
+                              const std::string& message) {
   VerifyTransmission(mp, mp, message);
 }
 
