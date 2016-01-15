@@ -279,7 +279,7 @@ void NodeChannel::Introduce(const ports::NodeName& name,
     ignore_result(handle.release());
   }
 #else
-  size_t message_size = sizeof(IntroductionData);
+  ScopedPlatformHandleVectorPtr handles;
   if (handle.is_valid()) {
     handles.reset(new PlatformHandleVector(1));
     handles->at(0) = handle.release();

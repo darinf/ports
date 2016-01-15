@@ -142,8 +142,9 @@ int Node::GetUserData(const PortRef& port_ref,
 
 int Node::ClosePort(const PortRef& port_ref) {
   ObserveClosureEventData data;
-  NodeName peer_name;
 
+  NodeName peer_node_name;
+  PortName peer_port_name;
   Port* port = port_ref.port();
   {
     base::AutoLock lock(port->lock);
@@ -157,13 +158,13 @@ int Node::ClosePort(const PortRef& port_ref) {
     // messages before notifying the embedder that this port is closed.
     data.last_sequence_num = port->next_sequence_num_to_send - 1;
 
-    peer_name = port->peer_node_name;
+    peer_node_name = port->peer_node_name;
+    peer_port_name = port->peer_port_name;
   }
 
   delegate_->ForwardMessage(
-      port->peer_node_name,
-      NewInternalMessage(port->peer_port_name, EventType::kObserveClosure,
-                         data));
+      peer_node_name,
+      NewInternalMessage(peer_port_name, EventType::kObserveClosure, data));
 
   ErasePort(port_ref.name());
   return OK;

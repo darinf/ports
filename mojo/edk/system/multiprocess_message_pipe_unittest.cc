@@ -119,140 +119,6 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoEcho, MultiprocessMessagePipeTest, h) {
   return rv;
 }
 
-// Echos the primordial channel until "exit".
-DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, MultiprocessMessagePipeTest,
-                             h) {
-  for (;;) {
-    std::string message = ReadString(h);
-    if (message == "exit")
-      break;
-    WriteString(h, message);
-  }
-  return 0;
-}
-
-// Receives a pipe handle from the primordial channel and echos on it until
-// "exit". Used to test simple pipe transfer across processes via channels.
-DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceClient, MultiprocessMessagePipeTest,
-                             h) {
-  MojoHandle p;
-  ReadStringWithHandles(h, &p, 1);
-  for (;;) {
-    std::string message = ReadString(p);
-    if (message == "exit")
-      break;
-    WriteString(p, message);
-  }
-  return 0;
-}
-
-// Receives a pipe handle from the primordial channel and reads new handles
-// from it. Each read handle establishes a new echo channel.
-DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient,
-                             MultiprocessMessagePipeTest, h) {
-  MojoHandle p;
-  ReadStringWithHandles(h, &p, 1);
-
-  std::vector<MojoHandle> handles(2);
-  handles[0] = h;
-  handles[1] = p;
-  std::vector<MojoHandleSignals> signals(2, MOJO_HANDLE_SIGNAL_READABLE);
-  for (;;) {
-    uint32_t index;
-    CHECK_EQ(MojoWaitMany(handles.data(), signals.data(),
-                          static_cast<uint32_t>(handles.size()),
-                          MOJO_DEADLINE_INDEFINITE, &index, nullptr),
-             MOJO_RESULT_OK);
-    DCHECK_LE(index, handles.size());
-    if (index == 0) {
-      // If data is available on the first pipe, it should be an exit command.
-      EXPECT_EQ(std::string("exit"), ReadString(h));
-      break;
-    } else if (index == 1) {
-      // If the second pipe, it should be a new handle requesting echo service.
-      MojoHandle echo_request;
-      ReadStringWithHandles(p, &echo_request, 1);
-      handles.push_back(echo_request);
-      signals.push_back(MOJO_HANDLE_SIGNAL_READABLE);
-    } else {
-      // Otherwise it was one of our established echo pipes. Echo!
-      WriteString(handles[index], ReadString(handles[index]));
-    }
-  }
-  return 0;
-}
-
-// Parses commands from the parent pipe and does whatever it's asked to do.
-DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
-                             h) {
-  base::hash_map<std::string, MojoHandle> named_pipes;
-  for (;;) {
-    MojoHandle p;
-    auto parts = base::SplitString(ReadStringWithOptionalHandle(h, &p), ":",
-                                   base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
-    CHECK(!parts.empty());
-    std::string command = parts[0];
-    if (command == "take") {
-      // Take a pipe.
-      CHECK_EQ(parts.size(), 2u);
-      CHECK_NE(p, MOJO_HANDLE_INVALID);
-      named_pipes[parts[1]] = p;
-      WriteString(h, "ok");
-    } else if (command == "return") {
-      // Return a pipe.
-      CHECK_EQ(parts.size(), 2u);
-      CHECK_EQ(p, MOJO_HANDLE_INVALID);
-      p = named_pipes[parts[1]];
-      CHECK_NE(p, MOJO_HANDLE_INVALID);
-      named_pipes.erase(parts[1]);
-      WriteStringWithHandles(h, "ok", &p, 1);
-    } else if (command == "say") {
-      // Say something to a named pipe.
-      CHECK_EQ(parts.size(), 3u);
-      CHECK_EQ(p, MOJO_HANDLE_INVALID);
-      p = named_pipes[parts[1]];
-      CHECK_NE(p, MOJO_HANDLE_INVALID);
-      CHECK(!parts[2].empty());
-      WriteString(p, parts[2]);
-      WriteString(h, "ok");
-    } else if (command == "hear") {
-      // Expect to read something from a named pipe.
-      CHECK_EQ(parts.size(), 3u);
-      CHECK_EQ(p, MOJO_HANDLE_INVALID);
-      p = named_pipes[parts[1]];
-      CHECK_NE(p, MOJO_HANDLE_INVALID);
-      CHECK(!parts[2].empty());
-      CHECK_EQ(parts[2], ReadString(p));
-      WriteString(h, "ok");
-    } else if (command == "pass") {
-      // Pass one named pipe over another named pipe.
-      CHECK_EQ(parts.size(), 3u);
-      CHECK_EQ(p, MOJO_HANDLE_INVALID);
-      p = named_pipes[parts[1]];
-      MojoHandle carrier = named_pipes[parts[2]];
-      CHECK_NE(p, MOJO_HANDLE_INVALID);
-      CHECK_NE(carrier, MOJO_HANDLE_INVALID);
-      named_pipes.erase(parts[1]);
-      WriteStringWithHandles(carrier, "got a pipe for ya", &p, 1);
-      WriteString(h, "ok");
-    } else if (command == "catch") {
-      // Expect to receive one named pipe from another named pipe.
-      CHECK_EQ(parts.size(), 3u);
-      CHECK_EQ(p, MOJO_HANDLE_INVALID);
-      MojoHandle carrier = named_pipes[parts[2]];
-      CHECK_NE(carrier, MOJO_HANDLE_INVALID);
-      ReadStringWithHandles(carrier, &p, 1);
-      CHECK_NE(p, MOJO_HANDLE_INVALID);
-      named_pipes[parts[1]] = p;
-      WriteString(h, "ok");
-    } else if (command == "exit") {
-      CHECK_EQ(parts.size(), 1u);
-      break;
-    }
-  }
-  return 0;
-}
-
 // Sends "hello" to child, and expects "hellohello" back.
 #if defined(OS_ANDROID)
 // Android multi-process tests are not executing the new process. This is flaky.
@@ -885,6 +751,18 @@ TEST_F(MultiprocessMessagePipeTest, PassMessagePipeLocal) {
   VerifyTransmission(p3, p2, "Bismillah! NO! We will not let you go!");
 }
 
+// Echos the primordial channel until "exit".
+DEFINE_TEST_CLIENT_WITH_PIPE(ChannelEchoClient, MultiprocessMessagePipeTest,
+                             h) {
+  for (;;) {
+    std::string message = ReadString(h);
+    if (message == "exit")
+      break;
+    WriteString(h, message);
+  }
+  return 0;
+}
+
 TEST_F(MultiprocessMessagePipeTest, MultiprocessChannelPipe) {
   RUN_CHILD_ON_PIPE(ChannelEchoClient, h)
     VerifyEcho(h, "in an interstellar burst");
@@ -893,6 +771,21 @@ TEST_F(MultiprocessMessagePipeTest, MultiprocessChannelPipe) {
 
     WriteString(h, "exit");
   END_CHILD()
+}
+
+// Receives a pipe handle from the primordial channel and echos on it until
+// "exit". Used to test simple pipe transfer across processes via channels.
+DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceClient, MultiprocessMessagePipeTest,
+                             h) {
+  MojoHandle p;
+  ReadStringWithHandles(h, &p, 1);
+  for (;;) {
+    std::string message = ReadString(p);
+    if (message == "exit")
+      break;
+    WriteString(p, message);
+  }
+  return 0;
 }
 
 TEST_F(MultiprocessMessagePipeTest, PassMessagePipeCrossProcess) {
@@ -908,6 +801,42 @@ TEST_F(MultiprocessMessagePipeTest, PassMessagePipeCrossProcess) {
 
     WriteString(p0, "exit");
   END_CHILD()
+}
+
+// Receives a pipe handle from the primordial channel and reads new handles
+// from it. Each read handle establishes a new echo channel.
+DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient,
+                             MultiprocessMessagePipeTest, h) {
+  MojoHandle p;
+  ReadStringWithHandles(h, &p, 1);
+
+  std::vector<MojoHandle> handles(2);
+  handles[0] = h;
+  handles[1] = p;
+  std::vector<MojoHandleSignals> signals(2, MOJO_HANDLE_SIGNAL_READABLE);
+  for (;;) {
+    uint32_t index;
+    CHECK_EQ(MojoWaitMany(handles.data(), signals.data(),
+                          static_cast<uint32_t>(handles.size()),
+                          MOJO_DEADLINE_INDEFINITE, &index, nullptr),
+             MOJO_RESULT_OK);
+    DCHECK_LE(index, handles.size());
+    if (index == 0) {
+      // If data is available on the first pipe, it should be an exit command.
+      EXPECT_EQ(std::string("exit"), ReadString(h));
+      break;
+    } else if (index == 1) {
+      // If the second pipe, it should be a new handle requesting echo service.
+      MojoHandle echo_request;
+      ReadStringWithHandles(p, &echo_request, 1);
+      handles.push_back(echo_request);
+      signals.push_back(MOJO_HANDLE_SIGNAL_READABLE);
+    } else {
+      // Otherwise it was one of our established echo pipes. Echo!
+      WriteString(handles[index], ReadString(handles[index]));
+    }
+  }
+  return 0;
 }
 
 TEST_F(MultiprocessMessagePipeTest, PassMoarMessagePipesCrossProcess) {
@@ -954,6 +883,77 @@ TEST_F(MultiprocessMessagePipeTest, ChannelPipesWithMultipleChildren) {
       WriteString(b, "exit");
     END_CHILD()
   END_CHILD()
+}
+
+// Parses commands from the parent pipe and does whatever it's asked to do.
+DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
+                             h) {
+  base::hash_map<std::string, MojoHandle> named_pipes;
+  for (;;) {
+    MojoHandle p;
+    auto parts = base::SplitString(ReadStringWithOptionalHandle(h, &p), ":",
+                                   base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+    CHECK(!parts.empty());
+    std::string command = parts[0];
+    if (command == "take") {
+      // Take a pipe.
+      CHECK_EQ(parts.size(), 2u);
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      named_pipes[parts[1]] = p;
+      WriteString(h, "ok");
+    } else if (command == "return") {
+      // Return a pipe.
+      CHECK_EQ(parts.size(), 2u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      p = named_pipes[parts[1]];
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      named_pipes.erase(parts[1]);
+      WriteStringWithHandles(h, "ok", &p, 1);
+    } else if (command == "say") {
+      // Say something to a named pipe.
+      CHECK_EQ(parts.size(), 3u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      p = named_pipes[parts[1]];
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      CHECK(!parts[2].empty());
+      WriteString(p, parts[2]);
+      WriteString(h, "ok");
+    } else if (command == "hear") {
+      // Expect to read something from a named pipe.
+      CHECK_EQ(parts.size(), 3u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      p = named_pipes[parts[1]];
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      CHECK(!parts[2].empty());
+      CHECK_EQ(parts[2], ReadString(p));
+      WriteString(h, "ok");
+    } else if (command == "pass") {
+      // Pass one named pipe over another named pipe.
+      CHECK_EQ(parts.size(), 3u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      p = named_pipes[parts[1]];
+      MojoHandle carrier = named_pipes[parts[2]];
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      CHECK_NE(carrier, MOJO_HANDLE_INVALID);
+      named_pipes.erase(parts[1]);
+      WriteStringWithHandles(carrier, "got a pipe for ya", &p, 1);
+      WriteString(h, "ok");
+    } else if (command == "catch") {
+      // Expect to receive one named pipe from another named pipe.
+      CHECK_EQ(parts.size(), 3u);
+      CHECK_EQ(p, MOJO_HANDLE_INVALID);
+      MojoHandle carrier = named_pipes[parts[2]];
+      CHECK_NE(carrier, MOJO_HANDLE_INVALID);
+      ReadStringWithHandles(carrier, &p, 1);
+      CHECK_NE(p, MOJO_HANDLE_INVALID);
+      named_pipes[parts[1]] = p;
+      WriteString(h, "ok");
+    } else if (command == "exit") {
+      CHECK_EQ(parts.size(), 1u);
+      break;
+    }
+  }
+  return 0;
 }
 
 TEST_F(MultiprocessMessagePipeTest, ChildToChildPipes) {
