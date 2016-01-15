@@ -9,6 +9,7 @@
 #include "base/run_loop.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/system/handle_signals_state.h"
+#include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/functions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -167,6 +168,45 @@ void MojoTestBase::VerifyTransmission(MojoHandle source,
 void MojoTestBase::VerifyEcho(MojoHandle mp,
                               const std::string& message) {
   VerifyTransmission(mp, mp, message);
+}
+
+// static
+MojoHandle MojoTestBase::CreateBuffer(uint64_t size) {
+  MojoHandle h;
+  EXPECT_EQ(MojoCreateSharedBuffer(nullptr, size, &h), MOJO_RESULT_OK);
+  return h;
+}
+
+// static
+MojoHandle MojoTestBase::DuplicateBuffer(MojoHandle h) {
+  MojoHandle new_handle;
+  EXPECT_EQ(MOJO_RESULT_OK,
+            MojoDuplicateBufferHandle(h, nullptr, &new_handle));
+  return new_handle;
+}
+
+// static
+void MojoTestBase::WriteToBuffer(MojoHandle h,
+                                 size_t offset,
+                                 const base::StringPiece& s) {
+  char* data;
+  EXPECT_EQ(MOJO_RESULT_OK,
+            MojoMapBuffer(h, offset, s.size(), reinterpret_cast<void**>(&data),
+                          MOJO_MAP_BUFFER_FLAG_NONE));
+  memcpy(data, s.data(), s.size());
+  EXPECT_EQ(MOJO_RESULT_OK, MojoUnmapBuffer(static_cast<void*>(data)));
+}
+
+// static
+void MojoTestBase::ExpectBufferContents(MojoHandle h,
+                                        size_t offset,
+                                        const base::StringPiece& s) {
+  char* data;
+  EXPECT_EQ(MOJO_RESULT_OK,
+            MojoMapBuffer(h, offset, s.size(), reinterpret_cast<void**>(&data),
+                          MOJO_MAP_BUFFER_FLAG_NONE));
+  EXPECT_EQ(s, base::StringPiece(data, s.size()));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoUnmapBuffer(static_cast<void*>(data)));
 }
 
 }  // namespace test

@@ -38,7 +38,7 @@ const size_t kMaxPoll = 100;
 // Used in Multiprocess test.
 const size_t kMultiprocessCapacity = 37;
 const char kMultiprocessTestData[] = "hello i'm a string that is 36 bytes";
-const int kMultiprocessMaxIter = 100;
+const int kMultiprocessMaxIter = 5;
 
 class DataPipeTest : public test::MojoTestBase {
  public:

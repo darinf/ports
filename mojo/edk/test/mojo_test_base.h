@@ -60,6 +60,8 @@ class MojoTestBase : public testing::Test {
     EXPECT_EQ(expected_exit_code, c.WaitForShutdown());
   }
 
+  ////// Message pipe test utilities ///////
+
   // Creates a new pipe, returning endpoint handles in |p0| and |p1|.
   static void CreateMessagePipe(MojoHandle* p0, MojoHandle* p1);
 
@@ -98,6 +100,24 @@ class MojoTestBase : public testing::Test {
 
   // Writes |message| to |mp| and expects to read it back from the same handle.
   static void VerifyEcho(MojoHandle mp, const std::string& message);
+
+  //////// Shared buffer test utilities /////////
+
+  // Creates a new shared buffer.
+  static MojoHandle CreateBuffer(uint64_t size);
+
+  // Duplicates a shared buffer to a new handle.
+  static MojoHandle DuplicateBuffer(MojoHandle h);
+
+  // Maps a buffer, writes some data into it, and unmaps it.
+  static void WriteToBuffer(MojoHandle h,
+                            size_t offset,
+                            const base::StringPiece& s);
+
+  // Maps a buffer, tests the value of some of its contents, and unmaps it.
+  static void ExpectBufferContents(MojoHandle h,
+                                   size_t offset,
+                                   const base::StringPiece& s);
 
  private:
   friend class ClientController;

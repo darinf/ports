@@ -10,7 +10,6 @@
 #include "base/logging.h"
 #include "base/strings/string_piece.h"
 #include "mojo/edk/test/mojo_test_base.h"
-#include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -18,69 +17,47 @@ namespace mojo {
 namespace edk {
 namespace {
 
-class SharedBufferTest : public test::MojoTestBase {
- protected:
-  static MojoHandle CreateBuffer(uint64_t size) {
-    MojoHandle h;
-    EXPECT_EQ(MojoCreateSharedBuffer(nullptr, size, &h), MOJO_RESULT_OK);
-    return h;
-  }
-
-  static MojoHandle DuplicateBuffer(MojoHandle h) {
-    MojoHandle new_handle;
-    EXPECT_EQ(MOJO_RESULT_OK,
-              MojoDuplicateBufferHandle(h, nullptr, &new_handle));
-    return new_handle;
-  }
-
-  static void WriteToBuffer(MojoHandle h, const base::StringPiece& s) {
-    char* data;
-    EXPECT_EQ(MOJO_RESULT_OK,
-              MojoMapBuffer(h, 0, s.size(), reinterpret_cast<void**>(&data),
-                            MOJO_MAP_BUFFER_FLAG_NONE));
-    memcpy(data, s.data(), s.size());
-    EXPECT_EQ(MOJO_RESULT_OK, MojoUnmapBuffer(static_cast<void*>(data)));
-  }
-
-  static void ExpectBufferContents(MojoHandle h, const base::StringPiece& s) {
-    char* data;
-    EXPECT_EQ(MOJO_RESULT_OK,
-              MojoMapBuffer(h, 0, s.size(), reinterpret_cast<void**>(&data),
-                            MOJO_MAP_BUFFER_FLAG_NONE));
-    EXPECT_EQ(s, base::StringPiece(data, s.size()));
-    EXPECT_EQ(MOJO_RESULT_OK, MojoUnmapBuffer(static_cast<void*>(data)));
-  }
-};
+using SharedBufferTest = test::MojoTestBase;
 
 // Reads a single message with a shared buffer handle, maps the buffer, copies
 // the message contents into it, then exits.
 DEFINE_TEST_CLIENT_WITH_PIPE(CopyToBufferClient, SharedBufferTest, h) {
-  MojoHandle buffer_handle;
-  std::string message = ReadMessageWithHandles(h, &buffer_handle, 1);
-  WriteToBuffer(buffer_handle, message);
+  MojoHandle b;
+  std::string message = ReadMessageWithHandles(h, &b, 1);
+  WriteToBuffer(b, 0, message);
+  return 0;
+}
+
+// Creates a new buffer, maps it, writes a message contents to it, unmaps it,
+// and finally passes it back to the parent.
+DEFINE_TEST_CLIENT_WITH_PIPE(CreateBufferClient, SharedBufferTest, h) {
+  std::string message = ReadMessage(h);
+  MojoHandle b = CreateBuffer(message.size());
+  WriteToBuffer(b, 0, message);
+  WriteMessageWithHandles(h, "have a buffer", &b, 1);
   return 0;
 }
 
 TEST_F(SharedBufferTest, CreateSharedBuffer) {
   const std::string message = "hello";
   MojoHandle h = CreateBuffer(message.size());
-  WriteToBuffer(h, message);
-  ExpectBufferContents(h, message);
+  WriteToBuffer(h, 0, message);
+  ExpectBufferContents(h, 0, message);
 }
 
 TEST_F(SharedBufferTest, DuplicateSharedBuffer) {
   const std::string message = "hello";
   MojoHandle h = CreateBuffer(message.size());
-  WriteToBuffer(h, message);
+  WriteToBuffer(h, 0, message);
 
   MojoHandle dupe = DuplicateBuffer(h);
-  ExpectBufferContents(dupe, message);
+  ExpectBufferContents(dupe, 0, message);
 }
 
 TEST_F(SharedBufferTest, PassSharedBufferLocal) {
   const std::string message = "hello";
   MojoHandle h = CreateBuffer(message.size());
-  WriteToBuffer(h, message);
+  WriteToBuffer(h, 0, message);
 
   MojoHandle dupe = DuplicateBuffer(h);
   MojoHandle p0, p1;
@@ -89,7 +66,7 @@ TEST_F(SharedBufferTest, PassSharedBufferLocal) {
   WriteMessageWithHandles(p0, "...", &dupe, 1);
   EXPECT_EQ("...", ReadMessageWithHandles(p1, &dupe, 1));
 
-  ExpectBufferContents(dupe, message);
+  ExpectBufferContents(dupe, 0, message);
 }
 
 TEST_F(SharedBufferTest, PassSharedBufferCrossProcess) {
@@ -101,7 +78,18 @@ TEST_F(SharedBufferTest, PassSharedBufferCrossProcess) {
     WriteMessageWithHandles(h, message, &dupe, 1);
   END_CHILD()
 
-  ExpectBufferContents(b, message);
+  ExpectBufferContents(b, 0, message);
+}
+
+TEST_F(SharedBufferTest, PassSharedBufferFromChild) {
+  const std::string message = "hello";
+  MojoHandle b;
+  RUN_CHILD_ON_PIPE(CreateBufferClient, h)
+    WriteMessage(h, message);
+    ReadMessageWithHandles(h, &b, 1);
+  END_CHILD()
+
+  ExpectBufferContents(b, 0, message);
 }
 
 }  // namespace
