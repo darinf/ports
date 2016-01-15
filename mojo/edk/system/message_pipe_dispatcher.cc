@@ -196,7 +196,7 @@ MojoResult MessagePipeDispatcher::WriteMessage(
         result = MOJO_RESULT_INVALID_ARGUMENT;
       } else if (rv == ports::ERROR_PORT_PEER_CLOSED) {
         awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
-        result = MOJO_RESULT_INVALID_ARGUMENT;
+        result = MOJO_RESULT_FAILED_PRECONDITION;
       } else {
         NOTREACHED();
         result = MOJO_RESULT_UNKNOWN;
