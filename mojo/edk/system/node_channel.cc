@@ -260,15 +260,33 @@ void NodeChannel::Introduce(const ports::NodeName& name,
     return;
   }
 
-  ScopedPlatformHandleVectorPtr handles;
+  IntroductionData* data;
+#if defined(OS_WIN)
+  size_t message_size = sizeof(IntroductionData) +
+      (handle.is_valid() ? sizeof(HANDLE) : 0);
+  Channel::MessagePtr message = CreateMessage(
+      MessageType::INTRODUCE, message_size, nullptr, &data);
+  if (remote_process_handle_ != base::kNullProcessHandle &&
+      handle.is_valid()) {
+    HANDLE* handles = reinterpret_cast<HANDLE*>(data + 1);
+    handles[0] = handle.get().handle;
+    BOOL result = DuplicateHandle(base::GetCurrentProcessHandle(),
+                                  handles[0], remote_process_handle_,
+                                  &handles[0], 0, FALSE,
+                                  DUPLICATE_CLOSE_SOURCE);
+    DCHECK(result);
+    ignore_result(handle.release());
+  }
+#else
+  size_t message_size = sizeof(IntroductionData);
   if (handle.is_valid()) {
     handles.reset(new PlatformHandleVector(1));
     handles->at(0) = handle.release();
   }
-  IntroductionData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::INTRODUCE, sizeof(IntroductionData), std::move(handles),
       &data);
+#endif
   data->name = name;
   channel_->Write(std::move(message));
 }
@@ -409,10 +427,18 @@ void NodeChannel::OnChannelMessage(const void* payload,
       const IntroductionData* data;
       GetMessagePayload(payload, &data);
       ScopedPlatformHandle handle;
+#if defined(OS_WIN)
+      if (payload_size == sizeof(IntroductionData) + sizeof(Header) +
+              sizeof(HANDLE)) {
+        const HANDLE* handles = reinterpret_cast<const HANDLE*>(data + 1);
+        handle.reset(PlatformHandle(handles[0]));
+      }
+#else
       if (handles && !handles->empty()) {
         handle = ScopedPlatformHandle(handles->at(0));
         handles->clear();
       }
+#endif
       delegate_->OnIntroduce(remote_node_name_, data->name, std::move(handle));
       break;
     }
