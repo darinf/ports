@@ -114,7 +114,7 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
                         size_t payload_size,
                         ScopedPlatformHandleVectorPtr handles) override;
   void OnChannelError() override;
- 
+
 #if defined(OS_WIN)
   void OnRelayPortsMessage(const void* payload, size_t payload_size);
   void OnRelayPortsMessageAck(uint32_t identifier);
