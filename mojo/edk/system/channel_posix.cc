@@ -16,7 +16,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_pump_libevent.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/platform_channel_utils_posix.h"
@@ -77,7 +76,7 @@ class MessageView {
 
 class ChannelPosix : public Channel,
                      public base::MessageLoop::DestructionObserver,
-                     public base::MessagePumpLibevent::Watcher {
+                     public base::MessageLoopForIO::Watcher {
  public:
   ChannelPosix(Delegate* delegate,
                ScopedPlatformHandle handle,
@@ -150,8 +149,8 @@ class ChannelPosix : public Channel,
   void StartOnIOThread() {
     DCHECK(!read_watcher_);
     DCHECK(!write_watcher_);
-    read_watcher_.reset(new base::MessagePumpLibevent::FileDescriptorWatcher);
-    write_watcher_.reset(new base::MessagePumpLibevent::FileDescriptorWatcher);
+    read_watcher_.reset(new base::MessageLoopForIO::FileDescriptorWatcher);
+    write_watcher_.reset(new base::MessageLoopForIO::FileDescriptorWatcher);
     base::MessageLoopForIO::current()->WatchFileDescriptor(
         handle_.get().handle, true /* persistent */,
         base::MessageLoopForIO::WATCH_READ, read_watcher_.get(), this);
@@ -197,7 +196,7 @@ class ChannelPosix : public Channel,
       ShutDownOnIOThread();
   }
 
-  // base::MessagePumpLibevent::Watcher:
+  // base::MessageLoopForIO::Watcher:
   void OnFileCanReadWithoutBlocking(int fd) override {
     CHECK_EQ(fd, handle_.get().handle);
 
@@ -320,8 +319,8 @@ class ChannelPosix : public Channel,
   scoped_refptr<base::TaskRunner> io_task_runner_;
 
   // These watchers must only be accessed on the IO thread.
-  scoped_ptr<base::MessagePumpLibevent::FileDescriptorWatcher> read_watcher_;
-  scoped_ptr<base::MessagePumpLibevent::FileDescriptorWatcher> write_watcher_;
+  scoped_ptr<base::MessageLoopForIO::FileDescriptorWatcher> read_watcher_;
+  scoped_ptr<base::MessageLoopForIO::FileDescriptorWatcher> write_watcher_;
 
   std::deque<PlatformHandle> incoming_platform_handles_;
 
