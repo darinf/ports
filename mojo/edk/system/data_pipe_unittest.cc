@@ -1726,6 +1726,8 @@ TEST_F(DataPipeTest, MAYBE_Multiprocess) {
       EXPECT_EQ(0, memcmp(buffer, kMultiprocessTestData, kTestDataSize));
     }
 
+    WriteMessage(server_mp, "quit");
+
     // Don't have to close the consumer here because it will be done for us.
   END_CHILD()
 }
@@ -1787,6 +1789,9 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(MultiprocessClient, DataPipeTest, client_mp) {
 
   // We swapped ends, so close the producer.
   EXPECT_EQ(MOJO_RESULT_OK, MojoClose(producer));
+
+  // Wait to receive a "quit" message before exiting.
+  EXPECT_EQ("quit", ReadMessage(client_mp));
 }
 
 }  // namespace
