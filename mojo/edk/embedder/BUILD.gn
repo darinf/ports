@@ -124,9 +124,9 @@ source_set("embedder_unittests2") {
   #visibility = [ "//mojo/edk/system:mojo_system_unittests2" ]
 
   sources = [
-    #"embedder_unittest.cc",
+    "embedder_unittest.cc",
     "platform_channel_pair_posix_unittest.cc",
-    #"simple_platform_shared_buffer_unittest.cc",
+    "simple_platform_shared_buffer_unittest.cc",
   ]
 
   deps = [
