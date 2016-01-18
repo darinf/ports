@@ -66,9 +66,14 @@ class NodeController : public ports::NodeDelegate,
   // handshake.
   void ConnectToParent(ScopedPlatformHandle platform_handle);
 
-  // Sets a port's observer.
+  // Sets a port's observer. If |observer| is null the port's current observer
+  // is removed.
   void SetPortObserver(const ports::PortRef& port,
                        const scoped_refptr<PortObserver>& observer);
+
+  // Closes a port. Use this in lieu of calling Node::ClosePort() directly, as
+  // it ensures the port's observer has also been removed.
+  void ClosePort(const ports::PortRef& port);
 
   // Sends a message on a port to its peer. If message send fails, |message|
   // is left intact. Otherwise ownership is transferred and it's reset.

@@ -413,8 +413,14 @@ MojoResult DataPipeConsumerDispatcher::CloseNoLock() {
   shared_ring_buffer_ = nullptr;
 
   awakable_list_.CancelAll();
-  if (!transferred_)
-    node_controller_->node()->ClosePort(control_port_);
+  if (transferred_) {
+    // Transferred ports are closed automatically by the ports layer during
+    // eventual proxy teardown. We stop observing here so the port doesn't hold
+    // a reference to this dispatcher.
+    node_controller_->SetPortObserver(control_port_, nullptr);
+  } else {
+    node_controller_->ClosePort(control_port_);
+  }
 
   return MOJO_RESULT_OK;
 }

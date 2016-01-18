@@ -110,8 +110,13 @@ void NodeController::ConnectToParent(ScopedPlatformHandle platform_handle) {
 void NodeController::SetPortObserver(
     const ports::PortRef& port,
     const scoped_refptr<PortObserver>& observer) {
-  DCHECK(observer);
   node_->SetUserData(port, observer);
+}
+
+void NodeController::ClosePort(const ports::PortRef& port) {
+  SetPortObserver(port, nullptr);
+  int rv = node_->ClosePort(port);
+  DCHECK_EQ(rv, ports::OK);
 }
 
 int NodeController::SendMessage(const ports::PortRef& port,

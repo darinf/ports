@@ -480,9 +480,13 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
   port_closed_ = true;
   awakables_.CancelAll();
 
-  if (!port_transferred_) {
-    int rv = node_controller_->node()->ClosePort(port_);
-    DCHECK_EQ(ports::OK, rv);
+  if (port_transferred_) {
+    // Transferred ports are closed automatically by the ports layer during
+    // eventual proxy teardown. We stop observing here so the port doesn't hold
+    // a reference to this dispatcher.
+    node_controller_->SetPortObserver(port_, nullptr);
+  } else {
+    node_controller_->ClosePort(port_);
   }
 
   return MOJO_RESULT_OK;
@@ -524,10 +528,8 @@ void MessagePipeDispatcher::OnPortStatusChanged() {
   base::AutoLock lock(signal_lock_);
   if (!port_connected_) {
     port_connected_ = true;
-    if (port_closed_) {
-      int rv = node_controller_->node()->ClosePort(port_);
-      DCHECK_EQ(rv, ports::OK);
-    }
+    if (port_closed_)
+      node_controller_->ClosePort(port_);
   }
   awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
 }
