@@ -52,10 +52,11 @@ Core::~Core() {
     // If this races with IO thread shutdown the callback will be dropped and
     // the NodeController will be shutdown on this thread anyway, which is also
     // just fine.
-    node_controller_->io_task_runner()->PostTask(
-        FROM_HERE,
-        base::Bind(&Core::PassNodeControllerToIOThread,
-                   base::Passed(&node_controller_)));
+    scoped_refptr<base::TaskRunner> io_task_runner =
+        node_controller_->io_task_runner();
+    io_task_runner->PostTask(FROM_HERE,
+                             base::Bind(&Core::PassNodeControllerToIOThread,
+                                        base::Passed(&node_controller_)));
   }
 }
 
