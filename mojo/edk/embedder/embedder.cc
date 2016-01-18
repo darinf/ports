@@ -30,8 +30,8 @@ PlatformSupport* g_platform_support;
 ProcessDelegate* g_process_delegate;
 
 // This is used to help negotiate message pipe connections over arbitrary
-// platform channels. The the embedder needs to know which end of the pipe it's
-// on so it can do the right thing.
+// platform channels. The embedder needs to know which end of the pipe it's on
+// so it can do the right thing.
 //
 // TODO: Remove this when people stop using mojo::embedder::CreateChannel()
 // and thus mojo::edk::CreateMessagePipe(ScopedPlatformHandle).
@@ -97,15 +97,13 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
 void InitIPCSupport(ProcessDelegate* process_delegate,
                     scoped_refptr<base::TaskRunner> io_thread_task_runner) {
   CHECK(internal::g_core);
-  CHECK(!internal::g_io_thread_task_runner);
-  CHECK(!internal::g_process_delegate);
 
-  // TODO: Get rid of this global. At worst, it's still accessible from g_core.
+  io_thread_task_runner->AddRef();
+  if (internal::g_io_thread_task_runner)
+    internal::g_io_thread_task_runner->Release();
   internal::g_io_thread_task_runner = io_thread_task_runner.get();
-  internal::g_io_thread_task_runner->AddRef();
 
   internal::g_core->SetIOTaskRunner(io_thread_task_runner);
-
   internal::g_process_delegate = process_delegate;
 }
 

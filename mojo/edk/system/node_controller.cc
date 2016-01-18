@@ -339,7 +339,12 @@ void NodeController::AcceptIncomingMessages() {
 }
 
 void NodeController::DropAllPeers() {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+  if (!io_task_runner_->RunsTasksOnCurrentThread()) {
+    // It's possible for this to happen in single-process mode tests where
+    // the global IO task runner may be set to multiple different instances
+    // throughout the lifetime of the same process.
+    return;
+  }
 
   {
     base::AutoLock lock(parent_lock_);
