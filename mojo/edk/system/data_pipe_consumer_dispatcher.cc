@@ -249,6 +249,7 @@ MojoResult DataPipeConsumerDispatcher::AddAwakable(
       *signals_state = HandleSignalsState();
     return MOJO_RESULT_INVALID_ARGUMENT;
   }
+  UpdateSignalsStateNoLock();
   HandleSignalsState state = GetHandleSignalsStateNoLock();
   if (state.satisfies(signals)) {
     if (signals_state)
