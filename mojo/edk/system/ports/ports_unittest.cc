@@ -36,6 +36,17 @@ void LogMessage(const Message* message) {
 
 class TestMessage : public Message {
  public:
+  static ScopedMessage NewUserMessage(size_t num_payload_bytes,
+                                      size_t num_ports) {
+    return ScopedMessage(new TestMessage(num_payload_bytes, num_ports));
+  }
+
+  TestMessage(size_t num_payload_bytes, size_t num_ports)
+      : Message(num_payload_bytes, num_ports) {
+    start_ = new char[num_header_bytes_ + num_ports_bytes_ + num_payload_bytes];
+    InitializeUserMessageHeader(start_);
+  }
+
   TestMessage(size_t num_header_bytes,
               size_t num_payload_bytes,
               size_t num_ports_bytes)
@@ -101,8 +112,7 @@ void DiscardPendingTasks() {
 
 int SendStringMessage(Node* node, const PortRef& port, const std::string& s) {
   size_t size = s.size() + 1;
-  ScopedMessage message;
-  EXPECT_EQ(OK, node_map[0]->AllocMessage(size, 0, &message));
+  ScopedMessage message = TestMessage::NewUserMessage(size, 0);
   memcpy(message->mutable_payload_bytes(), s.data(), size);
   return node->SendMessage(port, &message);
 }
@@ -112,8 +122,7 @@ int SendStringMessageWithPort(Node* node,
                               const std::string& s,
                               const PortName& sent_port_name) {
   size_t size = s.size() + 1;
-  ScopedMessage message;
-  EXPECT_EQ(OK, node_map[0]->AllocMessage(size, 1, &message));
+  ScopedMessage message = TestMessage::NewUserMessage(size, 1);
   memcpy(message->mutable_payload_bytes(), s.data(), size);
   message->mutable_ports()[0] = sent_port_name;
   return node->SendMessage(port ,&message);
@@ -159,12 +168,8 @@ class TestNodeDelegate : public NodeDelegate {
     port_name->v2 = 0;
   }
 
-  void AllocMessage(size_t num_header_bytes,
-                    size_t num_payload_bytes,
-                    size_t num_ports,
-                    ScopedMessage* message) override {
-    message->reset(
-        new TestMessage(num_header_bytes, num_payload_bytes, num_ports));
+  void AllocMessage(size_t num_header_bytes, ScopedMessage* message) override {
+    message->reset(new TestMessage(num_header_bytes, 0, 0));
   }
 
   void ForwardMessage(const NodeName& node_name,
