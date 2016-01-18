@@ -122,8 +122,8 @@ PlatformHandle* Channel::Message::handles() {
   return reinterpret_cast<PlatformHandle*>(static_cast<char*>(data_) +
                                            sizeof(Header) + payload_size());
 #else
-  CHECK(handles_);
-  return handles_->data();
+  CHECK(handle_vector_);
+  return handle_vector_->data();
 #endif
 }
 
@@ -153,7 +153,7 @@ ScopedPlatformHandleVectorPtr Channel::Message::TakeHandles() {
     std::swap(moved_handles->at(i), handles()[i]);
   return moved_handles;
 #else
-  return std::move(handles_);
+  return std::move(handle_vector_);
 #endif
 }
 

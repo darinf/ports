@@ -70,8 +70,8 @@ Message::Message(size_t num_header_bytes,
                  size_t num_ports_bytes)
     : start_(nullptr),
       num_header_bytes_(num_header_bytes),
-      num_payload_bytes_(num_payload_bytes),
-      num_ports_bytes_(num_ports_bytes) {
+      num_ports_bytes_(num_ports_bytes),
+      num_payload_bytes_(num_payload_bytes) {
 }
 
 void Message::InitializeUserMessageHeader(void* start) {
