@@ -116,7 +116,7 @@ void NodeController::SetPortObserver(
 void NodeController::ClosePort(const ports::PortRef& port) {
   SetPortObserver(port, nullptr);
   int rv = node_->ClosePort(port);
-  DCHECK_EQ(rv, ports::OK);
+  DCHECK_EQ(rv, ports::OK) << " Failed to close port: " << port.name();
 }
 
 int NodeController::SendMessage(const ports::PortRef& port,

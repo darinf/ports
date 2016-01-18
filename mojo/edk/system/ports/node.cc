@@ -147,6 +147,10 @@ int Node::ClosePort(const PortRef& port_ref) {
   PortName peer_port_name;
   Port* port = port_ref.port();
   {
+    // We may need to erase the port, which requires ports_lock_ to be held,
+    // but ports_lock_ must be acquired before any individual port locks.
+    base::AutoLock ports_lock(ports_lock_);
+
     base::AutoLock lock(port->lock);
     if (port->state == Port::kUninitialized) {
       // If the port was not yet initialized, there's nothing interesting to do.

@@ -485,7 +485,10 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
     // eventual proxy teardown. We stop observing here so the port doesn't hold
     // a reference to this dispatcher.
     node_controller_->SetPortObserver(port_, nullptr);
-  } else {
+  } else if (port_connected_) {
+    // Only close if the port isn't initialized yet. Once it's initialized and
+    // its internal outgoing message queue is flushed, we'll be notified via
+    // OnPortStatusChanged() which will then close the port.
     node_controller_->ClosePort(port_);
   }
 
@@ -526,6 +529,10 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
 
 void MessagePipeDispatcher::OnPortStatusChanged() {
   base::AutoLock lock(signal_lock_);
+
+  // We stop observing ports as soon as they're transferred.
+  DCHECK(!port_transferred_);
+
   if (!port_connected_) {
     port_connected_ = true;
     if (port_closed_)
