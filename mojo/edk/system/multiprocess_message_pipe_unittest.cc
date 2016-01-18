@@ -726,6 +726,9 @@ TEST_F(MultiprocessMessagePipeTest, CreateMessagePipe) {
   VerifyTransmission(p1, p0, "slow down");
   VerifyTransmission(p0, p1, std::string(10 * 1024 * 1024, 'a'));
   VerifyTransmission(p1, p0, std::string(10 * 1024 * 1024, 'e'));
+
+  CloseHandle(p0);
+  CloseHandle(p1);
 }
 
 TEST_F(MultiprocessMessagePipeTest, PassMessagePipeLocal) {
@@ -745,9 +748,15 @@ TEST_F(MultiprocessMessagePipeTest, PassMessagePipeLocal) {
   WriteMessageWithHandles(p0, message, &p2, 1);
   EXPECT_EQ(message, ReadMessageWithHandles(p1, &p2, 1));
 
+  CloseHandle(p0);
+  CloseHandle(p1);
+
   // Verify that the received handle (now in p2) still works.
   VerifyTransmission(p2, p3, "Easy come, easy go; will you let me go?");
   VerifyTransmission(p3, p2, "Bismillah! NO! We will not let you go!");
+
+  CloseHandle(p2);
+  CloseHandle(p3);
 }
 
 // Echos the primordial channel until "exit".
@@ -788,9 +797,9 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceClient, MultiprocessMessagePipeTest,
 }
 
 TEST_F(MultiprocessMessagePipeTest, PassMessagePipeCrossProcess) {
+  MojoHandle p0, p1;
+  CreateMessagePipe(&p0, &p1);
   RUN_CHILD_ON_PIPE(EchoServiceClient, h)
-    MojoHandle p0, p1;
-    CreateMessagePipe(&p0, &p1);
 
     // Pass one end of the pipe to the other process.
     WriteMessageWithHandles(h, "here take this", &p1, 1);
@@ -801,6 +810,7 @@ TEST_F(MultiprocessMessagePipeTest, PassMessagePipeCrossProcess) {
 
     WriteMessage(p0, "exit");
   END_CHILD()
+  CloseHandle(p0);
 }
 
 // Receives a pipe handle from the primordial channel and reads new handles
@@ -836,21 +846,29 @@ DEFINE_TEST_CLIENT_WITH_PIPE(EchoServiceFactoryClient,
       WriteMessage(handles[index], ReadMessage(handles[index]));
     }
   }
+
+  for (size_t i = 1; i < handles.size(); ++i)
+    CloseHandle(handles[i]);
+
   return 0;
 }
 
 TEST_F(MultiprocessMessagePipeTest, PassMoarMessagePipesCrossProcess) {
+  MojoHandle echo_factory_proxy, echo_factory_request;
+  CreateMessagePipe(&echo_factory_proxy, &echo_factory_request);
+
+  MojoHandle echo_proxy_a, echo_request_a;
+  CreateMessagePipe(&echo_proxy_a, &echo_request_a);
+
+  MojoHandle echo_proxy_b, echo_request_b;
+  CreateMessagePipe(&echo_proxy_b, &echo_request_b);
+
+  MojoHandle echo_proxy_c, echo_request_c;
+  CreateMessagePipe(&echo_proxy_c, &echo_request_c);
+
   RUN_CHILD_ON_PIPE(EchoServiceFactoryClient, h)
-    MojoHandle echo_factory_proxy, echo_factory_request;
-    CreateMessagePipe(&echo_factory_proxy, &echo_factory_request);
     WriteMessageWithHandles(
         h, "gief factory naow plz", &echo_factory_request, 1);
-
-    MojoHandle echo_proxy_a, echo_request_a;
-    CreateMessagePipe(&echo_proxy_a, &echo_request_a);
-
-    MojoHandle echo_proxy_b, echo_request_b;
-    CreateMessagePipe(&echo_proxy_b, &echo_request_b);
 
     WriteMessageWithHandles(echo_factory_proxy, "give me an echo service plz!",
                            &echo_request_a, 1);
@@ -864,9 +882,6 @@ TEST_F(MultiprocessMessagePipeTest, PassMoarMessagePipesCrossProcess) {
     VerifyEcho(echo_proxy_b, "wubalubadubdub");
     VerifyEcho(echo_proxy_b, "wubalubadubdub");
 
-    MojoHandle echo_proxy_c, echo_request_c;
-    CreateMessagePipe(&echo_proxy_c, &echo_request_c);
-
     WriteMessageWithHandles(echo_factory_proxy, "hook me up also thanks",
                            &echo_request_c, 1);
 
@@ -876,6 +891,11 @@ TEST_F(MultiprocessMessagePipeTest, PassMoarMessagePipesCrossProcess) {
 
     WriteMessage(h, "exit");
   END_CHILD()
+
+  CloseHandle(echo_factory_proxy);
+  CloseHandle(echo_proxy_a);
+  CloseHandle(echo_proxy_b);
+  CloseHandle(echo_proxy_c);
 }
 
 TEST_F(MultiprocessMessagePipeTest, ChannelPipesWithMultipleChildren) {
@@ -958,6 +978,10 @@ DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
       break;
     }
   }
+
+  for (auto& pipe: named_pipes)
+    CloseHandle(pipe.second);
+
   return 0;
 }
 
@@ -1049,6 +1073,9 @@ TEST_F(MultiprocessMessagePipeTest, MoreChildToChildPipes) {
 
           VerifyTransmission(x, y, "still works");
           VerifyTransmission(y, x, "in both directions");
+
+          CloseHandle(x);
+          CloseHandle(y);
 
           a.Exit();
           b.Exit();

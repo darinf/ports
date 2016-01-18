@@ -60,6 +60,9 @@ class MojoTestBase : public testing::Test {
     EXPECT_EQ(expected_exit_code, c.WaitForShutdown());
   }
 
+  // Closes a handle and expects success.
+  static void CloseHandle(MojoHandle h);
+
   ////// Message pipe test utilities ///////
 
   // Creates a new pipe, returning endpoint handles in |p0| and |p1|.

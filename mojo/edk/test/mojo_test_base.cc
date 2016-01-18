@@ -47,6 +47,11 @@ int MojoTestBase::ClientController::WaitForShutdown() {
 }
 
 // static
+void MojoTestBase::CloseHandle(MojoHandle h) {
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(h));
+}
+
+// static
 void MojoTestBase::CreateMessagePipe(MojoHandle *p0, MojoHandle* p1) {
   MojoCreateMessagePipe(nullptr, p0, p1);
   CHECK_NE(*p0, MOJO_HANDLE_INVALID);
