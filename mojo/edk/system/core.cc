@@ -47,7 +47,17 @@ const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 
 Core::Core() {}
 
-Core::~Core() {}
+Core::~Core() {
+  if (node_controller_ && node_controller_->io_task_runner()) {
+    // If this races with IO thread shutdown the callback will be dropped and
+    // the NodeController will be shutdown on this thread anyway, which is also
+    // just fine.
+    node_controller_->io_task_runner()->PostTask(
+        FROM_HERE,
+        base::Bind(&Core::PassNodeControllerToIOThread,
+                   base::Passed(&node_controller_)));
+  }
+}
 
 void Core::SetIOTaskRunner(scoped_refptr<base::TaskRunner> io_task_runner) {
   GetNodeController()->SetIOTaskRunner(io_task_runner);
@@ -692,6 +702,16 @@ MojoResult Core::WaitManyInternal(const MojoHandle* handles,
   }
 
   return rv;
+}
+
+// static
+void Core::PassNodeControllerToIOThread(
+    scoped_ptr<NodeController> node_controller) {
+  // It's OK to leak this reference. At this point we know the IO loop is still
+  // running, and we know the NodeController will observe its eventual
+  // destruction. This tells the NodeController to delete itself when that
+  // happens.
+  node_controller.release()->DestroyOnIOThreadShutdown();
 }
 
 }  // namespace edk

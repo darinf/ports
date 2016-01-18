@@ -207,6 +207,11 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                               uint32_t *result_index,
                               HandleSignalsState* signals_states);
 
+  // Used to pass ownership of our NodeController over to the IO thread in the
+  // event that we're torn down before said thread.
+  static void PassNodeControllerToIOThread(
+      scoped_ptr<NodeController> node_controller);
+
   // This is lazily initialized on first access. Always use GetNodeController()
   // to access it.
   scoped_ptr<NodeController> node_controller_;

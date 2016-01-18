@@ -99,6 +99,8 @@ class NodeController : public ports::NodeDelegate,
   scoped_refptr<PlatformSharedBuffer> CreateSharedBuffer(size_t num_bytes);
 
  private:
+  friend Core;
+
   using NodeMap = std::unordered_map<ports::NodeName,
                                      scoped_refptr<NodeChannel>>;
   using OutgoingMessageQueue = std::queue<ports::ScopedMessage>;
@@ -161,6 +163,11 @@ class NodeController : public ports::NodeDelegate,
 #endif
   void OnChannelError(const ports::NodeName& from_node) override;
 
+  // Marks this NodeController for destruction when the IO thread shuts down.
+  // This is used in case Core is torn down before the IO thread. Must only be
+  // called on the IO thread.
+  void DestroyOnIOThreadShutdown();
+
   // These are safe to access from any thread as long as the Node is alive.
   Core* const core_;
   const ports::NodeName name_;
@@ -204,6 +211,10 @@ class NodeController : public ports::NodeDelegate,
 
   // Port location requests which have been deferred until we have a parent.
   std::vector<PendingPortRequest> pending_port_requests_;
+
+  // Indicates whether this object should delete itself on IO thread shutdown.
+  // Must only be accessed from the IO thread.
+  bool destroy_on_io_thread_shutdown_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(NodeController);
 };

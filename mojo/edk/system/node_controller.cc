@@ -373,6 +373,9 @@ void NodeController::DropAllPeers() {
 
   for (const auto& peer : all_peers)
     peer->ShutDown();
+
+  if (destroy_on_io_thread_shutdown_)
+    delete this;
 }
 
 void NodeController::GenerateRandomPortName(ports::PortName* port_name) {
@@ -684,6 +687,10 @@ void NodeController::OnChannelError(const ports::NodeName& from_node) {
         base::Bind(&NodeController::DropPeer, base::Unretained(this),
                    from_node));
   }
+}
+
+void NodeController::DestroyOnIOThreadShutdown() {
+  destroy_on_io_thread_shutdown_ = true;
 }
 
 }  // namespace edk
