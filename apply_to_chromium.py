@@ -15,6 +15,7 @@ import sys
 # These are copied non-recursively. If the destination path doesn't exist,
 # it's created. A source file is only copied if it differs from the destination.
 DIRS_TO_COPY_ = [
+  "mojo",
   "mojo/edk/embedder",
   "mojo/edk/system",
   "mojo/edk/system/ports",

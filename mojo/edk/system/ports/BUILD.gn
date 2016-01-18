@@ -23,8 +23,6 @@ source_set("ports") {
     "user_data.h",
   ]
 
-  include_dirs = [ "." ]
-
   public_deps = [
     "//base",
   ]
