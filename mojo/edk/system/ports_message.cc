@@ -9,6 +9,26 @@
 namespace mojo {
 namespace edk {
 
+// static
+scoped_ptr<PortsMessage> PortsMessage::NewUserMessage(size_t num_payload_bytes,
+                                                      size_t num_ports,
+                                                      size_t num_handles) {
+  return make_scoped_ptr(
+      new PortsMessage(num_payload_bytes, num_ports, num_handles));
+}
+
+PortsMessage::~PortsMessage() {}
+
+PortsMessage::PortsMessage(size_t num_payload_bytes,
+                           size_t num_ports,
+                           size_t num_handles)
+    : ports::Message(num_payload_bytes, num_ports) {
+  size_t size = num_header_bytes_ + num_ports_bytes_ + num_payload_bytes;
+  void* ptr;
+  channel_message_ = NodeChannel::CreatePortsMessage(size, &ptr, num_handles);
+  InitializeUserMessageHeader(ptr);
+}
+
 PortsMessage::PortsMessage(size_t num_header_bytes,
                            size_t num_payload_bytes,
                            size_t num_ports_bytes,
@@ -18,21 +38,23 @@ PortsMessage::PortsMessage(size_t num_header_bytes,
                      num_ports_bytes) {
   if (channel_message) {
     channel_message_ = std::move(channel_message);
-
     void* data;
     size_t num_data_bytes;
     NodeChannel::GetPortsMessageData(channel_message_.get(), &data,
                                      &num_data_bytes);
     start_ = static_cast<char*>(data);
   } else {
-    size_t size = num_header_bytes + num_payload_bytes + num_ports_bytes;
+    // TODO: Clean this up. In practice this branch of the constructor should
+    // only be reached from Node-internal calls to AllocMessage, which never
+    // carry ports or non-header bytes.
+    CHECK_EQ(num_payload_bytes, 0u);
+    CHECK_EQ(num_ports_bytes, 0u);
     void* ptr;
-    channel_message_ = NodeChannel::CreatePortsMessage(size, &ptr, nullptr);
+    channel_message_ =
+        NodeChannel::CreatePortsMessage(num_header_bytes, &ptr, 0);
     start_ = static_cast<char*>(ptr);
   }
 }
-
-PortsMessage::~PortsMessage() {}
 
 }  // namespace edk
 }  // namespace mojo

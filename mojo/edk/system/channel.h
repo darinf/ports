@@ -22,6 +22,10 @@ const size_t kChannelMessageAlignment = 8;
 // one or more platform handles in the process.
 class Channel : public base::RefCountedThreadSafe<Channel> {
  public:
+  struct Message;
+
+  using MessagePtr = scoped_ptr<Message>;
+
   // A message to be written to a channel.
   struct Message {
     struct Header {
@@ -38,44 +42,46 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
     // Allocates and owns a buffer for message data with enough capacity for
     // |payload_size| bytes plus a header. Takes ownership of |handles|, which
     // may be null.
-    Message(size_t payload_size, ScopedPlatformHandleVectorPtr handles);
-    Message(const void* data, size_t data_num_bytes);
+    Message(size_t payload_size, size_t num_handles);
+
     ~Message();
+
+    // Constructs a Message from serialized message data.
+    static MessagePtr Deserialize(const void* data, size_t data_num_bytes);
 
     const void* data() const { return data_; }
     size_t data_num_bytes() const { return size_; }
 
-    void* mutable_payload() { return &(header()[1]); }
-    const void* payload() const { return &(header()[1]); }
-
-    size_t payload_size() const { return header()->num_bytes - sizeof(Header); }
-    size_t num_handles() const { return header()->num_handles; }
-
-    bool has_handles() const { return header()->num_handles > 0; }
-
-    PlatformHandle* handles() {
-      DCHECK(handles_);
-      return static_cast<PlatformHandle*>(handles_->data());
+    void* mutable_payload() { return static_cast<void*>(header_ + 1); }
+    const void* payload() const {
+      return static_cast<const void*>(header_ + 1);
     }
+    size_t payload_size() const;
 
-    void SetHandles(ScopedPlatformHandleVectorPtr handles);
+    size_t num_handles() const { return header_->num_handles; }
+    bool has_handles() const { return header_->num_handles > 0; }
+    PlatformHandle* handles();
 
-    ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
+    // Note: SetHandles() and TakeHandles() invalidate any previous value of
+    // handles().
+    void SetHandles(ScopedPlatformHandleVectorPtr new_handles);
+    ScopedPlatformHandleVectorPtr TakeHandles();
 
    private:
-    Header* header() { return reinterpret_cast<Header*>(data_); }
-    const Header* header() const {
-      return reinterpret_cast<const Header*>(data_);
-    }
-
-    char* data_;
     size_t size_;
-    ScopedPlatformHandleVectorPtr handles_;
+    char* data_;
+    Header* header_;
+
+#if defined(OS_WIN)
+    // On Windows, handles are serialized in the data buffer along with the
+    // rest of the payload.
+    PlatformHandle* handles_ = nullptr;
+#else
+    ScopedPlatformHandleVectorPtr handle_vector_;
+#endif
 
     DISALLOW_COPY_AND_ASSIGN(Message);
   };
-
-  using MessagePtr = scoped_ptr<Message>;
 
   // Delegate methods are called from the I/O task runner with which the Channel
   // was created (see Channel::Create).
@@ -144,8 +150,17 @@ class Channel : public base::RefCountedThreadSafe<Channel> {
   // OK to call this synchronously from any public interface methods.
   void OnError();
 
+  // Retrieves the set of platform handles read for a given message. |payload|
+  // and |payload_size| correspond to the full message body. Depending on
+  // the Channel implementation, this body may encode platform handles, or
+  // handles may be stored and managed elsewhere by the implementation.
+  // If |num_handles| handles cannot be returned, this must return null.
+  // The implementation may also adjust the values of |*payload| and/or
+  // |*payload_size| to hide handle data from the user.
   virtual ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
-      size_t num_handles) = 0;
+      size_t num_handles,
+      void** payload,
+      size_t* payload_size) = 0;
 
  private:
   friend class base::RefCountedThreadSafe<Channel>;

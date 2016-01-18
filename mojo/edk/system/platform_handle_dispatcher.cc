@@ -43,11 +43,11 @@ void PlatformHandleDispatcher::StartSerialize(uint32_t* num_bytes,
 
 bool PlatformHandleDispatcher::EndSerialize(void* destination,
                                             ports::PortName* ports,
-                                            PlatformHandleVector* handles) {
+                                            PlatformHandle* handles) {
   base::AutoLock lock(lock_);
   if (is_closed_)
     return false;
-  handles->push_back(platform_handle_.get());
+  handles[0] = platform_handle_.get();
   return true;
 }
 

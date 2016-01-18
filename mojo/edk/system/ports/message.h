@@ -53,17 +53,31 @@ class Message {
   size_t num_ports() const { return num_ports_bytes_ / sizeof(PortName); }
 
  protected:
+  // Constructs a new Message base for a user message.
+  //
+  // Note: You MUST call InitializeUserMessageHeader() before this Message is
+  // ready for transmission.
+  Message(size_t num_payload_bytes, size_t num_ports);
+
+  // Constructs a new Message base for an internal message. Do NOT call
+  // InitializeUserMessageHeader() when using this constructor.
   Message(size_t num_header_bytes,
           size_t num_payload_bytes,
           size_t num_ports_bytes);
+
   Message(const Message& other) = delete;
   void operator=(const Message& other) = delete;
 
+  // Initializes the header in a newly allocated message buffer to carry a
+  // user message.
+  void InitializeUserMessageHeader(void* start);
+
   // Note: storage is [header][ports][payload].
-  char* start_;
-  size_t num_header_bytes_;
-  size_t num_ports_bytes_;
-  size_t num_payload_bytes_;
+  char* start_ = nullptr;
+  size_t num_ports_ = 0;
+  size_t num_header_bytes_ = 0;
+  size_t num_ports_bytes_ = 0;
+  size_t num_payload_bytes_ = 0;
 };
 
 using ScopedMessage = scoped_ptr<Message>;

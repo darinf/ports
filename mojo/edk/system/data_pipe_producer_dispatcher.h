@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/system/awakable_list.h"
 #include "mojo/edk/system/dispatcher.h"
@@ -59,7 +60,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
                       uint32_t* num_handles) override;
   bool EndSerialize(void* destination,
                     ports::PortName* ports,
-                    PlatformHandleVector* handles) override;
+                    PlatformHandle* handles) override;
   bool BeginTransit() override;
   void CompleteTransitAndClose() override;
   void CancelTransit() override;

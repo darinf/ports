@@ -9,7 +9,6 @@
 #include <sstream>
 
 #include "base/logging.h"
-#include "base/rand_util.h"
 #include "mojo/edk/system/channel.h"
 
 namespace mojo {
@@ -33,7 +32,6 @@ enum class MessageType : uint32_t {
   INTRODUCE,
 #if defined(OS_WIN)
   RELAY_PORTS_MESSAGE,
-  RELAY_PORTS_MESSAGE_ACK,
 #endif
 };
 
@@ -76,26 +74,19 @@ struct IntroductionData {
 };
 
 #if defined(OS_WIN)
-// This struct is followed by an array of handles and then the message data.
+// This struct is followed by the full payload of a message to be relayed.
 struct RelayPortsMessageData {
   ports::NodeName destination;
-  uint32_t identifier;
-  uint32_t handles_num_bytes;
-};
-
-struct RelayPortsMessageAckData {
-  uint32_t identifier;
-  uint32_t padding;
 };
 #endif
 
 template <typename DataType>
 Channel::MessagePtr CreateMessage(MessageType type,
                                   size_t payload_size,
-                                  ScopedPlatformHandleVectorPtr handles,
+                                  size_t num_handles,
                                   DataType** out_data) {
   Channel::MessagePtr message(
-      new Channel::Message(sizeof(Header) + payload_size, std::move(handles)));
+      new Channel::Message(sizeof(Header) + payload_size, num_handles));
   Header* header = reinterpret_cast<Header*>(message->mutable_payload());
   header->type = type;
   header->padding = 0;
@@ -120,16 +111,16 @@ scoped_refptr<NodeChannel> NodeChannel::Create(
 }
 
 // static
-Channel::MessagePtr NodeChannel::CreatePortsMessage(
-    size_t payload_size,
-    void** payload,
-    ScopedPlatformHandleVectorPtr platform_handles) {
-  return CreateMessage(MessageType::PORTS_MESSAGE, payload_size,
-                       std::move(platform_handles), payload);
+Channel::MessagePtr NodeChannel::CreatePortsMessage(size_t payload_size,
+                                                    void** payload,
+                                                    size_t num_handles) {
+  return CreateMessage(MessageType::PORTS_MESSAGE, payload_size, num_handles,
+                       payload);
 }
 
 // static
-void NodeChannel::GetPortsMessageData(Channel::Message* message, void** data,
+void NodeChannel::GetPortsMessageData(Channel::Message* message,
+                                      void** data,
                                       size_t* num_data_bytes) {
   *data = reinterpret_cast<Header*>(message->mutable_payload()) + 1;
   *num_data_bytes = message->payload_size() - sizeof(Header);
@@ -152,6 +143,7 @@ void NodeChannel::ShutDown() {
 void NodeChannel::SetRemoteProcessHandle(base::ProcessHandle process_handle) {
 #if defined(OS_WIN)
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+  base::AutoLock lock(remote_process_handle_lock_);
   remote_process_handle_ = process_handle;
 #endif
 }
@@ -163,133 +155,71 @@ void NodeChannel::SetRemoteNodeName(const ports::NodeName& name) {
 
 void NodeChannel::AcceptChild(const ports::NodeName& parent_name,
                               const ports::NodeName& token) {
-  base::AutoLock lock(channel_lock_);
-  if (!channel_) {
-    DVLOG(2) << "Not sending AcceptChild on closed Channel.";
-    return;
-  }
-
   AcceptChildData* data;
   Channel::MessagePtr message = CreateMessage(
-      MessageType::ACCEPT_CHILD, sizeof(AcceptChildData), nullptr, &data);
+      MessageType::ACCEPT_CHILD, sizeof(AcceptChildData), 0, &data);
   data->parent_name = parent_name;
   data->token = token;
-  channel_->Write(std::move(message));
+  WriteChannelMessage(std::move(message));
 }
 
 void NodeChannel::AcceptParent(const ports::NodeName& token,
                                const ports::NodeName& child_name) {
-  base::AutoLock lock(channel_lock_);
-  if (!channel_) {
-    DVLOG(2) << "Not sending AcceptParent on closed Channel.";
-    return;
-  }
-
   AcceptParentData* data;
   Channel::MessagePtr message = CreateMessage(
-      MessageType::ACCEPT_PARENT, sizeof(AcceptParentData), nullptr, &data);
+      MessageType::ACCEPT_PARENT, sizeof(AcceptParentData), 0, &data);
   data->token = token;
   data->child_name = child_name;
-  channel_->Write(std::move(message));
+  WriteChannelMessage(std::move(message));
 }
 
 void NodeChannel::PortsMessage(Channel::MessagePtr message) {
-  base::AutoLock lock(channel_lock_);
-  if (!channel_) {
-    DVLOG(2) << "Not sending PortsMessage on closed Channel.";
-    return;
-  }
-
-  channel_->Write(std::move(message));
+  WriteChannelMessage(std::move(message));
 }
 
 void NodeChannel::RequestPortConnection(
     const ports::PortName& connector_port_name,
     const std::string& token) {
-  base::AutoLock lock(channel_lock_);
-  if (!channel_) {
-    DVLOG(2) << "Not sending RequestPortConnection on closed Channel.";
-    return;
-  }
-
   RequestPortConnectionData* data;
   Channel::MessagePtr message = CreateMessage(
       MessageType::REQUEST_PORT_CONNECTION,
-      sizeof(RequestPortConnectionData) + token.size(), nullptr, &data);
+      sizeof(RequestPortConnectionData) + token.size(), 0, &data);
   data->connector_port_name = connector_port_name;
   memcpy(data + 1, token.data(), token.size());
-  channel_->Write(std::move(message));
+  WriteChannelMessage(std::move(message));
 }
 
 void NodeChannel::ConnectToPort(const ports::PortName& connector_port_name,
                                 const ports::PortName& connectee_port_name) {
-  base::AutoLock lock(channel_lock_);
-  if (!channel_) {
-    DVLOG(2) << "Not sending ConnectToPort on closed Channel.";
-    return;
-  }
-
   ConnectToPortData* data;
   Channel::MessagePtr message = CreateMessage(
-      MessageType::CONNECT_TO_PORT, sizeof(ConnectToPortData), nullptr, &data);
+      MessageType::CONNECT_TO_PORT, sizeof(ConnectToPortData), 0, &data);
   data->connector_port_name = connector_port_name;
   data->connectee_port_name = connectee_port_name;
-  channel_->Write(std::move(message));
+  WriteChannelMessage(std::move(message));
 }
 
 void NodeChannel::RequestIntroduction(const ports::NodeName& name) {
-  base::AutoLock lock(channel_lock_);
-  if (!channel_) {
-    DVLOG(2) << "Not sending RequestIntroduction on closed Channel.";
-    return;
-  }
-
   IntroductionData* data;
   Channel::MessagePtr message = CreateMessage(
-      MessageType::REQUEST_INTRODUCTION, sizeof(IntroductionData), nullptr,
-      &data);
+      MessageType::REQUEST_INTRODUCTION, sizeof(IntroductionData), 0, &data);
   data->name = name;
-  channel_->Write(std::move(message));
+  WriteChannelMessage(std::move(message));
 }
 
 void NodeChannel::Introduce(const ports::NodeName& name,
                             ScopedPlatformHandle handle) {
-  base::AutoLock lock(channel_lock_);
-  if (!channel_) {
-    DVLOG(2) << "Not sending Introduce on closed Channel.";
-    return;
-  }
-
   IntroductionData* data;
-#if defined(OS_WIN)
-  size_t message_size = sizeof(IntroductionData) +
-      (handle.is_valid() ? sizeof(HANDLE) : 0);
-  Channel::MessagePtr message = CreateMessage(
-      MessageType::INTRODUCE, message_size, nullptr, &data);
-  if (remote_process_handle_ != base::kNullProcessHandle &&
-      handle.is_valid()) {
-    HANDLE* handles = reinterpret_cast<HANDLE*>(data + 1);
-    handles[0] = handle.get().handle;
-    BOOL result = DuplicateHandle(base::GetCurrentProcessHandle(),
-                                  handles[0], remote_process_handle_,
-                                  &handles[0], 0, FALSE,
-                                  DUPLICATE_CLOSE_SOURCE |
-                                      DUPLICATE_SAME_ACCESS);
-    DCHECK(result);
-    ignore_result(handle.release());
-  }
-#else
   ScopedPlatformHandleVectorPtr handles;
   if (handle.is_valid()) {
     handles.reset(new PlatformHandleVector(1));
     handles->at(0) = handle.release();
   }
   Channel::MessagePtr message = CreateMessage(
-      MessageType::INTRODUCE, sizeof(IntroductionData), std::move(handles),
-      &data);
-#endif
+      MessageType::INTRODUCE, sizeof(IntroductionData), handles ? 1 : 0, &data);
+  message->SetHandles(std::move(handles));
   data->name = name;
-  channel_->Write(std::move(message));
+  WriteChannelMessage(std::move(message));
 }
 
 #if defined(OS_WIN)
@@ -297,58 +227,24 @@ void NodeChannel::RelayPortsMessage(const ports::NodeName& destination,
                                     Channel::MessagePtr message) {
   DCHECK(message->has_handles());
 
-  uint32_t identifier = static_cast<uint32_t>(
-      base::RandGenerator(std::numeric_limits<uint32_t>::max()));
-
-  size_t handles_num_bytes = Align(message->num_handles() * sizeof(HANDLE));
-  size_t num_bytes = sizeof(RelayPortsMessageData) + message->data_num_bytes() +
-                     handles_num_bytes;
-
+  // Note that this is only used on Windows, and on Windows all platform
+  // handles are included in the message data. We blindly copy all the data
+  // here and the relay node (the parent) will duplicate handles as needed.
+  size_t num_bytes = sizeof(RelayPortsMessageData) + message->data_num_bytes();
   RelayPortsMessageData* data;
   Channel::MessagePtr relay_message = CreateMessage(
-      MessageType::RELAY_PORTS_MESSAGE, num_bytes, nullptr, &data);
+      MessageType::RELAY_PORTS_MESSAGE, num_bytes, 0, &data);
   data->destination = destination;
-  data->identifier = identifier;
-  data->handles_num_bytes = static_cast<uint32_t>(handles_num_bytes);
+  memcpy(data + 1, message->data(), message->data_num_bytes());
 
+  // When the handles are duplicated in the parent, the source handles will
+  // be closed. If the parent never receives this message then these handles
+  // will leak, but that means something else has probably broken and the
+  // sending process won't likely be around much longer.
   ScopedPlatformHandleVectorPtr handles = message->TakeHandles();
+  handles->clear();
 
-  // Copy the handles.
-  HANDLE* handles_start =
-      reinterpret_cast<HANDLE*>(reinterpret_cast<char*>(data + 1));
-  for (size_t i = 0; i < handles->size(); ++i)
-    handles_start[i] = handles.get()->at(i).handle;
-
-  // Map the handles to the destination process if we are empowered to do so.
-  if (remote_process_handle_ != base::kNullProcessHandle) {
-    for (size_t i = 0; i < handles->size(); ++i) {
-      BOOL result = DuplicateHandle(base::GetCurrentProcessHandle(),
-                                    handles_start[i], remote_process_handle_,
-                                    &handles_start[i], 0, FALSE,
-                                    DUPLICATE_SAME_ACCESS);
-      DCHECK(result);
-    }
-  }
-
-  if (handles->size() * sizeof(HANDLE) < handles_num_bytes) {
-    memset(handles_start + handles->size(), 0,
-           handles_num_bytes - handles->size() * sizeof(HANDLE));
-  }
-
-  // Copy the message bytes.
-  memcpy(reinterpret_cast<char*>(handles_start) + handles_num_bytes,
-         message->data(),
-         message->data_num_bytes());
-
-  // Hold onto these handles until we receive the RelayPortsMessageAck. This
-  // way we avoid closing them at the wrong time or leaking them.
-  {
-    base::AutoLock lock(pending_handles_lock_);
-    pending_handles_.insert(
-        std::make_pair(identifier, std::move(handles)));
-  }
-
-  channel_->Write(std::move(relay_message));
+  WriteChannelMessage(std::move(relay_message));
 }
 #endif
 
@@ -389,8 +285,10 @@ void NodeChannel::OnChannelMessage(const void* payload,
     }
 
     case MessageType::PORTS_MESSAGE: {
+      size_t num_handles = handles ? handles->size() : 0;
       Channel::MessagePtr message(
-          new Channel::Message(payload_size, std::move(handles)));
+          new Channel::Message(payload_size, num_handles));
+      message->SetHandles(std::move(handles));
       memcpy(message->mutable_payload(), payload, payload_size);
       delegate_->OnPortsMessage(std::move(message));
       break;
@@ -428,32 +326,32 @@ void NodeChannel::OnChannelMessage(const void* payload,
       const IntroductionData* data;
       GetMessagePayload(payload, &data);
       ScopedPlatformHandle handle;
-#if defined(OS_WIN)
-      if (payload_size == sizeof(IntroductionData) + sizeof(Header) +
-              sizeof(HANDLE)) {
-        const HANDLE* handles = reinterpret_cast<const HANDLE*>(data + 1);
-        handle.reset(PlatformHandle(handles[0]));
-      }
-#else
       if (handles && !handles->empty()) {
         handle = ScopedPlatformHandle(handles->at(0));
         handles->clear();
       }
-#endif
       delegate_->OnIntroduce(remote_node_name_, data->name, std::move(handle));
       break;
     }
 
 #if defined(OS_WIN)
     case MessageType::RELAY_PORTS_MESSAGE: {
-      OnRelayPortsMessage(payload, payload_size);
-      break;
-    }
-
-    case MessageType::RELAY_PORTS_MESSAGE_ACK: {
-      const RelayPortsMessageAckData* data;
+      base::ProcessHandle from_process;
+      {
+        base::AutoLock lock(remote_process_handle_lock_);
+        from_process = remote_process_handle_;
+      }
+      const RelayPortsMessageData* data;
       GetMessagePayload(payload, &data);
-      OnRelayPortsMessageAck(data->identifier);
+      const void* message_start = data + 1;
+      Channel::MessagePtr message = Channel::Message::Deserialize(
+          message_start, payload_size - sizeof(Header) - sizeof(*data));
+      if (!message) {
+        DLOG(ERROR) << "Dropping invalid relay message.";
+        break;
+      }
+      delegate_->OnRelayPortsMessage(remote_node_name_, from_process,
+                                     data->destination, std::move(message));
       break;
     }
 #endif
@@ -478,50 +376,42 @@ void NodeChannel::OnChannelError() {
   delegate_->OnChannelError(node_name);
 }
 
+void NodeChannel::WriteChannelMessage(Channel::MessagePtr message) {
 #if defined(OS_WIN)
-void NodeChannel::OnRelayPortsMessage(const void* payload,
-                                      size_t payload_size) {
-  const RelayPortsMessageData* data;
-  GetMessagePayload(payload, &data);
+  // Map handles to the destination process. Note: only messages from the parent
+  // node should contain handles on Windows. If a child node needs to send
+  // handles, it should do so via RelayPortsMessage, which stashes the handles
+  // in the message in such a way that they go undetected here.
 
-  const HANDLE* handles_start =
-      reinterpret_cast<const HANDLE*>(reinterpret_cast<const char*>(data + 1));
-  const char* message_start =
-      reinterpret_cast<const char*>(handles_start) + data->handles_num_bytes;
-  const char* message_end = static_cast<const char*>(payload) + payload_size;
-  size_t message_size = message_end - message_start;
+  if (message->has_handles()) {
+    base::ProcessHandle remote_process_handle;
+    {
+      base::AutoLock lock(remote_process_handle_lock_);
+      remote_process_handle = remote_process_handle_;
+    }
 
-  // Maybe we should be killing the guy who sent us this message instead.
-  CHECK(message_end > message_start);
-
-  Channel::MessagePtr message(
-      new Channel::Message(message_start, message_size));
-
-  // Maybe we should be killing the guy who sent us this message instead.
-  CHECK(message->num_handles() * sizeof(HANDLE) <= data->handles_num_bytes);
-
-  ScopedPlatformHandleVectorPtr handles(new PlatformHandleVector());
-  for (size_t i = 0; i < message->num_handles(); ++i)
-    handles.get()->push_back(PlatformHandle(handles_start[i]));
-  message->SetHandles(std::move(handles));
-
-  // Send 'ack' message
-  RelayPortsMessageAckData* ack_data;
-  Channel::MessagePtr ack_message = CreateMessage(
-      MessageType::RELAY_PORTS_MESSAGE_ACK, sizeof(*ack_data), nullptr,
-      &ack_data);
-  ack_data->identifier = data->identifier;
-  ack_data->padding = 0;
-  channel_->Write(std::move(ack_message));
-
-  delegate_->OnRelayPortsMessage(data->destination, std::move(message));
-}
-
-void NodeChannel::OnRelayPortsMessageAck(uint32_t identifier) {
-  pending_handles_.erase(identifier);
-}
-
+    if (remote_process_handle == base::kNullProcessHandle) {
+      DLOG(ERROR) << "Sending a message with handles as a non-parent. "
+                  << "This is most likely broken.";
+    } else {
+      for (size_t i = 0; i < message->num_handles(); ++i) {
+        BOOL result = DuplicateHandle(
+            base::GetCurrentProcessHandle(), message->handles()[i].handle,
+            remote_process_handle,
+            reinterpret_cast<HANDLE*>(message->handles() + i), 0, FALSE,
+            DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE);
+        DCHECK(result);
+      }
+    }
+  }
 #endif
+
+  base::AutoLock lock(channel_lock_);
+  if (!channel_)
+    DLOG(ERROR) << "Dropping message on closed channel.";
+  else
+    channel_->Write(std::move(message));
+}
 
 }  // namespace edk
 }  // namespace mojo

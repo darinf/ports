@@ -73,7 +73,7 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final : public Dispatcher {
                       uint32_t* num_platform_handles) override;
   bool EndSerialize(void* destination,
                     ports::PortName* ports,
-                    PlatformHandleVector* handles) override;
+                    PlatformHandle* handles) override;
   bool BeginTransit() override;
   void CompleteTransitAndClose() override;
   void CancelTransit() override;

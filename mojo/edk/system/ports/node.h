@@ -100,13 +100,6 @@ class Node {
                    std::function<bool(const Message&)> selector,
                    ScopedMessage* message);
 
-  // Allocate a message that can be passed to SendMessage. The caller may
-  // mutate the payload and ports arrays before passing the message to
-  // SendMessage. The header array should not be modified by the caller.
-  int AllocMessage(size_t num_payload_bytes,
-                   size_t num_ports,
-                   ScopedMessage* message);
-
   // Sends a message from the specified port to its peer. Note that the message
   // notification may arrive synchronously (via PortStatusChanged() on the
   // delegate) if the peer is local to this Node.

@@ -45,11 +45,13 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
         const ports::PortName& connectee_port_name) = 0;
     virtual void OnRequestIntroduction(const ports::NodeName& from_node,
                                        const ports::NodeName& name) = 0;
-    virtual void OnIntroduce(const ports::NodeName& from_name,
+    virtual void OnIntroduce(const ports::NodeName& from_node,
                              const ports::NodeName& name,
                              ScopedPlatformHandle channel_handle) = 0;
 #if defined(OS_WIN)
-    virtual void OnRelayPortsMessage(const ports::NodeName& destination,
+    virtual void OnRelayPortsMessage(const ports::NodeName& from_node,
+                                     base::ProcessHandle from_process,
+                                     const ports::NodeName& destination,
                                      Channel::MessagePtr message) = 0;
 #endif
 
@@ -61,10 +63,9 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
       ScopedPlatformHandle platform_handle,
       scoped_refptr<base::TaskRunner> io_task_runner);
 
-  static Channel::MessagePtr CreatePortsMessage(
-      size_t payload_size,
-      void** payload,
-      ScopedPlatformHandleVectorPtr platform_handles);
+  static Channel::MessagePtr CreatePortsMessage(size_t payload_size,
+                                                void** payload,
+                                                size_t num_handles);
 
   static void GetPortsMessageData(Channel::Message* message, void** data,
                                   size_t* num_data_bytes);
@@ -115,10 +116,7 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
                         ScopedPlatformHandleVectorPtr handles) override;
   void OnChannelError() override;
 
-#if defined(OS_WIN)
-  void OnRelayPortsMessage(const void* payload, size_t payload_size);
-  void OnRelayPortsMessageAck(uint32_t identifier);
-#endif
+  void WriteChannelMessage(Channel::MessagePtr message);
 
   Delegate* const delegate_;
   const scoped_refptr<base::TaskRunner> io_task_runner_;
@@ -130,10 +128,8 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
   ports::NodeName remote_node_name_;
 
 #if defined(OS_WIN)
+  base::Lock remote_process_handle_lock_;
   base::ProcessHandle remote_process_handle_ = base::kNullProcessHandle;
-  base::Lock pending_handles_lock_;
-  std::unordered_map<uint32_t /* identifier */,
-                     ScopedPlatformHandleVectorPtr> pending_handles_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(NodeChannel);

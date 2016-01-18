@@ -196,7 +196,7 @@ void SharedBufferDispatcher::StartSerialize(uint32_t* num_bytes,
 
 bool SharedBufferDispatcher::EndSerialize(void* destination,
                                           ports::PortName* ports,
-                                          PlatformHandleVector* handles) {
+                                          PlatformHandle* handles) {
   SerializedSharedBufferDispatcher* serialization =
       static_cast<SerializedSharedBufferDispatcher*>(destination);
   base::AutoLock lock(lock_);
@@ -207,8 +207,7 @@ bool SharedBufferDispatcher::EndSerialize(void* destination,
     shared_buffer_ = nullptr;
     return false;
   }
-
-  handles->push_back(handle_for_transit_.get());
+  handles[0] = handle_for_transit_.get();
   return true;
 }
 

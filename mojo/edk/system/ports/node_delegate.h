@@ -23,11 +23,9 @@ class NodeDelegate {
   virtual void GenerateRandomPortName(PortName* port_name) = 0;
 
   // Allocate a message, including a header that can be used by the Node
-  // implementation. |num_header_bytes| will be aligned. |num_payload_bytes|
-  // may not be aligned. The newly allocated memory need not be zero-filled.
+  // implementation. |num_header_bytes| will be aligned. The newly allocated
+  // memory need not be zero-filled.
   virtual void AllocMessage(size_t num_header_bytes,
-                            size_t num_payload_bytes,
-                            size_t num_ports_bytes,
                             ScopedMessage* message) = 0;
 
   // Forward a message asynchronously to the specified node. This method MUST

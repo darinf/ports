@@ -92,6 +92,61 @@ TEST_F(SharedBufferTest, PassSharedBufferFromChild) {
   ExpectBufferContents(b, 0, message);
 }
 
+DEFINE_TEST_CLIENT_WITH_PIPE(CreateAndPassBuffer, SharedBufferTest, h) {
+  // Receive a pipe handle over the primordial pipe. This will be connected to
+  // another child process.
+  MojoHandle other_child;
+  std::string message = ReadMessageWithHandles(h, &other_child, 1);
+
+  // Create a new shared buffer.
+  MojoHandle b = CreateBuffer(message.size());
+
+  // Send a copy of the buffer to the parent and the other child.
+  MojoHandle dupe = DuplicateBuffer(b);
+  WriteMessageWithHandles(h, "", &b, 1);
+  WriteMessageWithHandles(other_child, "", &dupe, 1);
+
+  return 0;
+}
+
+DEFINE_TEST_CLIENT_WITH_PIPE(ReceiveAndEditBuffer, SharedBufferTest, h) {
+  // Receive a pipe handle over the primordial pipe. This will be connected to
+  // another child process (running CreateAndPassBuffer).
+  MojoHandle other_child;
+  std::string message = ReadMessageWithHandles(h, &other_child, 1);
+
+  // Receive a shared buffer from the other child.
+  MojoHandle b;
+  ReadMessageWithHandles(other_child, &b, 1);
+
+  // Write the message from the parent into the buffer and exit.
+  WriteToBuffer(b, 0, message);
+  return 0;
+}
+
+TEST_F(SharedBufferTest, PassSharedBufferFromChildToChild) {
+  const std::string message = "hello";
+  MojoHandle p0, p1;
+  CreateMessagePipe(&p0, &p1);
+
+  MojoHandle b;
+  RUN_CHILD_ON_PIPE(CreateAndPassBuffer, h0)
+    RUN_CHILD_ON_PIPE(ReceiveAndEditBuffer, h1)
+      // Send one end of the pipe to each child. The first child will create
+      // and pass a buffer to the second child and back to us. The second child
+      // will write our message into the buffer.
+      WriteMessageWithHandles(h0, message, &p0, 1);
+      WriteMessageWithHandles(h1, message, &p1, 1);
+
+      // Receive the buffer back from the first child.
+      ReadMessageWithHandles(h0, &b, 1);
+    END_CHILD()
+  END_CHILD()
+
+  // The second child should have written this message.
+  ExpectBufferContents(b, 0, message);
+}
+
 }  // namespace
 }  // namespace edk
 }  // namespace mojo

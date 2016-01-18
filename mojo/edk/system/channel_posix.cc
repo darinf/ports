@@ -125,7 +125,9 @@ class ChannelPosix : public Channel,
   }
 
   ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
-      size_t num_handles) override {
+      size_t num_handles,
+      void** payload,
+      size_t* payload_size) override {
     if (incoming_platform_handles_.size() < num_handles)
       return nullptr;
     ScopedPlatformHandleVectorPtr handles(

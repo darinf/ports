@@ -112,6 +112,7 @@ MojoResult MessagePipeDispatcher::WriteMessage(
   size_t header_size = sizeof(MessageHeader) +
       num_dispatchers * sizeof(DispatcherHeader);
   size_t num_ports = 0;
+  size_t num_handles = 0;
 
   std::vector<DispatcherInfo> dispatcher_info(num_dispatchers);
   for (size_t i = 0; i < num_dispatchers; ++i) {
@@ -121,10 +122,11 @@ MojoResult MessagePipeDispatcher::WriteMessage(
                       &dispatcher_info[i].num_handles);
     header_size += dispatcher_info[i].num_bytes;
     num_ports += dispatcher_info[i].num_ports;
+    num_handles += dispatcher_info[i].num_handles;
   }
 
-  scoped_ptr<PortsMessage> message =
-      node_controller_->AllocMessage(header_size + num_bytes, num_ports);
+  scoped_ptr<PortsMessage> message = PortsMessage::NewUserMessage(
+      header_size + num_bytes, num_ports, num_handles);
   DCHECK(message);
 
   // Populate the message header with information about serialized dispatchers.
@@ -143,31 +145,31 @@ MojoResult MessagePipeDispatcher::WriteMessage(
 
   bool cancel_transit = false;
   if (num_dispatchers > 0) {
-    ScopedPlatformHandleVectorPtr handles(new PlatformHandleVector);
+    ScopedPlatformHandleVectorPtr handles(
+        new PlatformHandleVector(num_handles));
     size_t port_index = 0;
+    size_t handle_index = 0;
     for (size_t i = 0; i < num_dispatchers; ++i) {
       Dispatcher* d = dispatchers[i].dispatcher.get();
-
       DispatcherHeader* dh = &dispatcher_headers[i];
-      dh->type = static_cast<int32_t>(d->GetType());
-      dh->num_bytes = dispatcher_info[i].num_bytes;
-      dh->num_ports = dispatcher_info[i].num_ports;
-      dh->num_platform_handles = dispatcher_info[i].num_handles;
+      const DispatcherInfo& info = dispatcher_info[i];
 
-      std::vector<ports::PortName> ports(dispatcher_info[i].num_ports);
-      if (!d->EndSerialize(dispatcher_data, ports.data(), handles.get())) {
+      dh->type = static_cast<int32_t>(d->GetType());
+      dh->num_bytes = info.num_bytes;
+      dh->num_ports = info.num_ports;
+      dh->num_platform_handles = info.num_handles;
+
+      if (!d->EndSerialize(dispatcher_data,
+                           message->mutable_ports() + port_index,
+                           handles->data() + handle_index)) {
         cancel_transit = true;
         break;
       }
 
-      if (!ports.empty()) {
-        std::copy(ports.begin(), ports.end(),
-                  message->mutable_ports() + port_index);
-        port_index += ports.size();
-      }
-
+      port_index += info.num_ports;
+      handle_index += info.num_handles;
       dispatcher_data = static_cast<void*>(
-          static_cast<char*>(dispatcher_data) + dh->num_bytes);
+          static_cast<char*>(dispatcher_data) + info.num_bytes);
     }
 
     if (!cancel_transit) {
@@ -417,7 +419,7 @@ void MessagePipeDispatcher::StartSerialize(uint32_t* num_bytes,
 
 bool MessagePipeDispatcher::EndSerialize(void* destination,
                                          ports::PortName* ports,
-                                         PlatformHandleVector* handles) {
+                                         PlatformHandle* handles) {
   ports[0] = port_.name();
   return true;
 }

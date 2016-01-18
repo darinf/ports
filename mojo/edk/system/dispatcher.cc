@@ -126,7 +126,7 @@ void Dispatcher::StartSerialize(uint32_t* num_bytes,
 
 bool Dispatcher::EndSerialize(void* destination,
                               ports::PortName* ports,
-                              PlatformHandleVector* handles) {
+                              PlatformHandle* handles) {
   LOG(ERROR) << "Attempting to serialize a non-transferrable dispatcher.";
   return true;
 }

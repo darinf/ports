@@ -15,7 +15,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "mojo/edk/embedder/platform_handle_vector.h"
+#include "mojo/edk/embedder/platform_handle.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/ports/name.h"
@@ -202,7 +202,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // condition.
   virtual bool EndSerialize(void* destination,
                             ports::PortName* ports,
-                            PlatformHandleVector* handles);
+                            PlatformHandle* handles);
 
   // Does whatever is necessary to begin transit of the dispatcher.  This
   // should return |true| if transit is OK, or false if the underlying resource

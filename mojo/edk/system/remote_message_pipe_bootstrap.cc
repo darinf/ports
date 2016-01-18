@@ -33,7 +33,7 @@ class ParentBootstrap : public RemoteMessagePipeBootstrap {
                   const std::string& token)
       : RemoteMessagePipeBootstrap(std::move(platform_handle)) {
     DCHECK_LE(token.size(), kMaxTokenSize);
-    Channel::MessagePtr message(new Channel::Message(token.size(), nullptr));
+    Channel::MessagePtr message(new Channel::Message(token.size(), 0));
     memcpy(message->mutable_payload(), token.data(), token.size());
     channel_->Write(std::move(message));
   }

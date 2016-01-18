@@ -70,9 +70,6 @@ class NodeController : public ports::NodeDelegate,
   void SetPortObserver(const ports::PortRef& port,
                        const scoped_refptr<PortObserver>& observer);
 
-  scoped_ptr<PortsMessage> AllocMessage(size_t num_payload_bytes,
-                                        size_t num_ports);
-
   // Sends a message on a port to its peer. If message send fails, |message|
   // is left intact. Otherwise ownership is transferred and it's reset.
   int SendMessage(const ports::PortRef& port_ref,
@@ -127,8 +124,6 @@ class NodeController : public ports::NodeDelegate,
   // ports::NodeDelegate:
   void GenerateRandomPortName(ports::PortName* port_name) override;
   void AllocMessage(size_t num_header_bytes,
-                    size_t num_payload_bytes,
-                    size_t num_ports,
                     ports::ScopedMessage* message) override;
   void ForwardMessage(const ports::NodeName& node,
                       ports::ScopedMessage message) override;
@@ -154,7 +149,9 @@ class NodeController : public ports::NodeDelegate,
                    const ports::NodeName& name,
                    ScopedPlatformHandle channel_handle) override;
 #if defined(OS_WIN)
-  void OnRelayPortsMessage(const ports::NodeName& destination,
+  void OnRelayPortsMessage(const ports::NodeName& from_node,
+                           base::ProcessHandle from_process,
+                           const ports::NodeName& destination,
                            Channel::MessagePtr message) override;
 #endif
   void OnChannelError(const ports::NodeName& from_node) override;

@@ -33,8 +33,7 @@ class MessageView {
   // Owns |message|. |offset| indexes the first unsent byte in the message.
   MessageView(Channel::MessagePtr message, size_t offset)
       : message_(std::move(message)),
-        offset_(offset),
-        handles_(message_->TakeHandles()) {
+        offset_(offset) {
     DCHECK_GT(message_->data_num_bytes(), offset_);
   }
 
@@ -43,7 +42,6 @@ class MessageView {
   MessageView& operator=(MessageView&& other) {
     message_ = std::move(other.message_);
     offset_ = other.offset_;
-    handles_ = std::move(other.handles_);
     return *this;
   }
 
@@ -61,15 +59,11 @@ class MessageView {
     offset_ += num_bytes;
   }
 
-  bool has_handles() const { return handles_; }
-
-  ScopedPlatformHandleVectorPtr TakeHandles() { return std::move(handles_); }
-  Channel::MessagePtr TakeMessage() { return std::move(message_); }
+  Channel::MessagePtr TakeChannelMessage() { return std::move(message_); }
 
  private:
   Channel::MessagePtr message_;
   size_t offset_;
-  ScopedPlatformHandleVectorPtr handles_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageView);
 };
@@ -125,24 +119,24 @@ class ChannelWin : public Channel,
   }
 
   ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
-      size_t num_handles) override {
-    if (incoming_platform_handles_.size() < num_handles)
+      size_t num_handles,
+      void** payload,
+      size_t* payload_size) override {
+    size_t handles_size = sizeof(PlatformHandle) * num_handles;
+    if (handles_size > *payload_size)
       return nullptr;
+
+    *payload_size -= handles_size;
     ScopedPlatformHandleVectorPtr handles(
         new PlatformHandleVector(num_handles));
-    for (size_t i = 0; i < num_handles; ++i) {
-      (*handles)[i] = incoming_platform_handles_.front();
-      incoming_platform_handles_.pop_front();
-    }
+    memcpy(handles->data(),
+           static_cast<const char*>(*payload) + *payload_size, handles_size);
     return handles;
   }
 
  private:
   // May run on any thread.
-  ~ChannelWin() override {
-    for (auto handle : incoming_platform_handles_)
-      handle.CloseIfNecessary();
-  }
+  ~ChannelWin() override {}
 
   void StartOnIOThread() {
     base::MessageLoop::current()->AddDestructionObserver(this);
@@ -220,8 +214,15 @@ class ChannelWin : public Channel,
 
       MessageView& message_view = outgoing_messages_.front();
       message_view.advance_data_offset(bytes_written);
-      if (message_view.data_num_bytes() == 0)
+      if (message_view.data_num_bytes() == 0) {
+        Channel::MessagePtr message = message_view.TakeChannelMessage();
         outgoing_messages_.pop_front();
+
+        // Clear any handles so they don't get closed on destruction.
+        ScopedPlatformHandleVectorPtr handles = message->TakeHandles();
+        if (handles)
+          handles->clear();
+      }
 
       if (!WriteNextNoLock())
         reject_writes_ = write_error = true;
@@ -279,8 +280,6 @@ class ChannelWin : public Channel,
 
   base::MessageLoopForIO::IOContext read_context_;
   base::MessageLoopForIO::IOContext write_context_;
-
-  std::deque<PlatformHandle> incoming_platform_handles_;
 
   // Protects |reject_writes_| and |outgoing_messages_|.
   base::Lock write_lock_;

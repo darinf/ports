@@ -230,26 +230,6 @@ int Node::GetMessageIf(const PortRef& port_ref,
   return OK;
 }
 
-int Node::AllocMessage(size_t num_payload_bytes,
-                       size_t num_ports,
-                       ScopedMessage* message) {
-  size_t num_header_bytes = sizeof(EventHeader) +
-                            sizeof(UserEventData) +
-                            num_ports * sizeof(PortDescriptor);
-  size_t num_ports_bytes = num_ports * sizeof(PortName);
-
-  delegate_->AllocMessage(
-      num_header_bytes, num_payload_bytes, num_ports_bytes, message);
-
-  memset((*message)->mutable_header_bytes(), 0, (*message)->num_header_bytes());
-
-  GetMutableEventHeader(message->get())->type = EventType::kUser;
-  GetMutableEventData<UserEventData>(message->get())->num_ports =
-      static_cast<uint32_t>(num_ports);
-
-  return OK;
-}
-
 int Node::SendMessage(const PortRef& port_ref, ScopedMessage* message) {
   ScopedMessage& m = *message;
   for (size_t i = 0; i < m->num_ports(); ++i) {
@@ -943,7 +923,7 @@ ScopedMessage Node::NewInternalMessage_Helper(const PortName& port_name,
                                               const void* data,
                                               size_t num_data_bytes) {
   ScopedMessage message;
-  delegate_->AllocMessage(sizeof(EventHeader) + num_data_bytes, 0, 0, &message);
+  delegate_->AllocMessage(sizeof(EventHeader) + num_data_bytes, &message);
 
   EventHeader* header = GetMutableEventHeader(message.get());
   header->port_name = port_name;

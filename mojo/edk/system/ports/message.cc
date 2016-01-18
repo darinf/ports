@@ -58,13 +58,28 @@ void Message::Parse(const void* bytes,
   }
 }
 
+Message::Message(size_t num_payload_bytes, size_t num_ports)
+    : Message(sizeof(EventHeader) + sizeof(UserEventData) +
+                  num_ports * sizeof(PortDescriptor),
+              num_payload_bytes, num_ports * sizeof(PortName)) {
+  num_ports_ = num_ports;
+}
+
 Message::Message(size_t num_header_bytes,
                  size_t num_payload_bytes,
                  size_t num_ports_bytes)
     : start_(nullptr),
       num_header_bytes_(num_header_bytes),
-      num_ports_bytes_(num_ports_bytes),
-      num_payload_bytes_(num_payload_bytes) {
+      num_payload_bytes_(num_payload_bytes),
+      num_ports_bytes_(num_ports_bytes) {
+}
+
+void Message::InitializeUserMessageHeader(void* start) {
+  start_ = static_cast<char*>(start);
+  memset(start_, 0, num_header_bytes_);
+  GetMutableEventHeader(this)->type = EventType::kUser;
+  GetMutableEventData<UserEventData>(this)->num_ports =
+      static_cast<uint32_t>(num_ports_);
 }
 
 }  // namespace ports

@@ -114,17 +114,6 @@ void NodeController::SetPortObserver(
   node_->SetUserData(port, observer);
 }
 
-scoped_ptr<PortsMessage> NodeController::AllocMessage(size_t num_payload_bytes,
-                                                      size_t num_ports) {
-  ports::ScopedMessage m;
-  int rv = node_->AllocMessage(num_payload_bytes, num_ports, &m);
-  if (rv != ports::OK)
-    return nullptr;
-  DCHECK(m);
-
-  return make_scoped_ptr(static_cast<PortsMessage*>(m.release()));
-}
-
 int NodeController::SendMessage(const ports::PortRef& port,
                                 scoped_ptr<PortsMessage>* message) {
   ports::ScopedMessage ports_message(message->release());
@@ -297,33 +286,20 @@ void NodeController::SendPeerMessage(const ports::NodeName& name,
   PortsMessage* ports_message = static_cast<PortsMessage*>(message.get());
 
 #if defined(OS_WIN)
+  // If we're sending a message with handles and we're not the parent,
+  // relay the message through the parent.
   if (ports_message->has_handles()) {
     scoped_refptr<NodeChannel> parent = GetParentChannel();
     if (parent) {
       parent->RelayPortsMessage(name, ports_message->TakeChannelMessage());
       return;
     }
-
-    // We must be the parent.
-    scoped_refptr<NodeChannel> peer = GetPeerChannel(name);
-    if (peer)
-      peer->RelayPortsMessage(name, ports_message->TakeChannelMessage());
-    else
-      DVLOG(2) << "Dropping message for unknown peer: " << name;
-
-    return;
   }
 #endif
 
   scoped_refptr<NodeChannel> peer = GetPeerChannel(name);
   if (peer) {
     peer->PortsMessage(ports_message->TakeChannelMessage());
-    return;
-  }
-
-  scoped_refptr<NodeChannel> parent = GetParentChannel();
-  if (!parent) {
-    DVLOG(1) << "Dropping message for unknown peer: " << name;
     return;
   }
 
@@ -339,8 +315,14 @@ void NodeController::SendPeerMessage(const ports::NodeName& name,
     queue.emplace(std::move(message));
   }
 
-  if (needs_introduction)
+  if (needs_introduction) {
+    scoped_refptr<NodeChannel> parent = GetParentChannel();
+    if (!parent) {
+      DVLOG(1) << "Dropping message for unknown peer: " << name;
+      return;
+    }
     parent->RequestIntroduction(name);
+  }
 }
 
 void NodeController::AcceptIncomingMessages() {
@@ -388,11 +370,8 @@ void NodeController::GenerateRandomPortName(ports::PortName* port_name) {
 }
 
 void NodeController::AllocMessage(size_t num_header_bytes,
-                                  size_t num_payload_bytes,
-                                  size_t num_ports_bytes,
                                   ports::ScopedMessage* message) {
-  message->reset(new PortsMessage(num_header_bytes, num_payload_bytes,
-                                  num_ports_bytes, nullptr));
+  message->reset(new PortsMessage(num_header_bytes, 0, 0, nullptr));
 }
 
 void NodeController::ForwardMessage(const ports::NodeName& node,
@@ -500,6 +479,7 @@ void NodeController::OnPortsMessage(Channel::MessagePtr channel_message) {
                         &num_payload_bytes,
                         &num_ports_bytes);
 
+  CHECK(channel_message);
   ports::ScopedMessage message(
       new PortsMessage(num_header_bytes,
                        num_payload_bytes,
@@ -597,6 +577,11 @@ void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,
     return;
   }
 
+  if (GetParentChannel() != nullptr) {
+    DLOG(ERROR) << "Non-parent node cannot introduce peers to each other.";
+    return;
+  }
+
   scoped_refptr<NodeChannel> new_friend = GetPeerChannel(name);
   if (!new_friend) {
     // We don't know who they're talking about!
@@ -613,11 +598,14 @@ void NodeController::OnIntroduce(const ports::NodeName& from_node,
                                  ScopedPlatformHandle channel_handle) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
-  if (from_node != parent_name_) {
-    DLOG(ERROR) << "Received unexpected Introduce message from node "
-                << from_node;
-    DropPeer(from_node);
-    return;
+  {
+    base::AutoLock lock(parent_lock_);
+    if (from_node != parent_name_) {
+      DLOG(ERROR) << "Received unexpected Introduce message from node "
+                  << from_node;
+      DropPeer(from_node);
+      return;
+    }
   }
 
   if (!channel_handle.is_valid()) {
@@ -635,8 +623,34 @@ void NodeController::OnIntroduce(const ports::NodeName& from_node,
 }
 
 #if defined(OS_WIN)
-void NodeController::OnRelayPortsMessage(const ports::NodeName& destination,
+void NodeController::OnRelayPortsMessage(const ports::NodeName& from_node,
+                                         base::ProcessHandle from_process,
+                                         const ports::NodeName& destination,
                                          Channel::MessagePtr message) {
+  scoped_refptr<NodeChannel> parent = GetParentChannel();
+  if (parent) {
+    // Only the parent should be asked to relay a message.
+    DLOG(ERROR) << "Non-parent refusing to relay message.";
+    DropPeer(from_node);
+    return;
+  }
+
+  // The parent should always know which process this came from.
+  DCHECK(from_process != base::kNullProcessHandle);
+
+  // Duplicate the handles to this (the parent) process. If the message is
+  // destined for another child process, the handles will be duplicated to
+  // that process before going out (see NodeChannel::WriteChannelMessage).
+  //
+  // TODO: We could avoid double-duplication.
+  for (size_t i = 0; i < message->num_handles(); ++i) {
+    BOOL result = DuplicateHandle(
+        from_process, message->handles()[i].handle,
+        base::GetCurrentProcessHandle(),
+        reinterpret_cast<HANDLE*>(message->handles() + i),
+        0, FALSE, DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE);
+    DCHECK(result);
+  }
   if (destination == name_) {
     // Great, we can deliver this message locally.
     OnPortsMessage(std::move(message));
@@ -644,11 +658,10 @@ void NodeController::OnRelayPortsMessage(const ports::NodeName& destination,
   }
 
   scoped_refptr<NodeChannel> peer = GetPeerChannel(destination);
-  if (peer) {
-    peer->RelayPortsMessage(destination, std::move(message));
-  } else {
-    DLOG(ERROR) << "Dropping relay message to unknown node: " << destination;
-  }
+  if (peer)
+    peer->PortsMessage(std::move(message));
+  else
+    DLOG(ERROR) << "Dropping relay message for unknown node " << destination;
 }
 #endif
 

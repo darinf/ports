@@ -7,6 +7,7 @@
 
 #include <utility>
 
+#include "base/memory/scoped_ptr.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/system/channel.h"
 #include "mojo/edk/system/ports/message.h"
@@ -14,14 +15,14 @@
 namespace mojo {
 namespace edk {
 
+class NodeController;
+
 class PortsMessage : public ports::Message {
  public:
-  // If |channel_message| is null, then a Channel::Message will be allocated.
-  // Otherwise, the given message will be used as the backing store.
-  PortsMessage(size_t num_header_bytes,
-               size_t num_payload_bytes,
-               size_t num_ports_bytes,
-               Channel::MessagePtr channel_message);
+  static scoped_ptr<PortsMessage> NewUserMessage(size_t num_payload_bytes,
+                                                 size_t num_ports,
+                                                 size_t num_handles);
+
   ~PortsMessage() override;
 
   PlatformHandle* handles() { return channel_message_->handles(); }
@@ -37,6 +38,18 @@ class PortsMessage : public ports::Message {
   }
 
  private:
+  friend class NodeController;
+
+  // Construct a new user PortsMessage backed by a new Channel::Message.
+  PortsMessage(size_t num_payload_bytes, size_t num_ports, size_t num_handles);
+
+  // Construct a new PortsMessage backed by a Channel::Message. If
+  // |channel_message| is null, a new one is allocated internally.
+  PortsMessage(size_t num_header_bytes,
+               size_t num_payload_bytes,
+               size_t num_ports_bytes,
+               Channel::MessagePtr channel_message);
+
   Channel::MessagePtr channel_message_;
 };
 

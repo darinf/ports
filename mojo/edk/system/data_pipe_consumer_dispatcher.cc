@@ -289,7 +289,7 @@ void DataPipeConsumerDispatcher::StartSerialize(uint32_t* num_bytes,
 bool DataPipeConsumerDispatcher::EndSerialize(
     void* destination,
     ports::PortName* ports,
-    PlatformHandleVector* platform_handles) {
+    PlatformHandle* platform_handles) {
   SerializedState* state = static_cast<SerializedState*>(destination);
   memcpy(&state->options, &options_, sizeof(MojoCreateDataPipeOptions));
 
@@ -302,7 +302,7 @@ bool DataPipeConsumerDispatcher::EndSerialize(
   ports[0] = control_port_.name();
 
   buffer_handle_for_transit_ = shared_ring_buffer_->DuplicatePlatformHandle();
-  platform_handles->push_back(buffer_handle_for_transit_.get());
+  platform_handles[0] = buffer_handle_for_transit_.get();
 
   return true;
 }
