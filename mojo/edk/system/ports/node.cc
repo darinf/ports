@@ -148,6 +148,12 @@ int Node::ClosePort(const PortRef& port_ref) {
   Port* port = port_ref.port();
   {
     base::AutoLock lock(port->lock);
+    if (port->state == Port::kUninitialized) {
+      // If the port was not yet initialized, there's nothing interesting to do.
+      ErasePort_Locked(port_ref.name());
+      return OK;
+    }
+
     if (port->state != Port::kReceiving)
       return ERROR_PORT_STATE_UNEXPECTED;
 

@@ -480,7 +480,7 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
   port_closed_ = true;
   awakables_.CancelAll();
 
-  if (!port_transferred_ && port_connected_) {
+  if (!port_transferred_) {
     int rv = node_controller_->node()->ClosePort(port_);
     DCHECK_EQ(ports::OK, rv);
   }
