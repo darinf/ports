@@ -1149,6 +1149,58 @@ TEST_F(MultiprocessMessagePipeTest, SendPipeThenClosePeer) {
   END_CHILD()
 }
 
+DEFINE_TEST_CLIENT_TEST_WITH_PIPE(SendOtherChildPipeWithClosedPeer,
+                                  MultiprocessMessagePipeTest, h) {
+  // Create a new pipe and send one end to the parent, who will connect it to
+  // a client running ReceivePipeWithClosedPeerFromOtherChild.
+  MojoHandle application_proxy, application_request;
+  CreateMessagePipe(&application_proxy, &application_request);
+  WriteMessageWithHandles(h, "c2a plz", &application_request, 1);
+
+  // Create another pipe and send one end to the remote "application".
+  MojoHandle service_proxy, service_request;
+  CreateMessagePipe(&service_proxy, &service_request);
+  WriteMessageWithHandles(application_proxy, "c2s lol", &service_request, 1);
+
+  // Immediately close the service proxy. The "application" should detect this.
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(service_proxy));
+
+  // Wait for quit.
+  EXPECT_EQ("quit", ReadMessage(h));
+}
+
+DEFINE_TEST_CLIENT_TEST_WITH_PIPE(ReceivePipeWithClosedPeerFromOtherChild,
+                                  MultiprocessMessagePipeTest, h) {
+  // Receive a pipe from the parent. This is akin to an "application request".
+  MojoHandle application_client;
+  EXPECT_EQ("c2a", ReadMessageWithHandles(h, &application_client, 1));
+
+  // Receive a pipe from the "application" "client".
+  MojoHandle service_client;
+  EXPECT_EQ("c2s lol",
+            ReadMessageWithHandles(application_client, &service_client, 1));
+
+  // Wait for the service client to signal closure.
+  EXPECT_EQ(MOJO_RESULT_OK, MojoWait(service_client,
+                                     MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+                                     MOJO_DEADLINE_INDEFINITE, nullptr));
+}
+
+TEST_F(MultiprocessMessagePipeTest, SendPipeWithClosedPeerBetweenChildren) {
+  RUN_CHILD_ON_PIPE(SendOtherChildPipeWithClosedPeer, kid_a)
+    RUN_CHILD_ON_PIPE(ReceivePipeWithClosedPeerFromOtherChild, kid_b)
+      // Receive an "application request" from the first child and forward it
+      // to the second child.
+      MojoHandle application_request;
+      EXPECT_EQ("c2a plz",
+                ReadMessageWithHandles(kid_a, &application_request, 1));
+      WriteMessageWithHandles(kid_b, "c2a", &application_request, 1);
+    END_CHILD()
+
+    WriteMessage(kid_a, "quit");
+  END_CHILD()
+}
+
 }  // namespace
 }  // namespace edk
 }  // namespace mojo
