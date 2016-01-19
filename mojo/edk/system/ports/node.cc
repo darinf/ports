@@ -634,20 +634,35 @@ int Node::OnObserveClosure(const PortName& port_name,
 
       port->remove_proxy_on_last_message = true;
 
+      ObserveClosureEventData data;
+      data.last_sequence_num = last_sequence_num;
+
       // See about removing the port if it is a proxy as our peer won't be able
       // to participate in proxy removal.
       if (port->state == Port::kProxying) {
         MaybeRemoveProxy_Locked(port.get(), port_name);
 
-        // Forward this event along.
-        ObserveClosureEventData data;
-        data.last_sequence_num = last_sequence_num;
+        DVLOG(1) << "Forwarding ObserveClosure from "
+                 << port_name << "@" << name_ << " to proxy target "
+                 << next_port_name << "@" << next_node_name;
 
+        // Forward this event along.
         delegate_->ForwardMessage(
             next_node_name,
             NewInternalMessage(next_port_name,
-                               EventType::kObserveClosure,
-                               data));
+                               EventType::kObserveClosure, data));
+      } else if (port->state == Port::kBuffering) {
+        DVLOG(1) << "Will forward ObserveClosure from "
+                 << port_name << "@" << name_ << " to proxy target "
+                 << next_port_name << "@" << next_node_name
+                 << " when proxy is removed.";
+
+        // Forward it later.
+        port->send_on_proxy_removal.reset(
+            new std::pair<NodeName, ScopedMessage>(
+                next_node_name,
+                NewInternalMessage(next_port_name,
+                                   EventType::kObserveClosure, data)));
       }
     }
   }
