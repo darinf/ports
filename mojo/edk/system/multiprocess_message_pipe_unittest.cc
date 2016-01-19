@@ -910,6 +910,48 @@ TEST_F(MultiprocessMessagePipeTest, ChannelPipesWithMultipleChildren) {
   END_CHILD()
 }
 
+// Reads and turns a pipe handle some number of times to create lots of
+// transient proxies.
+DEFINE_TEST_CLIENT_TEST_WITH_PIPE(PingPongPipeClient,
+                                  MultiprocessMessagePipeTest, h) {
+  const size_t kNumBounces = 50;
+  MojoHandle p0, p1;
+  ReadMessageWithHandles(h, &p0, 1);
+  ReadMessageWithHandles(h, &p1, 1);
+  for (size_t i = 0; i < kNumBounces; ++i) {
+    WriteMessageWithHandles(h, "", &p1, 1);
+    ReadMessageWithHandles(h, &p1, 1);
+  }
+  WriteMessageWithHandles(h, "", &p0, 1);
+  WriteMessage(p1, "bye");
+  MojoClose(p1);
+  EXPECT_EQ("quit", ReadMessage(h));
+}
+
+TEST_F(MultiprocessMessagePipeTest, PingPongPipe) {
+  MojoHandle p0, p1;
+  CreateMessagePipe(&p0, &p1);
+
+  RUN_CHILD_ON_PIPE(PingPongPipeClient, h)
+    const size_t kNumBounces = 50;
+    WriteMessageWithHandles(h, "", &p0, 1);
+    WriteMessageWithHandles(h, "", &p1, 1);
+    for (size_t i = 0; i < kNumBounces; ++i) {
+      ReadMessageWithHandles(h, &p1, 1);
+      WriteMessageWithHandles(h, "", &p1, 1);
+    }
+    ReadMessageWithHandles(h, &p0, 1);
+    WriteMessage(h, "quit");
+  END_CHILD()
+
+  EXPECT_EQ("bye", ReadMessage(p0));
+
+  // We should still be able to observe peer closure from the other end.
+  EXPECT_EQ(MOJO_RESULT_OK,
+            MojoWait(p0, MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+                     MOJO_DEADLINE_INDEFINITE, nullptr));
+}
+
 // Parses commands from the parent pipe and does whatever it's asked to do.
 DEFINE_TEST_CLIENT_WITH_PIPE(CommandDrivenClient, MultiprocessMessagePipeTest,
                              h) {

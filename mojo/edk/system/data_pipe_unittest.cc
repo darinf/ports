@@ -1794,6 +1794,64 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(MultiprocessClient, DataPipeTest, client_mp) {
   EXPECT_EQ("quit", ReadMessage(client_mp));
 }
 
+DEFINE_TEST_CLIENT_TEST_WITH_PIPE(WriteAndCloseProducer, DataPipeTest, h) {
+  MojoHandle p;
+  std::string message = ReadMessageWithHandles(h, &p, 1);
+
+  // Write some data to the producer and close it.
+  uint32_t num_bytes = static_cast<uint32_t>(message.size());
+  EXPECT_EQ(MOJO_RESULT_OK, MojoWriteData(p, message.data(), &num_bytes,
+                                          MOJO_WRITE_DATA_FLAG_NONE));
+  EXPECT_EQ(num_bytes, static_cast<uint32_t>(message.size()));
+
+  // Close the producer before quitting.
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(p));
+
+  // Wait for a quit message.
+  EXPECT_EQ("quit", ReadMessage(h));
+}
+
+DEFINE_TEST_CLIENT_TEST_WITH_PIPE(ReadAndCloseConsumer, DataPipeTest, h) {
+  MojoHandle c;
+  std::string expected_message = ReadMessageWithHandles(h, &c, 1);
+
+  // Wait for the consumer to become readable.
+  EXPECT_EQ(MOJO_RESULT_OK, MojoWait(c, MOJO_HANDLE_SIGNAL_READABLE,
+                                     MOJO_DEADLINE_INDEFINITE, nullptr));
+
+  // Drain the consumer and expect to find the given message.
+  uint32_t num_bytes = static_cast<uint32_t>(expected_message.size());
+  std::vector<char> bytes(expected_message.size());
+  EXPECT_EQ(MOJO_RESULT_OK, MojoReadData(c, bytes.data(), &num_bytes,
+                                         MOJO_READ_DATA_FLAG_NONE));
+  EXPECT_EQ(num_bytes, static_cast<uint32_t>(bytes.size()));
+
+  std::string message(bytes.data(), bytes.size());
+  EXPECT_EQ(expected_message, message);
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(c));
+
+  // Wait for a quit message.
+  EXPECT_EQ("quit", ReadMessage(h));
+}
+
+TEST_F(DataPipeTest, SendConsumerAndCloseProducer) {
+  // Create a new data pipe.
+  MojoHandle p, c;
+  EXPECT_EQ(MOJO_RESULT_OK, MojoCreateDataPipe(nullptr, &p ,&c));
+
+  RUN_CHILD_ON_PIPE(WriteAndCloseProducer, producer_client)
+    RUN_CHILD_ON_PIPE(ReadAndCloseConsumer, consumer_client)
+      const std::string kMessage = "Hello, world!";
+      WriteMessageWithHandles(producer_client, kMessage, &p, 1);
+      WriteMessageWithHandles(consumer_client, kMessage, &c, 1);
+
+      WriteMessage(producer_client, "quit");
+      WriteMessage(consumer_client, "quit");
+    END_CHILD()
+  END_CHILD()
+}
+
 }  // namespace
 }  // namespace edk
 }  // namespace mojo

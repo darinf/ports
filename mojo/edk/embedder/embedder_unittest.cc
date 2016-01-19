@@ -225,7 +225,10 @@ TEST_F(EmbedderTest, MAYBE_MultiprocessChannels) {
     // 8. Close |mp0|.
     ASSERT_EQ(MOJO_RESULT_OK, MojoClose(mp0));
 
-    // 9. Wait on |mp2| (which should eventually fail) and then close it.
+    // 9. Tell the client to quit.
+    WriteMessage(server_mp, "quit");
+
+    // 10. Wait on |mp2| (which should eventually fail) and then close it.
     MojoHandleSignalsState state;
     ASSERT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
               MojoWait(mp2, MOJO_HANDLE_SIGNAL_READABLE,
@@ -266,6 +269,8 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(MultiprocessChannelsClient, EmbedderTest,
 
   // 9. Read a message from |mp1|.
   EXPECT_EQ("FOO", ReadMessage(mp1));
+
+  EXPECT_EQ("quit", ReadMessage(client_mp));
 
   // 10. Wait on |mp1| (which should eventually fail) and then close it.
   MojoHandleSignalsState state;
