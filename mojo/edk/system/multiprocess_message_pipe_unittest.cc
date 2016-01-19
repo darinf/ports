@@ -1129,6 +1129,26 @@ TEST_F(MultiprocessMessagePipeTest, MoreChildToChildPipes) {
   END_CHILD()
 }
 
+DEFINE_TEST_CLIENT_TEST_WITH_PIPE(ReceivePipeWithClosedPeer,
+                                  MultiprocessMessagePipeTest, h) {
+  MojoHandle p;
+  EXPECT_EQ("foo", ReadMessageWithHandles(h, &p, 1));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoWait(p, MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+                                     MOJO_DEADLINE_INDEFINITE, nullptr));
+}
+
+TEST_F(MultiprocessMessagePipeTest, SendPipeThenClosePeer) {
+  RUN_CHILD_ON_PIPE(ReceivePipeWithClosedPeer, h)
+    MojoHandle a, b;
+    CreateMessagePipe(&a, &b);
+
+    // Send |a| and immediately close |b|. The child should observe closure.
+    WriteMessageWithHandles(h, "foo", &a, 1);
+    MojoClose(b);
+  END_CHILD()
+}
+
 }  // namespace
 }  // namespace edk
 }  // namespace mojo
