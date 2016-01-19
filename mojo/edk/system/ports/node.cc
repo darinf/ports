@@ -926,8 +926,15 @@ void Node::FlushOutgoingMessages_Locked(Port* port) {
   // Rewrite the peer node names for all ports that are about to start proxying.
   std::vector<scoped_refptr<Port>> outgoing_ports;
   std::swap(outgoing_ports, port->outgoing_ports);
-  for (const auto& outgoing_port : outgoing_ports)
+  for (const auto& outgoing_port : outgoing_ports) {
+    if (outgoing_port->send_on_proxy_removal) {
+      DCHECK(outgoing_port->send_on_proxy_removal->first == kInvalidNodeName);
+      outgoing_port->send_on_proxy_removal->first = port->peer_node_name;
+    }
+
+    DCHECK(outgoing_port->peer_node_name == kInvalidNodeName);
     outgoing_port->peer_node_name = port->peer_node_name;
+  }
 
   while (!port->outgoing_messages.empty()) {
     ScopedMessage& message = port->outgoing_messages.front();
