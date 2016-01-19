@@ -1846,9 +1846,10 @@ TEST_F(DataPipeTest, SendConsumerAndCloseProducer) {
       WriteMessageWithHandles(producer_client, kMessage, &p, 1);
       WriteMessageWithHandles(consumer_client, kMessage, &c, 1);
 
-      WriteMessage(producer_client, "quit");
       WriteMessage(consumer_client, "quit");
     END_CHILD()
+
+    WriteMessage(producer_client, "quit");
   END_CHILD()
 }
 
