@@ -29,6 +29,7 @@
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
+        '../third_party/mojo/mojo_public.gyp:mojo_system_headers',
       ],
       'defines': [
         'MOJO_SYSTEM_IMPL_IMPLEMENTATION',
