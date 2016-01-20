@@ -17,23 +17,39 @@ namespace mojo {
 namespace edk {
 namespace test {
 
-MojoTestBase::MojoTestBase() {}
+namespace {
+
+void OnChildStarted(
+    scoped_refptr<base::TaskRunner> handler_task_runner,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback,
+    ScopedMessagePipeHandle pipe) {
+  handler_task_runner->PostTask(FROM_HERE,
+                                base::Bind(callback, base::Passed(&pipe)));
+}
+
+}  // namespace
+
+MojoTestBase::MojoTestBase() {
+}
 
 MojoTestBase::~MojoTestBase() {}
 
 MojoTestBase::ClientController& MojoTestBase::StartClient(
-    const std::string& client_name) {
+    const std::string& client_name,
+    const HandlerCallback& callback) {
   clients_.push_back(
-      make_scoped_ptr(new ClientController(client_name, this)));
+      make_scoped_ptr(new ClientController(client_name, this, callback)));
   return *clients_.back();
 }
 
 MojoTestBase::ClientController::ClientController(
     const std::string& client_name,
-    MojoTestBase* test)
+    MojoTestBase* test,
+    const HandlerCallback& callback)
     : test_(test) {
-  helper_.StartChild(client_name);
-  pipe_ = std::move(helper_.parent_message_pipe);
+  helper_.StartChild(client_name,
+                     base::Bind(&OnChildStarted,
+                                base::ThreadTaskRunnerHandle::Get(), callback));
 }
 
 MojoTestBase::ClientController::~ClientController() {

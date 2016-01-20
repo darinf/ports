@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -39,7 +40,8 @@ class RemoteMessagePipeBootstrap
   // |port| must be a reference to an uninitialized local port.
   static void CreateForChild(NodeController* node_controller,
                              ScopedPlatformHandle platform_handle,
-                             const ports::PortRef& port);
+                             const ports::PortRef& port,
+                             const base::Closure& callback);
 
   // Handle a received token.
   virtual void OnTokenReceived(const std::string& token) = 0;

@@ -118,6 +118,10 @@ MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupportOnIOThread();
 // |OnShutdownComplete()|.
 MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupport();
 
+// Unused. Crashes. Only here for linking.
+MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
+CreateMessagePipe(ScopedPlatformHandle platform_handle);
+
 // Creates a message pipe over an arbitrary platform channel. In order for this
 // to work properly each end of the channel must be passed to this function: one
 // end in a parent process and one end in a child process. In a child process,
@@ -129,20 +133,32 @@ MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupport();
 // platform handles around, you can probably also pass strings around. If you
 // can pass strings around, use CreateParentMessagePipe() and
 // CreateChlidMessagePipe() instead (see below.)
-MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
-CreateMessagePipe(ScopedPlatformHandle platform_handle);
+//
+// |callback| must be callable from any thread.
+MOJO_SYSTEM_IMPL_EXPORT void
+CreateMessagePipe(
+    ScopedPlatformHandle platform_handle,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback);
 
 // Creates a message pipe from a token. A child embedder must also have this
 // token and call CreateChildMessagePipe() with it in order for the pipe to get
 // connected.
-MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
-CreateParentMessagePipe(const std::string& token);
+//
+// |callback| must be callable from any thread.
+MOJO_SYSTEM_IMPL_EXPORT void
+CreateParentMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback);
 
 // Creates a message pipe from a token in a child process. The parent must also
 // have this token and call CreateParentMessagePipe() with it in order for the
 // pipe to get connected.
-MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle
-CreateChildMessagePipe(const std::string& token);
+//
+// |callback| must be callable from any thread.
+MOJO_SYSTEM_IMPL_EXPORT void
+CreateChildMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback);
 
 // Generates a random ASCII token string for use with CreateParentMessagePipe()
 // and CreateChildMessagePipe() above. The generated token is suitably random so

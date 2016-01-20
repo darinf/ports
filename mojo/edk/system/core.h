@@ -56,19 +56,25 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // remote embedder. |platform_handle| is used as a channel to negotiate the
   // connection. This is only here to facilitate legacy embedder code. See
   // mojo::edk::CreateMessagePipe in mojo/edk/embedder/embedder.h.
-  ScopedMessagePipeHandle CreateParentMessagePipe(
-      ScopedPlatformHandle platform_handle);
-  ScopedMessagePipeHandle CreateChildMessagePipe(
-      ScopedPlatformHandle platform_handle);
+  void CreateParentMessagePipe(
+      ScopedPlatformHandle platform_handle,
+      const base::Callback<void(ScopedMessagePipeHandle)>& callback);
+  void CreateChildMessagePipe(
+      ScopedPlatformHandle platform_handle,
+      const base::Callback<void(ScopedMessagePipeHandle)>& callback);
 
   // Creates a message pipe endpoint associated with |token|, which a child
   // holding the token can later locate and connect to.
-  ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token);
+  void CreateParentMessagePipe(
+      const std::string& token,
+      const base::Callback<void(ScopedMessagePipeHandle)>& callback);
 
   // Creates a message pipe endpoint associated with |token|, which will be
   // passed to the parent in order to find an associated remote port and connect
   // to it.
-  ScopedMessagePipeHandle CreateChildMessagePipe(const std::string& token);
+  void CreateChildMessagePipe(
+      const std::string& token,
+      const base::Callback<void(ScopedMessagePipeHandle)>& callback);
 
   MojoHandle AddDispatcher(scoped_refptr<Dispatcher> dispatcher);
 

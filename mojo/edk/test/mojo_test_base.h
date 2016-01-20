@@ -12,7 +12,11 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/test/multiprocess_test_helper.h"
 #include "mojo/public/c/system/types.h"
@@ -29,13 +33,15 @@ class MojoTestBase : public testing::Test {
   ~MojoTestBase() override;
 
  protected:
+  using HandlerCallback = base::Callback<void(ScopedMessagePipeHandle)>;
+
   class ClientController {
    public:
     ClientController(const std::string& client_name,
-                     MojoTestBase* test);
+                     MojoTestBase* test,
+                     const HandlerCallback& callback);
     ~ClientController();
 
-    MojoHandle pipe() const { return pipe_.get().value(); }
     int WaitForShutdown();
 
    private:
@@ -43,20 +49,48 @@ class MojoTestBase : public testing::Test {
 
     MojoTestBase* test_;
     MultiprocessTestHelper helper_;
-    ScopedMessagePipeHandle pipe_;
     bool was_shutdown_ = false;
 
     DISALLOW_COPY_AND_ASSIGN(ClientController);
   };
 
-  ClientController& StartClient(const std::string& client_name);
+  ClientController& StartClient(
+      const std::string& client_name,
+      const HandlerCallback& callback);
+
+  static void RunHandlerOnMainThread(
+      std::function<void(MojoHandle, int*, const base::Closure&)> handler,
+      int* expected_exit_code,
+      const base::Closure& quit_closure,
+      ScopedMessagePipeHandle pipe) {
+    handler(pipe.get().value(), expected_exit_code, quit_closure);
+  }
+
+  static void RunHandler(
+      std::function<void(MojoHandle, int*, const base::Closure&)> handler,
+      int* expected_exit_code,
+      scoped_refptr<base::TaskRunner> task_runner,
+      const base::Closure& quit_closure,
+      ScopedMessagePipeHandle pipe) {
+    task_runner->PostTask(FROM_HERE,
+                          base::Bind(&RunHandlerOnMainThread, handler,
+                                     base::Unretained(expected_exit_code),
+                                     quit_closure, base::Passed(&pipe)));
+  }
 
   template <typename HandlerFunc>
   void StartClientWithHandler(const std::string& client_name,
                               HandlerFunc handler) {
-    ClientController& c = StartClient(client_name);
+    base::MessageLoop::ScopedNestableTaskAllower nesting(&message_loop_);
+    base::RunLoop run_loop;
     int expected_exit_code;
-    handler(c.pipe(), &expected_exit_code);
+    ClientController& c =
+        StartClient(client_name,
+                    base::Bind(&RunHandler, handler,
+                               base::Unretained(&expected_exit_code),
+                               base::ThreadTaskRunnerHandle::Get(),
+                               run_loop.QuitClosure()));
+    run_loop.Run();
     EXPECT_EQ(expected_exit_code, c.WaitForShutdown());
   }
 
@@ -125,6 +159,7 @@ class MojoTestBase : public testing::Test {
  private:
   friend class ClientController;
 
+  base::MessageLoop message_loop_;
   std::vector<scoped_ptr<ClientController>> clients_;
 
   DISALLOW_COPY_AND_ASSIGN(MojoTestBase);
@@ -136,13 +171,23 @@ class MojoTestBase : public testing::Test {
 #define RUN_CHILD_ON_PIPE(client_name, pipe_name)                   \
     StartClientWithHandler(                                         \
         #client_name,                                               \
-        [&](MojoHandle pipe_name, int *expected_exit_code) { {
+        [&](MojoHandle pipe_name,                                   \
+            int *expected_exit_code,                                \
+            const base::Closure& quit_closure) { {
 
 // Waits for the client to terminate and expects a return code of zero.
-#define END_CHILD() } *expected_exit_code = 0; });
+#define END_CHILD()               \
+        }                         \
+        *expected_exit_code = 0;  \
+        quit_closure.Run();       \
+    });
 
 // Wait for the client to terminate with a specific return code.
-#define END_CHILD_AND_EXPECT_EXIT_CODE(code) } *expected_exit_code = code; });
+#define END_CHILD_AND_EXPECT_EXIT_CODE(code) \
+        }                                    \
+        *expected_exit_code = code;          \
+        quit_closure.Run();                  \
+    });
 
 // Use this to declare the child process's "main()" function for tests using
 // MojoTestBase and MultiprocessTestHelper. It returns an |int|, which will
@@ -159,15 +204,12 @@ class MojoTestBase : public testing::Test {
   class client_name##_MainFixture : public test_base {                      \
    public:                                                                  \
     static int ClientMain(MojoHandle pipe);                                 \
-    static int ClientMainWrapper(ScopedMessagePipeHandle mp) {              \
-      return ClientMain(mp.get().value());                                  \
-    }                                                                       \
   };                                                                        \
   MULTIPROCESS_TEST_MAIN_WITH_SETUP(                                        \
       client_name##TestChildMain,                                           \
       test::MultiprocessTestHelper::ChildSetup) {                           \
-        return client_name##_MainFixture::ClientMainWrapper(                \
-            std::move(test::MultiprocessTestHelper::client_message_pipe));  \
+        return test::MultiprocessTestHelper::RunClientMain(                 \
+            base::Bind(&client_name##_MainFixture::ClientMain));            \
       }                                                                     \
       int client_name##_MainFixture::ClientMain(MojoHandle pipe_name)
 
@@ -178,17 +220,12 @@ class MojoTestBase : public testing::Test {
   class client_name##_MainFixture : public test_base {                       \
    public:                                                                   \
     static void ClientMain(MojoHandle pipe);                                 \
-    static int ClientMainWrapper(ScopedMessagePipeHandle mp) {               \
-      ClientMain(mp.get().value());                                          \
-      return (::testing::Test::HasFatalFailure() ||                          \
-              ::testing::Test::HasNonfatalFailure()) ? 1 : 0;                \
-    }                                                                        \
   };                                                                         \
   MULTIPROCESS_TEST_MAIN_WITH_SETUP(                                         \
       client_name##TestChildMain,                                            \
       test::MultiprocessTestHelper::ChildSetup) {                            \
-        return client_name##_MainFixture::ClientMainWrapper(                 \
-            std::move(test::MultiprocessTestHelper::client_message_pipe));   \
+        return test::MultiprocessTestHelper::RunClientTestMain(              \
+            base::Bind(&client_name##_MainFixture::ClientMain));             \
       }                                                                      \
       void client_name##_MainFixture::ClientMain(MojoHandle pipe_name)
 

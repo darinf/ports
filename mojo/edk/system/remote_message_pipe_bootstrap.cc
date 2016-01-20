@@ -52,29 +52,38 @@ class ChildBootstrap : public RemoteMessagePipeBootstrap {
  public:
   static void Create(NodeController* node_controller,
                      ScopedPlatformHandle platform_handle,
-                     const ports::PortRef& port) {
+                     const ports::PortRef& port,
+                     const base::Closure& callback) {
     // Owns itself.
-    new ChildBootstrap(node_controller, std::move(platform_handle), port);
+    new ChildBootstrap(
+        node_controller, std::move(platform_handle), port, callback);
   }
 
  private:
   ChildBootstrap(NodeController* node_controller,
                  ScopedPlatformHandle platform_handle,
-                 const ports::PortRef& port)
+                 const ports::PortRef& port,
+                 const base::Closure& callback)
       : RemoteMessagePipeBootstrap(std::move(platform_handle)),
         node_controller_(node_controller),
-        port_(port) {
+        port_(port),
+        callback_(callback) {
   }
 
   ~ChildBootstrap() override {}
 
   void OnTokenReceived(const std::string& token) override {
-    node_controller_->ConnectToParentPort(port_, token);
+    CHECK(!callback_.is_null());
+    base::Closure callback = callback_;
+    callback_.Reset();
+
+    node_controller_->ConnectToParentPort(port_, token, callback);
     ShutDown();
   }
 
   NodeController* const node_controller_;
   const ports::PortRef port_;
+  base::Closure callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildBootstrap);
 };
@@ -96,11 +105,12 @@ void RemoteMessagePipeBootstrap::CreateForParent(
 void RemoteMessagePipeBootstrap::CreateForChild(
     NodeController* node_controller,
     ScopedPlatformHandle platform_handle,
-    const ports::PortRef& port) {
+    const ports::PortRef& port,
+    const base::Closure& callback) {
   node_controller->io_task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&ChildBootstrap::Create, base::Unretained(node_controller),
-                 base::Passed(&platform_handle), port));
+                 base::Passed(&platform_handle), port, callback));
 }
 
 RemoteMessagePipeBootstrap::~RemoteMessagePipeBootstrap() {

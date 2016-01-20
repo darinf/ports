@@ -43,6 +43,16 @@ namespace {
 // This is an unnecessarily large limit that is relatively easy to enforce.
 const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 
+void OnPortConnected(
+    Core* core,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback,
+    const ports::PortRef& port) {
+  MojoHandle handle = core->AddDispatcher(
+      new MessagePipeDispatcher(core->GetNodeController(), port,
+                                true /* connected */));
+  callback.Run(ScopedMessagePipeHandle(MessagePipeHandle(handle)));
+}
+
 }  // namespace
 
 Core::Core() {}
@@ -148,55 +158,41 @@ MojoResult Core::PassWrappedPlatformHandle(
   return MOJO_RESULT_OK;
 }
 
-ScopedMessagePipeHandle Core::CreateParentMessagePipe(
-    ScopedPlatformHandle platform_handle) {
+void Core::CreateParentMessagePipe(
+    ScopedPlatformHandle platform_handle,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   std::string token = GenerateRandomToken();
-  ScopedMessagePipeHandle pipe_handle = CreateParentMessagePipe(token);
+  CreateParentMessagePipe(token, callback);
   RemoteMessagePipeBootstrap::CreateForParent(
       GetNodeController(), std::move(platform_handle), token);
-  return pipe_handle;
 }
 
-ScopedMessagePipeHandle Core::CreateChildMessagePipe(
-    ScopedPlatformHandle platform_handle) {
+void Core::CreateChildMessagePipe(
+    ScopedPlatformHandle platform_handle,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   ports::PortRef port;
   GetNodeController()->node()->CreateUninitializedPort(&port);
-  MojoHandle handle = AddDispatcher(
-      new MessagePipeDispatcher(GetNodeController(), port,
-                                false /* connected */));
-
   RemoteMessagePipeBootstrap::CreateForChild(
-      GetNodeController(), std::move(platform_handle), port);
-
-  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
+      GetNodeController(), std::move(platform_handle), port,
+      base::Bind(&OnPortConnected, base::Unretained(this), callback, port));
 }
 
-ScopedMessagePipeHandle Core::CreateParentMessagePipe(
-    const std::string& token) {
-  ports::PortRef port;
-  GetNodeController()->ReservePort(token, &port);
-  MojoHandle handle = AddDispatcher(
-      new MessagePipeDispatcher(GetNodeController(), port,
-                                false /* connected */));
-  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
+void Core::CreateParentMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
+  GetNodeController()->ReservePort(
+      token,
+      base::Bind(&OnPortConnected, base::Unretained(this), callback));
 }
 
-ScopedMessagePipeHandle Core::CreateChildMessagePipe(
-    const std::string& token) {
+void Core::CreateChildMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   ports::PortRef port;
   GetNodeController()->node()->CreateUninitializedPort(&port);
-
-  MojoHandle handle = AddDispatcher(
-      new MessagePipeDispatcher(GetNodeController(), port,
-                                false /* connected */));
-
-  // Note: It's important that we create the MPD before calling
-  // ConnectToParentPort(), as the corresponding request and the parent's
-  // response could otherwise race with MPD creation, and the pipe could miss
-  // incoming messages.
-  GetNodeController()->ConnectToParentPort(port, token);
-
-  return ScopedMessagePipeHandle(MessagePipeHandle(handle));
+  GetNodeController()->ConnectToParentPort(
+      port, token,
+      base::Bind(&OnPortConnected, base::Unretained(this), callback, port));
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,

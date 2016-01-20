@@ -72,6 +72,14 @@ class ThreadDestructionObserver :
 
 }  // namespace
 
+NodeController::PendingPortRequest::PendingPortRequest() {}
+
+NodeController::PendingPortRequest::~PendingPortRequest() {}
+
+NodeController::ReservedPort::ReservedPort() {}
+
+NodeController::ReservedPort::~ReservedPort() {}
+
 NodeController::~NodeController() {}
 
 NodeController::NodeController(Core* core)
@@ -131,14 +139,18 @@ int NodeController::SendMessage(const ports::PortRef& port,
 }
 
 void NodeController::ReservePort(const std::string& token,
-                                 ports::PortRef* port_ref) {
-  node_->CreateUninitializedPort(port_ref);
+                                 const ReservePortCallback& callback) {
+  ports::PortRef port;
+  node_->CreateUninitializedPort(&port);
 
-  DVLOG(2) << "Reserving port " << port_ref->name() << "@" << name_
-           << " for token " << token;
+  DVLOG(2) << "Reserving port " << port.name() << "@" << name_ << " for token "
+           << token;
 
   base::AutoLock lock(reserved_ports_lock_);
-  reserved_ports_.insert(std::make_pair(token, *port_ref));
+  ReservedPort reservation;
+  reservation.local_port = port;
+  reservation.callback = callback;
+  reserved_ports_.insert(std::make_pair(token, reservation));
 }
 
 scoped_refptr<PlatformSharedBuffer> NodeController::CreateSharedBuffer(
@@ -148,11 +160,12 @@ scoped_refptr<PlatformSharedBuffer> NodeController::CreateSharedBuffer(
 }
 
 void NodeController::ConnectToParentPort(const ports::PortRef& local_port,
-                                         const std::string& token) {
+                                         const std::string& token,
+                                         const base::Closure& callback) {
   io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&NodeController::RequestParentPortConnectionOnIOThread,
-                 base::Unretained(this), local_port, token));
+                 base::Unretained(this), local_port, token, callback));
 }
 
 void NodeController::ConnectToChildOnIOThread(
@@ -191,7 +204,8 @@ void NodeController::ConnectToParentOnIOThread(
 
 void NodeController::RequestParentPortConnectionOnIOThread(
     const ports::PortRef& local_port,
-    const std::string& token) {
+    const std::string& token,
+    const base::Closure& callback) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   scoped_refptr<NodeChannel> parent = GetParentChannel();
@@ -199,10 +213,12 @@ void NodeController::RequestParentPortConnectionOnIOThread(
     PendingPortRequest request;
     request.token = token;
     request.local_port = local_port;
+    request.callback = callback;
     pending_port_requests_.push_back(request);
     return;
   }
 
+  pending_port_connections_.insert(std::make_pair(local_port.name(), callback));
   parent->RequestPortConnection(local_port.name(), token);
 }
 
@@ -445,8 +461,11 @@ void NodeController::OnAcceptChild(const ports::NodeName& from_node,
   }
 
   parent->AcceptParent(token, name_);
-  for (const auto& request : pending_port_requests_)
+  for (const auto& request : pending_port_requests_) {
+    pending_port_connections_.insert(
+        std::make_pair(request.local_port.name(), request.callback));
     parent->RequestPortConnection(request.local_port.name(), request.token);
+  }
   pending_port_requests_.clear();
 
   DVLOG(1) << "Child " << name_ << " accepting parent " << parent_name;
@@ -511,6 +530,7 @@ void NodeController::OnRequestPortConnection(
   DVLOG(2) << "Node " << name_ << " received RequestPortConnection for token "
            << token << " and port " << connector_port_name << "@" << from_node;
 
+  ReservePortCallback callback;
   ports::PortRef local_port;
   {
     base::AutoLock lock(reserved_ports_lock_);
@@ -520,9 +540,12 @@ void NodeController::OnRequestPortConnection(
                << token;
       return;
     }
-    local_port = it->second;
+    local_port = it->second.local_port;
+    callback = it->second.callback;
     reserved_ports_.erase(it);
   }
+
+  DCHECK(!callback.is_null());
 
   scoped_refptr<NodeChannel> peer = GetPeerChannel(from_node);
   if (!peer) {
@@ -531,18 +554,12 @@ void NodeController::OnRequestPortConnection(
     return;
   }
 
-  // Note: We send our ConnectToPort message before initializing our own end
-  // of the port pair to ensure that it arrives  (and thus the remote port is
-  // fully initialized) before any messages are sent from our local port.
-  peer->ConnectToPort(local_port.name(), connector_port_name);
-
   // This reserved port should not have been initialized yet.
-  //
-  // Note that we must not be holding |peers_lock_| when initializing a port,
-  // because it may re-enter NodeController to deliver outgoing messages on
-  // the port.
   CHECK_EQ(ports::OK, node_->InitializePort(local_port, from_node,
                                             connector_port_name));
+
+  peer->ConnectToPort(local_port.name(), connector_port_name);
+  callback.Run(local_port);
 }
 
 void NodeController::OnConnectToPort(
@@ -576,6 +593,11 @@ void NodeController::OnConnectToPort(
 
   CHECK_EQ(ports::OK, node_->InitializePort(connectee_port, from_node,
                                             connector_port_name));
+
+  auto it = pending_port_connections_.find(connectee_port_name);
+  DCHECK(it != pending_port_connections_.end());
+  it->second.Run();
+  pending_port_connections_.erase(it);
 }
 
 void NodeController::OnRequestIntroduction(const ports::NodeName& from_node,

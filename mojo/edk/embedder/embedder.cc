@@ -117,23 +117,35 @@ void ShutdownIPCSupport() {
 
 ScopedMessagePipeHandle CreateMessagePipe(
     ScopedPlatformHandle platform_handle) {
+  NOTREACHED();
+  return ScopedMessagePipeHandle();
+}
+
+void CreateMessagePipe(
+    ScopedPlatformHandle platform_handle,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   DCHECK(internal::g_core);
   if (internal::g_is_parent_process) {
-    return internal::g_core->CreateParentMessagePipe(
-        std::move(platform_handle));
+    internal::g_core->CreateParentMessagePipe(std::move(platform_handle),
+                                              callback);
   } else {
-    return internal::g_core->CreateChildMessagePipe(std::move(platform_handle));
+    internal::g_core->CreateChildMessagePipe(std::move(platform_handle),
+                                             callback);
   }
 }
 
-ScopedMessagePipeHandle CreateParentMessagePipe(const std::string& token) {
+void CreateParentMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   DCHECK(internal::g_core);
-  return internal::g_core->CreateParentMessagePipe(token);
+  internal::g_core->CreateParentMessagePipe(token, callback);
 }
 
-ScopedMessagePipeHandle CreateChildMessagePipe(const std::string& token) {
+void CreateChildMessagePipe(
+    const std::string& token,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   DCHECK(internal::g_core);
-  return internal::g_core->CreateChildMessagePipe(token);
+  internal::g_core->CreateChildMessagePipe(token, callback);
 }
 
 std::string GenerateRandomToken() {
