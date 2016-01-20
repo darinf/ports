@@ -9,6 +9,7 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -41,6 +42,8 @@ namespace runner {
 // remained alive until the |on_app_complete| callback is called.
 class ChildProcessHost {
  public:
+  using ProcessReadyCallback = base::Callback<void(base::ProcessId)>;
+
   // |name| is just for debugging ease. We will spawn off a process so that it
   // can be sandboxed if |start_sandboxed| is true. |app_path| is a path to the
   // mojo application we wish to start.
@@ -54,8 +57,7 @@ class ChildProcessHost {
 
   // |Start()|s the child process; calls |DidStart()| (on the thread on which
   // |Start()| was called) when the child has been started (or failed to start).
-  void Start(
-      const base::Callback<void(base::ProcessId)>& pid_available_callback);
+  void Start(const ProcessReadyCallback& callback);
 
   // Waits for the child process to terminate, and returns its exit code.
   int Join();
@@ -67,8 +69,7 @@ class ChildProcessHost {
 
  protected:
   // virtual for testing.
-  virtual void DidStart(
-      const base::Callback<void(base::ProcessId)>& pid_available_callback);
+  virtual void DidStart(const ProcessReadyCallback& process_ready_callback);
 
  private:
   void DoLaunch();
@@ -79,8 +80,12 @@ class ChildProcessHost {
   void DidCreateChannel(embedder::ChannelInfo* channel_info);
 
   // Callback for ports EDK CreateParentMessagePipe.
-  void OnParentMessagePipeCreated(const base::Closure& callback,
-                                  ScopedMessagePipeHandle pipe);
+  void OnParentMessagePipeCreated(ScopedMessagePipeHandle pipe);
+
+  // Called when the child process is launched and when the bootstrap
+  // message pipe is created. Once both things have happened (which may happen
+  // in either order), |process_ready_callback_| is invoked.
+  void MaybeNotifyProcessReady();
 
   scoped_refptr<base::TaskRunner> launch_process_runner_;
   bool start_sandboxed_;
@@ -106,6 +111,10 @@ class ChildProcessHost {
 
   // A message pipe to the child process. Valid immediately after creation.
   mojo::ScopedMessagePipeHandle child_message_pipe_;
+
+  // Invoked exactly once, as soon as the child process's ID is known and
+  // a pipe to the child has been established.
+  ProcessReadyCallback process_ready_callback_;
 
   base::WeakPtrFactory<ChildProcessHost> weak_factory_;
 

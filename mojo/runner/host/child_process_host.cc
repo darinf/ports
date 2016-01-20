@@ -71,15 +71,27 @@ ChildProcessHost::~ChildProcessHost() {
     CHECK(!controller_) << "Destroying ChildProcessHost before calling Join";
 }
 
-void ChildProcessHost::Start(
-    const base::Callback<void(base::ProcessId)>& pid_available_callback) {
+void ChildProcessHost::Start(const ProcessReadyCallback& callback) {
   DCHECK(!child_process_.IsValid());
+  DCHECK(process_ready_callback_.is_null());
+
+  process_ready_callback_ = callback;
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
+    DCHECK(!primordial_pipe_token_.empty());
+    edk::CreateParentMessagePipe(
+        primordial_pipe_token_,
+        base::Bind(&ChildProcessHost::OnParentMessagePipeCreated,
+                   weak_factory_.GetWeakPtr()));
+  } else {
+    DCHECK(child_message_pipe_.is_valid());
+    OnParentMessagePipeCreated(std::move(child_message_pipe_));
+  }
 
   launch_process_runner_->PostTaskAndReply(
       FROM_HERE,
       base::Bind(&ChildProcessHost::DoLaunch, base::Unretained(this)),
       base::Bind(&ChildProcessHost::DidStart, weak_factory_.GetWeakPtr(),
-                 pid_available_callback));
+                 callback));
 }
 
 int ChildProcessHost::Join() {
@@ -112,22 +124,11 @@ void ChildProcessHost::ExitNow(int32_t exit_code) {
 }
 
 void ChildProcessHost::DidStart(
-    const base::Callback<void(base::ProcessId)>& pid_available_callback) {
+    const ProcessReadyCallback& process_ready_callback) {
   DVLOG(2) << "ChildProcessHost::DidStart()";
 
   if (child_process_.IsValid()) {
-    if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
-      edk::CreateParentMessagePipe(
-          primordial_pipe_token_,
-          base::Bind(&ChildProcessHost::OnParentMessagePipeCreated,
-                     weak_factory_.GetWeakPtr(),
-                     base::Bind(pid_available_callback, child_process_.Pid())));
-    } else {
-      DCHECK(child_message_pipe_.is_valid());
-      OnParentMessagePipeCreated(
-          base::Bind(pid_available_callback, child_process_.Pid()),
-          std::move(child_message_pipe_));
-    }
+    MaybeNotifyProcessReady();
   } else {
     LOG(ERROR) << "Failed to start child process";
     AppCompleted(MOJO_RESULT_UNKNOWN);
@@ -236,10 +237,14 @@ void ChildProcessHost::DidCreateChannel(embedder::ChannelInfo* channel_info) {
 }
 
 void ChildProcessHost::OnParentMessagePipeCreated(
-    const base::Closure& callback,
     ScopedMessagePipeHandle pipe) {
   controller_.Bind(InterfacePtrInfo<ChildController>(std::move(pipe), 0u));
-  callback.Run();
+  MaybeNotifyProcessReady();
+}
+
+void ChildProcessHost::MaybeNotifyProcessReady() {
+  if (controller_.is_bound() && child_process_.IsValid())
+    process_ready_callback_.Run(child_process_.Pid());
 }
 
 }  // namespace runner
