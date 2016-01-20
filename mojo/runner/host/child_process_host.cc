@@ -47,7 +47,6 @@ ChildProcessHost::ChildProcessHost(base::TaskRunner* launch_process_runner,
   if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
     node_channel_.reset(new edk::PlatformChannelPair);
     primordial_pipe_token_ = edk::GenerateRandomToken();
-    child_message_pipe_ = edk::CreateParentMessagePipe(primordial_pipe_token_);
   } else {
     child_message_pipe_ = embedder::CreateChannel(
         platform_channel_pair_.PassServerHandle(),
@@ -75,10 +74,6 @@ ChildProcessHost::~ChildProcessHost() {
 void ChildProcessHost::Start(
     const base::Callback<void(base::ProcessId)>& pid_available_callback) {
   DCHECK(!child_process_.IsValid());
-  DCHECK(child_message_pipe_.is_valid());
-
-  controller_.Bind(
-      InterfacePtrInfo<ChildController>(std::move(child_message_pipe_), 0u));
 
   launch_process_runner_->PostTaskAndReply(
       FROM_HERE,
@@ -121,7 +116,18 @@ void ChildProcessHost::DidStart(
   DVLOG(2) << "ChildProcessHost::DidStart()";
 
   if (child_process_.IsValid()) {
-    pid_available_callback.Run(child_process_.Pid());
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
+      edk::CreateParentMessagePipe(
+          primordial_pipe_token_,
+          base::Bind(&ChildProcessHost::OnParentMessagePipeCreated,
+                     weak_factory_.GetWeakPtr(),
+                     base::Bind(pid_available_callback, child_process_.Pid())));
+    } else {
+      DCHECK(child_message_pipe_.is_valid());
+      OnParentMessagePipeCreated(
+          base::Bind(pid_available_callback, child_process_.Pid()),
+          std::move(child_message_pipe_));
+    }
   } else {
     LOG(ERROR) << "Failed to start child process";
     AppCompleted(MOJO_RESULT_UNKNOWN);
@@ -227,6 +233,13 @@ void ChildProcessHost::DidCreateChannel(embedder::ChannelInfo* channel_info) {
   DCHECK(channel_info ||
          base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk"));
   channel_info_ = channel_info;
+}
+
+void ChildProcessHost::OnParentMessagePipeCreated(
+    const base::Closure& callback,
+    ScopedMessagePipeHandle pipe) {
+  controller_.Bind(InterfacePtrInfo<ChildController>(std::move(pipe), 0u));
+  callback.Run();
 }
 
 }  // namespace runner

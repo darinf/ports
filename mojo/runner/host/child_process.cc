@@ -300,24 +300,34 @@ scoped_ptr<mojo::runner::LinuxSandbox> InitializeSandbox() {
 }
 #endif
 
-ScopedMessagePipeHandle InitializeHostMessagePipe(
+void InitializeHostMessagePipe(
     embedder::ScopedPlatformHandle platform_channel,
-    scoped_refptr<base::TaskRunner> io_task_runner) {
-  ScopedMessagePipeHandle host_message_pipe;
-
+    scoped_refptr<base::TaskRunner> io_task_runner,
+    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
     embedder::SetParentPipeHandle(std::move(platform_channel));
     std::string primordial_pipe_token =
         base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kPrimordialPipeToken);
-    host_message_pipe = edk::CreateChildMessagePipe(primordial_pipe_token);
+    edk::CreateChildMessagePipe(primordial_pipe_token, callback);
   } else {
+    ScopedMessagePipeHandle host_message_pipe;
     host_message_pipe =
         embedder::CreateChannel(std::move(platform_channel),
                                 base::Bind(&DidCreateChannel), io_task_runner);
+    callback.Run(std::move(host_message_pipe));
   }
+}
 
-  return host_message_pipe;
+void OnHostMessagePipeCreated(AppContext* app_context,
+                              base::NativeLibrary app_library,
+                              const Blocker::Unblocker& unblocker,
+                              ScopedMessagePipeHandle pipe) {
+  app_context->controller_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ChildControllerImpl::Init, base::Unretained(app_context),
+                 base::Unretained(app_library), base::Passed(&pipe),
+                 unblocker));
 }
 
 }  // namespace
@@ -354,17 +364,21 @@ int ChildProcessMain() {
 
   DCHECK(!base::MessageLoop::current());
 
+  Blocker blocker;
   AppContext app_context;
   app_context.Init();
-  ScopedMessagePipeHandle host_message_pipe = InitializeHostMessagePipe(
-      std::move(platform_channel), app_context.io_runner());
   app_context.StartControllerThread();
-  Blocker blocker;
+
   app_context.controller_runner()->PostTask(
       FROM_HERE,
-      base::Bind(&ChildControllerImpl::Init, base::Unretained(&app_context),
-                 base::Unretained(app_library),
-                 base::Passed(&host_message_pipe), blocker.GetUnblocker()));
+      base::Bind(&InitializeHostMessagePipe,
+                 base::Passed(&platform_channel),
+                 make_scoped_refptr(app_context.io_runner()),
+                 base::Bind(&OnHostMessagePipeCreated,
+                            base::Unretained(&app_context),
+                            base::Unretained(app_library),
+                            blocker.GetUnblocker())));
+
   // This will block, then run whatever the controller wants.
   blocker.Block();
 

@@ -78,6 +78,10 @@ class ChildProcessHost {
   // Callback for |embedder::CreateChannel()|.
   void DidCreateChannel(embedder::ChannelInfo* channel_info);
 
+  // Callback for ports EDK CreateParentMessagePipe.
+  void OnParentMessagePipeCreated(const base::Closure& callback,
+                                  ScopedMessagePipeHandle pipe);
+
   scoped_refptr<base::TaskRunner> launch_process_runner_;
   bool start_sandboxed_;
   const base::FilePath app_path_;
