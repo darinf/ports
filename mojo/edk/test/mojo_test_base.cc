@@ -4,7 +4,6 @@
 
 #include "mojo/edk/test/mojo_test_base.h"
 
-#include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "mojo/edk/embedder/embedder.h"
@@ -16,18 +15,6 @@
 namespace mojo {
 namespace edk {
 namespace test {
-
-namespace {
-
-void OnChildStarted(
-    scoped_refptr<base::TaskRunner> handler_task_runner,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback,
-    ScopedMessagePipeHandle pipe) {
-  handler_task_runner->PostTask(FROM_HERE,
-                                base::Bind(callback, base::Passed(&pipe)));
-}
-
-}  // namespace
 
 MojoTestBase::MojoTestBase() {
 }
@@ -47,9 +34,7 @@ MojoTestBase::ClientController::ClientController(
     MojoTestBase* test,
     const HandlerCallback& callback)
     : test_(test) {
-  helper_.StartChild(client_name,
-                     base::Bind(&OnChildStarted,
-                                base::ThreadTaskRunnerHandle::Get(), callback));
+  helper_.StartChild(client_name, callback);
 }
 
 MojoTestBase::ClientController::~ClientController() {

@@ -12,11 +12,9 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "base/thread_task_runner_handle.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/test/multiprocess_test_helper.h"
 #include "mojo/public/c/system/types.h"
@@ -58,24 +56,12 @@ class MojoTestBase : public testing::Test {
       const std::string& client_name,
       const HandlerCallback& callback);
 
-  static void RunHandlerOnMainThread(
+  static void RunHandler(
       std::function<void(MojoHandle, int*, const base::Closure&)> handler,
       int* expected_exit_code,
       const base::Closure& quit_closure,
       ScopedMessagePipeHandle pipe) {
     handler(pipe.get().value(), expected_exit_code, quit_closure);
-  }
-
-  static void RunHandler(
-      std::function<void(MojoHandle, int*, const base::Closure&)> handler,
-      int* expected_exit_code,
-      scoped_refptr<base::TaskRunner> task_runner,
-      const base::Closure& quit_closure,
-      ScopedMessagePipeHandle pipe) {
-    task_runner->PostTask(FROM_HERE,
-                          base::Bind(&RunHandlerOnMainThread, handler,
-                                     base::Unretained(expected_exit_code),
-                                     quit_closure, base::Passed(&pipe)));
   }
 
   template <typename HandlerFunc>
@@ -88,7 +74,6 @@ class MojoTestBase : public testing::Test {
         StartClient(client_name,
                     base::Bind(&RunHandler, handler,
                                base::Unretained(&expected_exit_code),
-                               base::ThreadTaskRunnerHandle::Get(),
                                run_loop.QuitClosure()));
     run_loop.Run();
     EXPECT_EQ(expected_exit_code, c.WaitForShutdown());
