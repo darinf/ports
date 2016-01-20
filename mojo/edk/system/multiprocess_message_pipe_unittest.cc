@@ -1184,6 +1184,9 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(ReceivePipeWithClosedPeerFromOtherChild,
   EXPECT_EQ(MOJO_RESULT_OK, MojoWait(service_client,
                                      MOJO_HANDLE_SIGNAL_PEER_CLOSED,
                                      MOJO_DEADLINE_INDEFINITE, nullptr));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(service_client));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(application_client));
 }
 
 TEST_F(MultiprocessMessagePipeTest, SendPipeWithClosedPeerBetweenChildren) {
@@ -1194,6 +1197,7 @@ TEST_F(MultiprocessMessagePipeTest, SendPipeWithClosedPeerBetweenChildren) {
       MojoHandle application_request;
       EXPECT_EQ("c2a plz",
                 ReadMessageWithHandles(kid_a, &application_request, 1));
+
       WriteMessageWithHandles(kid_b, "c2a", &application_request, 1);
     END_CHILD()
 

@@ -735,6 +735,11 @@ void Node::WillSendPort_Locked(Port* port,
   port_descriptor->next_sequence_num_to_send = port->next_sequence_num_to_send;
   port_descriptor->next_sequence_num_to_receive =
       port->message_queue.next_sequence_num();
+  port_descriptor->peer_closed = port->peer_closed;
+  if (port->peer_closed) {
+    port_descriptor->last_sequence_num_to_receive =
+        port->last_sequence_num_to_receive;
+  }
 
   // Configure the local port to point to the new port.
   port->peer_node_name = to_node_name;
@@ -749,6 +754,11 @@ int Node::AcceptPort(const PortName& port_name,
   port->state = Port::kReceiving;
   port->peer_node_name = port_descriptor.peer_node_name;
   port->peer_port_name = port_descriptor.peer_port_name;
+  port->peer_closed = port_descriptor.peer_closed;
+  if (port->peer_closed) {
+    port->last_sequence_num_to_receive =
+        port_descriptor.last_sequence_num_to_receive;
+  }
 
   // A newly accepted port is not signalable until the message referencing the
   // new port finds its way to the consumer (see GetMessageIf).
