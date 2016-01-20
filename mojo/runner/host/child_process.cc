@@ -339,11 +339,14 @@ int ChildProcessMain() {
 #endif
   base::NativeLibrary app_library = 0;
   // Load the application library before we engage the sandbox.
-  app_library = mojo::runner::LoadNativeApplication(
-      command_line.GetSwitchValuePath(switches::kChildProcess));
+  base::FilePath app_library_path =
+      command_line.GetSwitchValuePath(switches::kChildProcess);
+  if (!app_library_path.empty())
+    app_library = mojo::runner::LoadNativeApplication(app_library_path);
   base::i18n::InitializeICU();
   if (app_library)
     CallLibraryEarlyInitialization(app_library);
+
 #if !defined(OFFICIAL_BUILD)
   // Initialize stack dumping just before initializing sandbox to make
   // sure symbol names in all loaded libraries will be cached.

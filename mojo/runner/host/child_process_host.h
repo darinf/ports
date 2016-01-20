@@ -68,8 +68,7 @@ class ChildProcessHost {
   void ExitNow(int32_t exit_code);
 
  protected:
-  // virtual for testing.
-  virtual void DidStart(const ProcessReadyCallback& process_ready_callback);
+  void DidStart();
 
  private:
   void DoLaunch();

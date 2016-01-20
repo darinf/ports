@@ -90,8 +90,7 @@ void ChildProcessHost::Start(const ProcessReadyCallback& callback) {
   launch_process_runner_->PostTaskAndReply(
       FROM_HERE,
       base::Bind(&ChildProcessHost::DoLaunch, base::Unretained(this)),
-      base::Bind(&ChildProcessHost::DidStart, weak_factory_.GetWeakPtr(),
-                 callback));
+      base::Bind(&ChildProcessHost::DidStart, weak_factory_.GetWeakPtr()));
 }
 
 int ChildProcessHost::Join() {
@@ -123,8 +122,7 @@ void ChildProcessHost::ExitNow(int32_t exit_code) {
   controller_->ExitNow(exit_code);
 }
 
-void ChildProcessHost::DidStart(
-    const ProcessReadyCallback& process_ready_callback) {
+void ChildProcessHost::DidStart() {
   DVLOG(2) << "ChildProcessHost::DidStart()";
 
   if (child_process_.IsValid()) {
@@ -154,8 +152,10 @@ void ChildProcessHost::DoLaunch() {
   if (start_sandboxed_)
     child_command_line.AppendSwitch(switches::kEnableSandbox);
 
-  node_channel_->PrepareToPassClientHandleToChildProcess(&child_command_line,
-                                                         &handle_passing_info_);
+  if (node_channel_.get()) {
+    node_channel_->PrepareToPassClientHandleToChildProcess(
+        &child_command_line, &handle_passing_info_);
+  }
 
   child_command_line.AppendSwitchASCII(switches::kPrimordialPipeToken,
                                        primordial_pipe_token_);

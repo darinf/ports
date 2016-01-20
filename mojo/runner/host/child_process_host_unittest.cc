@@ -7,11 +7,13 @@
 #include "mojo/runner/host/child_process_host.h"
 
 #include "base/bind.h"
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/run_loop.h"
 #include "base/threading/thread.h"
 #include "mojo/message_pump/message_pump_mojo.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -22,25 +24,10 @@ namespace mojo {
 namespace runner {
 namespace {
 
-using PidAvailableCallback = base::Callback<void(base::ProcessId)>;
-
-void EmptyCallback(base::ProcessId pid) {}
-
-// Subclass just so we can observe |DidStart()|.
-class TestChildProcessHost : public ChildProcessHost {
- public:
-  explicit TestChildProcessHost(base::TaskRunner* launch_process_runner)
-      : ChildProcessHost(launch_process_runner, false, base::FilePath()) {}
-  ~TestChildProcessHost() override {}
-
-  void DidStart(const PidAvailableCallback& pid_available_callback) override {
-    ChildProcessHost::DidStart(pid_available_callback);
-    base::MessageLoop::current()->QuitWhenIdle();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestChildProcessHost);
-};
+void ProcessReadyCallbackAdapater(const base::Closure& callback,
+                                  base::ProcessId process_id) {
+  callback.Run();
+}
 
 class ProcessDelegate : public embedder::ProcessDelegate {
  public:
@@ -80,9 +67,13 @@ TEST(ChildProcessHostTest, MAYBE_StartJoin) {
       embedder::ProcessType::NONE, &delegate, io_thread.task_runner(),
       embedder::ScopedPlatformHandle());
 
-  TestChildProcessHost child_process_host(blocking_pool.get());
-  child_process_host.Start(base::Bind(&EmptyCallback));
-  message_loop.Run();
+  ChildProcessHost child_process_host(blocking_pool.get(), false,
+                                      base::FilePath());
+  base::RunLoop run_loop;
+  child_process_host.Start(base::Bind(&ProcessReadyCallbackAdapater,
+                                      run_loop.QuitClosure()));
+  run_loop.Run();
+
   child_process_host.ExitNow(123);
   int exit_code = child_process_host.Join();
   VLOG(2) << "Joined child: exit_code = " << exit_code;
