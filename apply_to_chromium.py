@@ -15,6 +15,10 @@ import sys
 # These are copied non-recursively. If the destination path doesn't exist,
 # it's created. A source file is only copied if it differs from the destination.
 DIRS_TO_COPY_ = [
+  "content/browser/mojo",
+  "content/child",
+  "content/child/mojo",
+  "content/common/mojo",
   "mojo",
   "mojo/edk/embedder",
   "mojo/edk/system",
