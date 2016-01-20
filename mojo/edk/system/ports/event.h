@@ -25,7 +25,6 @@ struct MOJO_ALIGNAS(8) PortDescriptor {
   uint64_t next_sequence_num_to_send;
   uint64_t next_sequence_num_to_receive;
   bool peer_closed;
-  uint64_t last_sequence_num_to_receive;  // Only if |peer_closed|.
 };
 
 enum struct EventType : uint32_t {
