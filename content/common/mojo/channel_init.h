@@ -28,8 +28,8 @@ class CONTENT_EXPORT ChannelInit {
   ChannelInit();
   ~ChannelInit();
 
-  // Initializes the channel. This takes ownership of |file|. Returns the
-  // primordial MessagePipe for the channel.
+  // Initializes the channel. This takes ownership of |file|. Calls |callback|
+  // on the calling thread once the pipe is created.
   void Init(
       base::PlatformFile file,
       scoped_refptr<base::TaskRunner> io_thread_task_runner,

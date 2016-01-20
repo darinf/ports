@@ -10,10 +10,13 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "base/task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
@@ -31,12 +34,23 @@ namespace {
 
 const char kMojoPrimordialPipeToken[] = "mojo-primordial-pipe-token";
 
+void RunHandlerOnMainThread(std::function<int(MojoHandle)> handler,
+                            int* exit_code,
+                            const base::Closure& quit_closure,
+                            ScopedMessagePipeHandle pipe) {
+  *exit_code = handler(pipe.get().value());
+  quit_closure.Run();
+}
+
 void RunHandler(std::function<int(MojoHandle)> handler,
                 int* exit_code,
                 const base::Closure& quit_closure,
+                scoped_refptr<base::TaskRunner> task_runner,
                 ScopedMessagePipeHandle pipe) {
-  *exit_code = handler(pipe.get().value());
-  quit_closure.Run();
+  task_runner->PostTask(
+      FROM_HERE,
+      base::Bind(&RunHandlerOnMainThread, handler, base::Unretained(exit_code),
+                 quit_closure, base::Passed(&pipe)));
 }
 
 int RunClientFunction(std::function<int(MojoHandle)> handler) {
@@ -47,7 +61,7 @@ int RunClientFunction(std::function<int(MojoHandle)> handler) {
   CreateChildMessagePipe(
       MultiprocessTestHelper::primordial_pipe_token,
       base::Bind(&RunHandler, handler, base::Unretained(&exit_code),
-                 run_loop.QuitClosure()));
+                 run_loop.QuitClosure(), base::ThreadTaskRunnerHandle::Get()));
   run_loop.Run();
   return exit_code;
 }

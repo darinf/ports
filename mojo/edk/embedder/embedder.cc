@@ -45,25 +45,6 @@ Core* GetCore() { return g_core; }
 
 }  // namespace internal
 
-namespace {
-
-void RunMessagePipeCallbackOnThread(
-    scoped_refptr<base::TaskRunner> task_runner,
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback,
-    ScopedMessagePipeHandle pipe) {
-  task_runner->PostTask(FROM_HERE,
-                        base::Bind(callback, base::Passed(&pipe)));
-}
-
-base::Callback<void(ScopedMessagePipeHandle)>
-BindMessagePipeCallbackToCurrentThread(
-    const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
-  return base::Bind(&RunMessagePipeCallbackOnThread,
-                    base::ThreadTaskRunnerHandle::Get(), callback);
-}
-
-}  // namespace
-
 void SetMaxMessageSize(size_t bytes) {
 }
 
@@ -149,13 +130,11 @@ void CreateMessagePipe(
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   DCHECK(internal::g_core);
   if (internal::g_is_parent_process) {
-    internal::g_core->CreateParentMessagePipe(
-        std::move(platform_handle),
-        BindMessagePipeCallbackToCurrentThread(callback));
+    internal::g_core->CreateParentMessagePipe(std::move(platform_handle),
+                                              callback);
   } else {
-    internal::g_core->CreateChildMessagePipe(
-        std::move(platform_handle),
-        BindMessagePipeCallbackToCurrentThread(callback));
+    internal::g_core->CreateChildMessagePipe(std::move(platform_handle),
+                                             callback);
   }
 }
 
@@ -163,16 +142,14 @@ void CreateParentMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   DCHECK(internal::g_core);
-  internal::g_core->CreateParentMessagePipe(
-      token, BindMessagePipeCallbackToCurrentThread(callback));
+  internal::g_core->CreateParentMessagePipe(token, callback);
 }
 
 void CreateChildMessagePipe(
     const std::string& token,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   DCHECK(internal::g_core);
-  internal::g_core->CreateChildMessagePipe(
-      token, BindMessagePipeCallbackToCurrentThread(callback));
+  internal::g_core->CreateChildMessagePipe(token, callback);
 }
 
 std::string GenerateRandomToken() {

@@ -10,12 +10,25 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
+#include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
+#include "base/task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
 
 namespace content {
+
+namespace {
+
+void CallMessagePipeCallbackOnThread(
+    const base::Callback<void(mojo::ScopedMessagePipeHandle)>& callback,
+    scoped_refptr<base::TaskRunner> task_runner,
+    mojo::ScopedMessagePipeHandle pipe) {
+  task_runner->PostTask(FROM_HERE, base::Bind(callback, base::Passed(&pipe)));
+}
+
+}  // namespace
 
 ChannelInit::ChannelInit() : channel_info_(nullptr), weak_factory_(this) {}
 
@@ -34,10 +47,12 @@ void ChannelInit::Init(
   if (base::CommandLine::ForCurrentProcess()->HasSwitch("use-new-edk")) {
     mojo::edk::CreateMessagePipe(
         mojo::edk::ScopedPlatformHandle(mojo::edk::PlatformHandle(file)),
-        base::Bind(&ChannelInit::OnCreateMessagePipe,
-                   weak_factory_.GetWeakPtr(),
-                   base::Passed(&ipc_support),
-                   callback));
+        base::Bind(&CallMessagePipeCallbackOnThread,
+                   base::Bind(&ChannelInit::OnCreateMessagePipe,
+                              weak_factory_.GetWeakPtr(),
+                              base::Passed(&ipc_support),
+                              callback),
+                   base::ThreadTaskRunnerHandle::Get()));
   } else {
     mojo::ScopedMessagePipeHandle message_pipe = mojo::embedder::CreateChannel(
         mojo::embedder::ScopedPlatformHandle(

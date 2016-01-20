@@ -323,8 +323,11 @@ void OnHostMessagePipeCreated(AppContext* app_context,
                               base::NativeLibrary app_library,
                               const Blocker::Unblocker& unblocker,
                               ScopedMessagePipeHandle pipe) {
-  ChildControllerImpl::Init(app_context, app_library, std::move(pipe),
-                            unblocker);
+  app_context->controller_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ChildControllerImpl::Init, base::Unretained(app_context),
+                 base::Unretained(app_library), base::Passed(&pipe),
+                 unblocker));
 }
 
 }  // namespace

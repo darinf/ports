@@ -134,7 +134,7 @@ CreateMessagePipe(ScopedPlatformHandle platform_handle);
 // can pass strings around, use CreateParentMessagePipe() and
 // CreateChlidMessagePipe() instead (see below.)
 //
-// |callback| will be called on the calling thread.
+// |callback| must be safe to call from any thread.
 MOJO_SYSTEM_IMPL_EXPORT void
 CreateMessagePipe(
     ScopedPlatformHandle platform_handle,
@@ -144,7 +144,7 @@ CreateMessagePipe(
 // token and call CreateChildMessagePipe() with it in order for the pipe to get
 // connected.
 //
-// |callback| will be called on the calling thread.
+// |callback| must be safe to call from any thread.
 MOJO_SYSTEM_IMPL_EXPORT void
 CreateParentMessagePipe(
     const std::string& token,
@@ -154,7 +154,7 @@ CreateParentMessagePipe(
 // have this token and call CreateParentMessagePipe() with it in order for the
 // pipe to get connected.
 //
-// |callback| will be called on the calling thread.
+// |callback| must be safe to call from any thread.
 MOJO_SYSTEM_IMPL_EXPORT void
 CreateChildMessagePipe(
     const std::string& token,
