@@ -29,8 +29,7 @@ class MessagePipeDispatcher : public Dispatcher {
   // A MessagePipeDispatcher may not be transferred while in a disconnected
   // state, and one can never return to a disconnected once connected.
   MessagePipeDispatcher(NodeController* node_controller,
-                        const ports::PortRef& port,
-                        bool connected);
+                        const ports::PortRef& port);
 
   // Dispatcher:
   Type GetType() const override;
@@ -91,7 +90,6 @@ class MessagePipeDispatcher : public Dispatcher {
   // BeginTransit() and Complete/CancelTransit().
   bool in_transit_ = false;
 
-  bool port_connected_ = false;
   bool port_transferred_ = false;
   bool port_closed_ = false;
   AwakableList awakables_;

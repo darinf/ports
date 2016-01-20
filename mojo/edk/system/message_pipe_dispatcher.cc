@@ -66,13 +66,10 @@ class MessagePipeDispatcher::PortObserverThunk
 };
 
 MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
-                                             const ports::PortRef& port,
-                                             bool connected)
+                                             const ports::PortRef& port)
     : node_controller_(node_controller),
-      port_(port),
-      port_connected_(connected) {
-  DVLOG(2) << "Creating new MessagePipeDispatcher for port " << port.name()
-           << " [connected=" << connected << "]";
+      port_(port) {
+  DVLOG(2) << "Creating new MessagePipeDispatcher for port " << port.name();
 
   // OnPortStatusChanged (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
@@ -232,9 +229,6 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
     base::AutoLock lock(signal_lock_);
     if (port_closed_ || in_transit_)
       return MOJO_RESULT_INVALID_ARGUMENT;
-
-    if (!port_connected_)
-      return MOJO_RESULT_SHOULD_WAIT;
   }
 
   bool no_space = false;
@@ -428,7 +422,7 @@ bool MessagePipeDispatcher::BeginTransit() {
   base::AutoLock lock(signal_lock_);
   if (in_transit_)
     return false;
-  in_transit_ = port_connected_;
+  in_transit_ = true;
   return in_transit_;
 }
 
@@ -464,8 +458,7 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
       internal::g_core->GetNodeController()->node()->GetPort(ports[0], &port));
 
   // Note: disconnected ports cannot be serialized.
-  return new MessagePipeDispatcher(internal::g_core->GetNodeController(), port,
-                                   true /* connected */);
+  return new MessagePipeDispatcher(internal::g_core->GetNodeController(), port);
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
@@ -485,10 +478,7 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
     // eventual proxy teardown. We stop observing here so the port doesn't hold
     // a reference to this dispatcher.
     node_controller_->SetPortObserver(port_, nullptr);
-  } else if (port_connected_) {
-    // Only close if the port isn't initialized yet. Once it's initialized and
-    // its internal outgoing message queue is flushed, we'll be notified via
-    // OnPortStatusChanged() which will then close the port.
+  } else {
     node_controller_->ClosePort(port_);
   }
 
@@ -497,14 +487,6 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
 
 HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
   HandleSignalsState rv;
-  if (!port_connected_) {
-    // If we aren't connected yet, treat the pipe like it's in a normal
-    // state with no messages available.
-    rv.satisfiable_signals = MOJO_HANDLE_SIGNAL_READABLE |
-        MOJO_HANDLE_SIGNAL_WRITABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED;
-    rv.satisfied_signals = MOJO_HANDLE_SIGNAL_WRITABLE;
-    return rv;
-  }
 
   ports::PortStatus port_status;
   if (node_controller_->node()->GetStatus(port_, &port_status) != ports::OK) {
@@ -533,11 +515,6 @@ void MessagePipeDispatcher::OnPortStatusChanged() {
   // We stop observing ports as soon as they're transferred.
   DCHECK(!port_transferred_);
 
-  if (!port_connected_) {
-    port_connected_ = true;
-    if (port_closed_)
-      node_controller_->ClosePort(port_);
-  }
   awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
 }
 
