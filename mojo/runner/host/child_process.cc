@@ -323,8 +323,8 @@ void OnHostMessagePipeCreated(AppContext* app_context,
                               base::NativeLibrary app_library,
                               const Blocker::Unblocker& unblocker,
                               ScopedMessagePipeHandle pipe) {
-  ChildControllerImpl::Init(
-      app_context, app_library, std::move(pipe), unblocker);
+  ChildControllerImpl::Init(app_context, app_library, std::move(pipe),
+                            unblocker);
 }
 
 }  // namespace
@@ -368,13 +368,11 @@ int ChildProcessMain() {
 
   app_context.controller_runner()->PostTask(
       FROM_HERE,
-      base::Bind(&InitializeHostMessagePipe,
-                 base::Passed(&platform_channel),
-                 make_scoped_refptr(app_context.io_runner()),
-                 base::Bind(&OnHostMessagePipeCreated,
-                            base::Unretained(&app_context),
-                            base::Unretained(app_library),
-                            blocker.GetUnblocker())));
+      base::Bind(
+          &InitializeHostMessagePipe, base::Passed(&platform_channel),
+          make_scoped_refptr(app_context.io_runner()),
+          base::Bind(&OnHostMessagePipeCreated, base::Unretained(&app_context),
+                     base::Unretained(app_library), blocker.GetUnblocker())));
 
   // This will block, then run whatever the controller wants.
   blocker.Block();

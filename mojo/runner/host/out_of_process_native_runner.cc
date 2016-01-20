@@ -41,10 +41,9 @@ void OutOfProcessNativeRunner::Start(
 
   child_process_host_.reset(
       new ChildProcessHost(launch_process_runner_, start_sandboxed, app_path));
-  child_process_host_->Start(
-      base::Bind(&OutOfProcessNativeRunner::OnProcessLaunched,
-                 base::Unretained(this), base::Passed(&application_request),
-                 pid_available_callback));
+  child_process_host_->Start(base::Bind(
+      &OutOfProcessNativeRunner::OnProcessLaunched, base::Unretained(this),
+      base::Passed(&application_request), pid_available_callback));
 }
 
 void OutOfProcessNativeRunner::InitHost(
