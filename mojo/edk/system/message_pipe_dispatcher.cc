@@ -569,8 +569,26 @@ void MessagePipeDispatcher::OnPortStatusChanged() {
   // We stop observing ports as soon as they're transferred.
   DCHECK(!port_transferred_);
 
-  DVLOG(1) << "Activity detected on message pipe " << pipe_id_ << " endpoint "
-           << endpoint_ << " [port=" << port_.name() << "]";
+#ifndef NDEBUG
+  ports::PortStatus port_status;
+  node_controller_->node()->GetStatus(port_, &port_status);
+  if (port_status.has_messages) {
+    ports::ScopedMessage unused;
+    size_t message_size = 0;
+    node_controller_->node()->GetMessageIf(
+        port_, [&message_size](const ports::Message& message) {
+          message_size = message.num_payload_bytes();
+          return false;
+        }, &unused);
+    DVLOG(1) << "New message detected on message pipe " << pipe_id_
+             << " endpoint " << endpoint_ << " [port=" << port_.name()
+             << "; size=" << message_size << "]";
+  }
+  if (port_status.peer_closed) {
+    DVLOG(1) << "Peer closure detected on message pipe " << pipe_id_
+             << " endpoint " << endpoint_ << " [port=" << port_.name() << "]";
+  }
+#endif
 
   awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
 }
