@@ -569,7 +569,7 @@ void MessagePipeDispatcher::OnPortStatusChanged() {
   // We stop observing ports as soon as they're transferred.
   DCHECK(!port_transferred_);
 
-#ifndef NDEBUG
+#if !defined(NDEBUG)
   ports::PortStatus port_status;
   node_controller_->node()->GetStatus(port_, &port_status);
   if (port_status.has_messages) {

@@ -362,7 +362,7 @@ int Node::OnUserMessage(ScopedMessage message) {
   PortName port_name = GetEventHeader(*message)->port_name;
   const auto* event = GetEventData<UserEventData>(*message);
 
-#ifndef NDEBUG
+#if !defined(NDEBUG)
   std::ostringstream ports_buf;
   for (size_t i = 0; i < message->num_ports(); ++i) {
     if (i > 0)
@@ -770,7 +770,7 @@ int Node::WillSendMessage_Locked(Port* port,
   if (*sequence_num == 0)
     *sequence_num = port->next_sequence_num_to_send++;
 
-#ifndef NDEBUG
+#if !defined(NDEBUG)
   std::ostringstream ports_buf;
   for (size_t i = 0; i < message->num_ports(); ++i) {
     if (i > 0)
@@ -822,7 +822,7 @@ int Node::WillSendMessage_Locked(Port* port,
       ports[i]->lock.Release();
   }
 
-#ifndef NDEBUG
+#if !defined(NDEBUG)
   DVLOG(2) << "Sending message "
            << GetEventData<UserEventData>(*message)->sequence_num
            << " [ports=" << ports_buf.str() << "]"
