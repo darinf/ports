@@ -200,7 +200,7 @@ int Node::GetMessageIf(const PortRef& port_ref,
                        ScopedMessage* message) {
   *message = nullptr;
 
-  DVLOG(1) << "GetMessageIf for " << port_ref.name() << "@" << name_;
+  DVLOG(2) << "GetMessageIf for " << port_ref.name() << "@" << name_;
 
   Port* port = port_ref.port();
   {
@@ -344,7 +344,7 @@ int Node::LostConnectionToNode(const NodeName& node_name) {
       }
 
       if (remove_port) {
-        DVLOG(1) << "Deleted port " << iter->first << "@" << name_;
+        DVLOG(2) << "Deleted port " << iter->first << "@" << name_;
         iter = ports_.erase(iter);
       } else {
         ++iter;
@@ -370,7 +370,7 @@ int Node::OnUserMessage(ScopedMessage message) {
     ports_buf << message->ports()[i];
   }
 
-  DVLOG(1) << "AcceptMessage " << event->sequence_num
+  DVLOG(2) << "AcceptMessage " << event->sequence_num
              << " [ports=" << ports_buf.str() << "] at "
              << port_name << "@" << name_;
 #endif
@@ -423,7 +423,7 @@ int Node::OnUserMessage(ScopedMessage message) {
   }
 
   if (!message_accepted) {
-    DVLOG(1) << "Message not accepted!\n";
+    DVLOG(2) << "Message not accepted!\n";
     // Close all newly accepted ports as they are effectively orphaned.
     for (size_t i = 0; i < message->num_ports(); ++i) {
       PortRef port_ref;
@@ -452,7 +452,7 @@ int Node::OnPortAccepted(const PortName& port_name) {
     base::AutoLock ports_lock(ports_lock_);
     base::AutoLock lock(port->lock);
 
-    DVLOG(1) << "PortAccepted at " << port_name << "@" << name_
+    DVLOG(2) << "PortAccepted at " << port_name << "@" << name_
              << " pointing to "
              << port->peer_port_name << "@" << port->peer_node_name;
 
@@ -489,7 +489,7 @@ int Node::OnObserveProxy(const PortName& port_name,
     return OK;
   }
 
-  DVLOG(1) << "ObserveProxy at " << port_name << "@" << name_ << ", proxy at "
+  DVLOG(2) << "ObserveProxy at " << port_name << "@" << name_ << ", proxy at "
            << event.proxy_port_name << "@"
            << event.proxy_node_name << " pointing to "
            << event.proxy_to_port_name << "@"
@@ -523,7 +523,7 @@ int Node::OnObserveProxy(const PortName& port_name,
         // Otherwise, we might just find ourselves back here again, which
         // would be akin to a busy loop.
 
-        DVLOG(1) << "Delaying ObserveProxyAck to "
+        DVLOG(2) << "Delaying ObserveProxyAck to "
                  << event.proxy_port_name << "@" << event.proxy_node_name;
 
         ObserveProxyAckEventData ack;
@@ -551,7 +551,7 @@ int Node::OnObserveProxy(const PortName& port_name,
 
 int Node::OnObserveProxyAck(const PortName& port_name,
                             uint64_t last_sequence_num) {
-  DVLOG(1) << "ObserveProxyAck at " << port_name << "@" << name_
+  DVLOG(2) << "ObserveProxyAck at " << port_name << "@" << name_
            << " (last_sequence_num=" << last_sequence_num << ")";
 
   scoped_refptr<Port> port = GetPort(port_name);
@@ -608,7 +608,7 @@ int Node::OnObserveClosure(const PortName& port_name,
     port->peer_closed = true;
     port->last_sequence_num_to_receive = last_sequence_num;
 
-    DVLOG(1) << "ObserveClosure at " << port_name << "@" << name_
+    DVLOG(2) << "ObserveClosure at " << port_name << "@" << name_
              << " (state=" << port->state << ") pointing to "
              << port->peer_port_name << "@" << port->peer_node_name
              << " (last_sequence_num=" << last_sequence_num << ")";
@@ -629,7 +629,7 @@ int Node::OnObserveClosure(const PortName& port_name,
       if (port->state == Port::kProxying) {
         MaybeRemoveProxy_Locked(port.get(), port_name);
 
-        DVLOG(1) << "Forwarding ObserveClosure from "
+        DVLOG(2) << "Forwarding ObserveClosure from "
                  << port_name << "@" << name_ << " to proxy target "
                  << next_port_name << "@" << next_node_name;
 
@@ -639,7 +639,7 @@ int Node::OnObserveClosure(const PortName& port_name,
             NewInternalMessage(next_port_name,
                                EventType::kObserveClosure, data));
       } else if (port->state == Port::kBuffering) {
-        DVLOG(1) << "Will forward ObserveClosure from "
+        DVLOG(2) << "Will forward ObserveClosure from "
                  << port_name << "@" << name_ << " to proxy target "
                  << next_port_name << "@" << next_node_name
                  << " when proxy is removed.";
@@ -667,7 +667,7 @@ int Node::AddPortWithName(const PortName& port_name,
   if (!ports_.insert(std::make_pair(port_name, port)).second)
     return OOPS(ERROR_PORT_EXISTS);  // Suggests a bad UUID generator.
 
-  DVLOG(1) << "Created port " << port_name << "@" << name_;
+  DVLOG(2) << "Created port " << port_name << "@" << name_;
   return OK;
 }
 
@@ -679,7 +679,7 @@ void Node::ErasePort(const PortName& port_name) {
 void Node::ErasePort_Locked(const PortName& port_name) {
   ports_lock_.AssertAcquired();
   ports_.erase(port_name);
-  DVLOG(1) << "Deleted port " << port_name << "@" << name_;
+  DVLOG(2) << "Deleted port " << port_name << "@" << name_;
 }
 
 scoped_refptr<Port> Node::GetPort(const PortName& port_name) {
@@ -823,7 +823,7 @@ int Node::WillSendMessage_Locked(Port* port,
   }
 
 #ifndef NDEBUG
-  DVLOG(1) << "Sending message "
+  DVLOG(2) << "Sending message "
            << GetEventData<UserEventData>(*message)->sequence_num
            << " [ports=" << ports_buf.str() << "]"
            << " from " << port_name << "@" << name_
@@ -896,7 +896,7 @@ void Node::MaybeRemoveProxy_Locked(Port* port,
       delegate_->ForwardMessage(to_node, std::move(message));
     }
   } else {
-    DVLOG(1) << "Cannot remove port " << port_name << "@" << name_
+    DVLOG(2) << "Cannot remove port " << port_name << "@" << name_
              << " now; waiting for more messages";
   }
 }

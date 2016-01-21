@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
+#include "base/rand_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "crypto/random.h"
@@ -45,10 +46,15 @@ const uint32_t kMaxHandlesPerMessage = 1024 * 1024;
 
 void OnPortConnected(
     Core* core,
+    int endpoint,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback,
     const ports::PortRef& port) {
+  // TODO: Maybe we could negotiate a pipe ID for cross-process pipes too;
+  // for now we just use 0x7F7F7F7F7F7F7F7F. In practice these are used for
+  // bootstrap and aren't passed around, so tracking them is less important.
   MojoHandle handle = core->AddDispatcher(
-      new MessagePipeDispatcher(core->GetNodeController(), port));
+      new MessagePipeDispatcher(core->GetNodeController(), port,
+                                0x7f7f7f7f7f7f7f7fUL, endpoint));
   callback.Run(ScopedMessagePipeHandle(MessagePipeHandle(handle)));
 }
 
@@ -97,20 +103,6 @@ void Core::InitChild(ScopedPlatformHandle platform_handle) {
 MojoHandle Core::AddDispatcher(scoped_refptr<Dispatcher> dispatcher) {
   base::AutoLock lock(handles_lock_);
   return handles_.AddDispatcher(dispatcher);
-}
-
-bool Core::AddDispatchersForReceivedPorts(const ports::Message& message,
-                                          MojoHandle* handles) {
-  std::vector<Dispatcher::DispatcherInTransit> dispatchers(message.num_ports());
-  for (size_t i = 0; i < message.num_ports(); ++i) {
-    ports::PortRef port;
-    CHECK_EQ(ports::OK,
-             GetNodeController()->node()->GetPort(message.ports()[i], &port));
-
-    Dispatcher::DispatcherInTransit& d = dispatchers[i];
-    d.dispatcher = new MessagePipeDispatcher(GetNodeController(), port);;
-  }
-  return AddDispatchersFromTransit(dispatchers, handles);
 }
 
 bool Core::AddDispatchersFromTransit(
@@ -172,7 +164,7 @@ void Core::CreateChildMessagePipe(
   GetNodeController()->node()->CreateUninitializedPort(&port);
   RemoteMessagePipeBootstrap::CreateForChild(
       GetNodeController(), std::move(platform_handle), port,
-      base::Bind(&OnPortConnected, base::Unretained(this), callback, port));
+      base::Bind(&OnPortConnected, base::Unretained(this), 1, callback, port));
 }
 
 void Core::CreateParentMessagePipe(
@@ -180,7 +172,7 @@ void Core::CreateParentMessagePipe(
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
   GetNodeController()->ReservePort(
       token,
-      base::Bind(&OnPortConnected, base::Unretained(this), callback));
+      base::Bind(&OnPortConnected, base::Unretained(this), 0, callback));
 }
 
 void Core::CreateChildMessagePipe(
@@ -190,7 +182,7 @@ void Core::CreateChildMessagePipe(
   GetNodeController()->node()->CreateUninitializedPort(&port);
   GetNodeController()->ConnectToParentPort(
       port, token,
-      base::Bind(&OnPortConnected, base::Unretained(this), callback, port));
+      base::Bind(&OnPortConnected, base::Unretained(this), 1, callback, port));
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,
@@ -341,15 +333,19 @@ MojoResult Core::CreateMessagePipe(
     MojoHandle* message_pipe_handle1) {
   ports::PortRef port0, port1;
   GetNodeController()->node()->CreatePortPair(&port0, &port1);
+
   CHECK(message_pipe_handle0);
   CHECK(message_pipe_handle1);
+
+  uint64_t pipe_id = base::RandUint64();
+
   *message_pipe_handle0 = AddDispatcher(
-      new MessagePipeDispatcher(GetNodeController(), port0));
+      new MessagePipeDispatcher(GetNodeController(), port0, pipe_id, 0));
   if (*message_pipe_handle0 == MOJO_HANDLE_INVALID)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
   *message_pipe_handle1 = AddDispatcher(
-      new MessagePipeDispatcher(GetNodeController(), port1));
+      new MessagePipeDispatcher(GetNodeController(), port1, pipe_id, 1));
   if (*message_pipe_handle1 == MOJO_HANDLE_INVALID) {
     scoped_refptr<Dispatcher> unused;
     unused->Close();
@@ -451,12 +447,14 @@ MojoResult Core::CreateDataPipe(
   CHECK(data_pipe_producer_handle);
   CHECK(data_pipe_consumer_handle);
 
+  uint64_t pipe_id = base::RandUint64();
+
   scoped_refptr<Dispatcher> producer = new DataPipeProducerDispatcher(
       GetNodeController(), port0, ring_buffer, create_options,
-      true /* initialized */);
+      true /* initialized */, pipe_id);
   scoped_refptr<Dispatcher> consumer = new DataPipeConsumerDispatcher(
       GetNodeController(), port1, ring_buffer, create_options,
-      true /* initialized */);
+      true /* initialized */, pipe_id);
 
   *data_pipe_producer_handle = AddDispatcher(producer);
   *data_pipe_consumer_handle = AddDispatcher(consumer);

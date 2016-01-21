@@ -5,6 +5,8 @@
 #ifndef MOJO_EDK_SYSTEM_MESSAGE_PIPE_DISPATCHER_H_
 #define MOJO_EDK_SYSTEM_MESSAGE_PIPE_DISPATCHER_H_
 
+#include <stdint.h>
+
 #include <queue>
 
 #include "base/macros.h"
@@ -28,8 +30,14 @@ class MessagePipeDispatcher : public Dispatcher {
   //
   // A MessagePipeDispatcher may not be transferred while in a disconnected
   // state, and one can never return to a disconnected once connected.
+  //
+  // |pipe_id| is a unique identifier which can be used to track pipe endpoints
+  // as they're passed around. |endpoint| is either 0 or 1 and again is only
+  // used for tracking pipes (one side is always 0, the other is always 1.)
   MessagePipeDispatcher(NodeController* node_controller,
-                        const ports::PortRef& port);
+                        const ports::PortRef& port,
+                        uint64_t pipe_id,
+                        int endpoint);
 
   // Dispatcher:
   Type GetType() const override;
@@ -82,6 +90,8 @@ class MessagePipeDispatcher : public Dispatcher {
   // These are safe to access from any thread without locking.
   NodeController* const node_controller_;
   const ports::PortRef port_;
+  const uint64_t pipe_id_;
+  const int endpoint_;
 
   // Guards access to all the fields below.
   mutable base::Lock signal_lock_;

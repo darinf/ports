@@ -37,7 +37,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
       const ports::PortRef& control_port,
       scoped_refptr<PlatformSharedBuffer> shared_ring_buffer,
       const MojoCreateDataPipeOptions& options,
-      bool initialized);
+      bool initialized,
+      uint64_t pipe_id);
 
   // Dispatcher:
   Type GetType() const override;
@@ -90,6 +91,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
   const MojoCreateDataPipeOptions options_;
   NodeController* const node_controller_;
   const ports::PortRef control_port_;
+  const uint64_t pipe_id_;
 
   // Guards access to the fields below.
   mutable base::Lock lock_;

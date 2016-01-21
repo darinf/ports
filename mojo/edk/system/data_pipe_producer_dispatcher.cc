@@ -29,6 +29,7 @@ namespace {
 
 struct SerializedState {
   MojoCreateDataPipeOptions options;
+  uint64_t pipe_id;
   bool peer_closed;
   uint32_t write_offset;
   uint32_t available_capacity;
@@ -61,10 +62,12 @@ DataPipeProducerDispatcher::DataPipeProducerDispatcher(
     const ports::PortRef& control_port,
     scoped_refptr<PlatformSharedBuffer> shared_ring_buffer,
     const MojoCreateDataPipeOptions& options,
-    bool initialized)
+    bool initialized,
+    uint64_t pipe_id)
     : options_(options),
       node_controller_(node_controller),
       control_port_(control_port),
+      pipe_id_(pipe_id),
       shared_ring_buffer_(shared_ring_buffer),
       available_capacity_(options_.capacity_num_bytes) {
   if (initialized) {
@@ -79,6 +82,7 @@ Dispatcher::Type DataPipeProducerDispatcher::GetType() const {
 
 MojoResult DataPipeProducerDispatcher::Close() {
   base::AutoLock lock(lock_);
+  DVLOG(1) << "Closing data pipe producer " << pipe_id_;
   return CloseNoLock();
 }
 
@@ -277,6 +281,7 @@ bool DataPipeProducerDispatcher::EndSerialize(
 
   base::AutoLock lock(lock_);
   DCHECK(in_transit_);
+  state->pipe_id = pipe_id_;
   state->peer_closed = peer_closed_;
   state->write_offset = write_offset_;
   state->available_capacity = available_capacity_;
@@ -347,7 +352,8 @@ DataPipeProducerDispatcher::Deserialize(const void* data,
 
   scoped_refptr<DataPipeProducerDispatcher> dispatcher =
       new DataPipeProducerDispatcher(node_controller, port, ring_buffer,
-                                     state->options, false /* initialized */);
+                                     state->options, false /* initialized */,
+                                     state->pipe_id);
 
   {
     base::AutoLock lock(dispatcher->lock_);
@@ -380,6 +386,10 @@ void DataPipeProducerDispatcher::InitializeNoLock() {
 }
 
 void DataPipeProducerDispatcher::NotifyWriteNoLock(uint32_t num_bytes) {
+  DVLOG(1) << "Data pipe producer " << pipe_id_ << " notifying peer: "
+           << num_bytes << " bytes written. [control_port="
+           << control_port_.name() << "]";
+
   SendDataPipeControlMessage(node_controller_, control_port_,
                              DataPipeCommand::DATA_WAS_WRITTEN, num_bytes);
 }
@@ -423,6 +433,7 @@ HandleSignalsState DataPipeProducerDispatcher::GetHandleSignalsStateNoLock()
 
 void DataPipeProducerDispatcher::OnPortStatusChanged() {
   base::AutoLock lock(lock_);
+  DVLOG(1) << "Control port status changed for data pipe producer " << pipe_id_;
   UpdateSignalsStateNoLock();
 }
 
@@ -436,6 +447,9 @@ void DataPipeProducerDispatcher::UpdateSignalsStateNoLock() {
   if (node_controller_->node()->GetStatus(control_port_, &port_status) !=
           ports::OK ||
       port_status.peer_closed) {
+    DVLOG(1) << "Data pipe producer " << pipe_id_ << " is aware of peer closure"
+             << " [control_port=" << control_port_.name() << "]";
+
     peer_closed_ = true;
   }
 
@@ -451,16 +465,23 @@ void DataPipeProducerDispatcher::UpdateSignalsStateNoLock() {
         const DataPipeControlMessage* m =
             static_cast<const DataPipeControlMessage*>(
                 ports_message->payload_bytes());
+
         if (m->command != DataPipeCommand::DATA_WAS_READ) {
           DLOG(ERROR) << "Unexpected message from consumer.";
           peer_closed_ = true;
           break;
         }
+
         if (static_cast<size_t>(available_capacity_) + m->num_bytes >
               options_.capacity_num_bytes) {
           DLOG(ERROR) << "Consumer claims to have read too many bytes.";
           break;
         }
+
+        DVLOG(1) << "Data pipe producer " << pipe_id_ << " is aware that "
+                 << m->num_bytes << " bytes were read. [control_port="
+                 << control_port_.name() << "]";
+
         available_capacity_ += m->num_bytes;
       }
     } while (message);

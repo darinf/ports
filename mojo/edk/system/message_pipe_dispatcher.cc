@@ -44,6 +44,11 @@ struct MOJO_ALIGNAS(8) DispatcherHeader {
   uint32_t num_platform_handles;
 };
 
+struct MOJO_ALIGNAS(8) SerializedState {
+  uint64_t pipe_id;
+  int8_t endpoint;
+};
+
 }  // namespace
 
 // A PortObserver which forwards to a MessagePipeDispatcher. This owns a
@@ -66,10 +71,15 @@ class MessagePipeDispatcher::PortObserverThunk
 };
 
 MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
-                                             const ports::PortRef& port)
+                                             const ports::PortRef& port,
+                                             uint64_t pipe_id,
+                                             int endpoint)
     : node_controller_(node_controller),
-      port_(port) {
-  DVLOG(2) << "Creating new MessagePipeDispatcher for port " << port.name();
+      port_(port),
+      pipe_id_(pipe_id),
+      endpoint_(endpoint) {
+  DVLOG(2) << "Creating new MessagePipeDispatcher for port " << port.name()
+           << " [pipe_id=" << pipe_id << "; endpoint=" << endpoint << "]";
 
   // OnPortStatusChanged (via PortObserverThunk) may be called before this
   // constructor returns. Hold a lock here to prevent signal races.
@@ -85,6 +95,8 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
 
 MojoResult MessagePipeDispatcher::Close() {
   base::AutoLock lock(signal_lock_);
+  DVLOG(1) << "Closing message pipe " << pipe_id_ << " endpoint " << endpoint_
+           << " [port=" << port_.name() << "]";
   return CloseNoLock();
 }
 
@@ -94,20 +106,27 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     const DispatcherInTransit* dispatchers,
     uint32_t num_dispatchers,
     MojoWriteMessageFlags flags) {
+
   {
     base::AutoLock lock(signal_lock_);
     if (port_closed_ || in_transit_)
       return MOJO_RESULT_INVALID_ARGUMENT;
   }
 
+  // A structure for retaining information about every Dispatcher we're about
+  // to send. This information is collected by calling StartSerialize() on
+  // each dispatcher in sequence.
   struct DispatcherInfo {
     uint32_t num_bytes;
     uint32_t num_ports;
     uint32_t num_handles;
   };
 
+  // This is only the base header size. It will grow as we accumulate the
+  // size of serialized state for each dispatcher.
   size_t header_size = sizeof(MessageHeader) +
       num_dispatchers * sizeof(DispatcherHeader);
+
   size_t num_ports = 0;
   size_t num_handles = 0;
 
@@ -122,21 +141,29 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     num_handles += dispatcher_info[i].num_handles;
   }
 
+  // We now have enough information to fully allocate the message storage.
   scoped_ptr<PortsMessage> message = PortsMessage::NewUserMessage(
       header_size + num_bytes, num_ports, num_handles);
   DCHECK(message);
 
   // Populate the message header with information about serialized dispatchers.
-
+  //
+  // The front of the message is always a MessageHeader followed by a
+  // DispatcherHeader for each dispatcher to be sent.
   MessageHeader* header =
       static_cast<MessageHeader*>(message->mutable_payload_bytes());
   DispatcherHeader* dispatcher_headers =
-      reinterpret_cast<DispatcherHeader*>(reinterpret_cast<char*>(header) +
-                                          sizeof(MessageHeader));
-  void* dispatcher_data = &dispatcher_headers[num_dispatchers];
+      reinterpret_cast<DispatcherHeader*>(header + 1);
+
+  // Serialized dispatcher state immediately follows the series of
+  // DispatcherHeaders.
+  char* dispatcher_data =
+      reinterpret_cast<char*>(dispatcher_headers + num_dispatchers);
 
   header->num_dispatchers = num_dispatchers;
 
+  // |header_size| is the total number of bytes preceding the message payload,
+  // including all dispatcher headers and serialized dispatcher state.
   DCHECK_LE(header_size, std::numeric_limits<uint32_t>::max());
   header->header_size = static_cast<uint32_t>(header_size);
 
@@ -151,25 +178,28 @@ MojoResult MessagePipeDispatcher::WriteMessage(
       DispatcherHeader* dh = &dispatcher_headers[i];
       const DispatcherInfo& info = dispatcher_info[i];
 
+      // Fill in the header for this dispatcher.
       dh->type = static_cast<int32_t>(d->GetType());
       dh->num_bytes = info.num_bytes;
       dh->num_ports = info.num_ports;
       dh->num_platform_handles = info.num_handles;
 
-      if (!d->EndSerialize(dispatcher_data,
+      // Fill in serialized state, ports, and platform handles. We'll cancel
+      // the send if the dispatcher implementation rejects for some reason.
+      if (!d->EndSerialize(static_cast<void*>(dispatcher_data),
                            message->mutable_ports() + port_index,
                            handles->data() + handle_index)) {
         cancel_transit = true;
         break;
       }
 
+      dispatcher_data += info.num_bytes;
       port_index += info.num_ports;
       handle_index += info.num_handles;
-      dispatcher_data = static_cast<void*>(
-          static_cast<char*>(dispatcher_data) + info.num_bytes);
     }
 
     if (!cancel_transit) {
+      // Take ownership of all the handles and move them into message storage.
       message->SetHandles(std::move(handles));
     } else {
       // Release any platform handles we've accumulated. Their dispatchers
@@ -187,13 +217,18 @@ MojoResult MessagePipeDispatcher::WriteMessage(
     memcpy(message_body, bytes, num_bytes);
 
     int rv = node_controller_->SendMessage(port_, &message);
+
+    DVLOG(1) << "Sent message on pipe " << pipe_id_ << " endpoint " << endpoint_
+             << " [port=" << port_.name() << "; rv=" << rv
+             << "; num_bytes=" << num_bytes << "]";
+
     if (rv != ports::OK) {
-      base::AutoLock lock(signal_lock_);
       if (rv == ports::ERROR_PORT_UNKNOWN ||
           rv == ports::ERROR_PORT_STATE_UNEXPECTED ||
           rv == ports::ERROR_PORT_CANNOT_SEND_PEER) {
         result = MOJO_RESULT_INVALID_ARGUMENT;
       } else if (rv == ports::ERROR_PORT_PEER_CLOSED) {
+        base::AutoLock lock(signal_lock_);
         awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
         result = MOJO_RESULT_FAILED_PRECONDITION;
       } else {
@@ -227,6 +262,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
                                               MojoReadMessageFlags flags) {
   {
     base::AutoLock lock(signal_lock_);
+    // We can't read from a port that's closed or in transit!
     if (port_closed_ || in_transit_)
       return MOJO_RESULT_INVALID_ARGUMENT;
   }
@@ -247,6 +283,7 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
         const PortsMessage& message =
             static_cast<const PortsMessage&>(next_message);
         DCHECK_GE(message.num_payload_bytes(), sizeof(MessageHeader));
+
         const MessageHeader* header =
             static_cast<const MessageHeader*>(message.payload_bytes());
         DCHECK_LE(header->header_size, message.num_payload_bytes());
@@ -286,10 +323,16 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
     return MOJO_RESULT_UNKNOWN;  // TODO: Add a better error code here?
   }
 
-  if (no_space)
+  if (no_space) {
+    // Either |*num_bytes| or |*num_handles| wasn't sufficient to hold this
+    // message's data. The message will still be in queue unless
+    // MOJO_READ_MESSAGE_FLAG_MAY_DISCARD was set.
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
 
   if (!ports_message) {
+    // No message was available in queue.
+
     if (rv == ports::OK)
       return MOJO_RESULT_SHOULD_WAIT;
 
@@ -300,29 +343,34 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
     return MOJO_RESULT_FAILED_PRECONDITION;
   }
 
+  // Alright! We have a message and the caller has provided sufficient storage
+  // in which to receive it.
+
   scoped_ptr<PortsMessage> message(
       static_cast<PortsMessage*>(ports_message.release()));
+
   const MessageHeader* header =
       static_cast<const MessageHeader*>(message->payload_bytes());
   const DispatcherHeader* dispatcher_headers =
-      reinterpret_cast<const DispatcherHeader*>(
-          reinterpret_cast<const char*>(header) + sizeof(MessageHeader));
-  size_t header_size = sizeof(MessageHeader) +
-      header->num_dispatchers * sizeof(DispatcherHeader);
-  DCHECK_GE(message->num_payload_bytes(), header_size);
+      reinterpret_cast<const DispatcherHeader*>(header + 1);
 
-  const void* dispatcher_data = &dispatcher_headers[header->num_dispatchers];
+  const char* dispatcher_data = reinterpret_cast<const char*>(
+      dispatcher_headers + header->num_dispatchers);
 
   // Deserialize dispatchers.
   if (header->num_dispatchers > 0) {
     CHECK(handles);
     std::vector<DispatcherInTransit> dispatchers(header->num_dispatchers);
+    size_t data_payload_index = sizeof(MessageHeader) +
+        header->num_dispatchers * sizeof(DispatcherHeader);
     size_t port_index = 0;
     size_t platform_handle_index = 0;
     for (size_t i = 0; i < header->num_dispatchers; ++i) {
       const DispatcherHeader& dh = dispatcher_headers[i];
       Type type = static_cast<Type>(dh.type);
 
+      DCHECK_GE(message->num_payload_bytes(),
+                data_payload_index + dh.num_bytes);
       DCHECK_GE(message->num_ports(),
                 port_index + dh.num_ports);
       DCHECK_GE(message->num_handles(),
@@ -337,7 +385,8 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
       if (!dispatchers[i].dispatcher)
         return MOJO_RESULT_UNKNOWN;
 
-      header_size += dh.num_bytes;
+      dispatcher_data += dh.num_bytes;
+      data_payload_index += dh.num_bytes;
       port_index += dh.num_ports;
       platform_handle_index += dh.num_platform_handles;
     }
@@ -348,10 +397,10 @@ MojoResult MessagePipeDispatcher::ReadMessage(void* bytes,
   }
 
   // Copy message bytes.
-  DCHECK_GE(message->num_payload_bytes(), header_size);
-  const void* message_body = static_cast<const void*>(
-      reinterpret_cast<const char*>(message->payload_bytes()) + header_size);
-  memcpy(bytes, message_body, message->num_payload_bytes() - header_size);
+  DCHECK_GE(message->num_payload_bytes(), header->header_size);
+  const char* payload = reinterpret_cast<const char*>(message->payload_bytes());
+  memcpy(bytes, payload + header->header_size,
+         message->num_payload_bytes() - header->header_size);
 
   return MOJO_RESULT_OK;
 }
@@ -406,7 +455,7 @@ void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
 void MessagePipeDispatcher::StartSerialize(uint32_t* num_bytes,
                                            uint32_t* num_ports,
                                            uint32_t* num_handles) {
-  *num_bytes = 0;
+  *num_bytes = static_cast<uint32_t>(sizeof(SerializedState));
   *num_ports = 1;
   *num_handles = 0;
 }
@@ -414,6 +463,9 @@ void MessagePipeDispatcher::StartSerialize(uint32_t* num_bytes,
 bool MessagePipeDispatcher::EndSerialize(void* destination,
                                          ports::PortName* ports,
                                          PlatformHandle* handles) {
+  SerializedState* state = static_cast<SerializedState*>(destination);
+  state->pipe_id = pipe_id_;
+  state->endpoint = static_cast<int8_t>(endpoint_);
   ports[0] = port_.name();
   return true;
 }
@@ -449,16 +501,18 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
     size_t num_ports,
     PlatformHandle* handles,
     size_t num_handles) {
-  if (num_ports != 1 || num_handles || num_bytes)
+  if (num_ports != 1 || num_handles || num_bytes != sizeof(SerializedState))
     return nullptr;
+
+  const SerializedState* state = static_cast<const SerializedState*>(data);
 
   ports::PortRef port;
   CHECK_EQ(
       ports::OK,
       internal::g_core->GetNodeController()->node()->GetPort(ports[0], &port));
 
-  // Note: disconnected ports cannot be serialized.
-  return new MessagePipeDispatcher(internal::g_core->GetNodeController(), port);
+  return new MessagePipeDispatcher(internal::g_core->GetNodeController(), port,
+                                   state->pipe_id, state->endpoint);
 }
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
@@ -514,6 +568,9 @@ void MessagePipeDispatcher::OnPortStatusChanged() {
 
   // We stop observing ports as soon as they're transferred.
   DCHECK(!port_transferred_);
+
+  DVLOG(1) << "Activity detected on message pipe " << pipe_id_ << " endpoint "
+           << endpoint_ << " [port=" << port_.name() << "]";
 
   awakables_.AwakeForStateChange(GetHandleSignalsStateNoLock());
 }
