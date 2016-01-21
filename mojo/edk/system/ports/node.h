@@ -10,7 +10,6 @@
 
 #include <queue>
 #include <unordered_map>
-#include <vector>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -139,12 +138,10 @@ class Node {
 
   int WillSendMessage_Locked(Port* port,
                              const PortName& port_name,
-                             Message* message,
-                             std::vector<scoped_refptr<Port>>* ports_taken);
+                             Message* message);
   int ForwardMessages_Locked(Port* port, const PortName& port_name);
   void InitiateProxyRemoval_Locked(Port* port, const PortName& port_name);
   void MaybeRemoveProxy_Locked(Port* port, const PortName& port_name);
-  void FlushOutgoingMessages_Locked(Port* port);
 
   ScopedMessage NewInternalMessage_Helper(const PortName& port_name,
                                           const EventType& type,

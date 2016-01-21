@@ -42,9 +42,6 @@ class Port : public base::RefCountedThreadSafe<Port> {
   bool remove_proxy_on_last_message;
   bool peer_closed;
 
-  std::queue<ScopedMessage> outgoing_messages;
-  std::vector<scoped_refptr<Port>> outgoing_ports;
-
   Port(uint64_t next_sequence_num_to_send,
        uint64_t next_sequence_num_to_receive);
 
