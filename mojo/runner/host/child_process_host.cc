@@ -306,6 +306,5 @@ void ChildProcessHost::OnParentMessagePipeCreated(
   callback_task_runner->PostTask(FROM_HERE, callback);
 }
 
-
 }  // namespace runner
 }  // namespace mojo

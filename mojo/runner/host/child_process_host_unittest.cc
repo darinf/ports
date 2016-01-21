@@ -70,8 +70,8 @@ TEST(ChildProcessHostTest, MAYBE_StartJoin) {
   ChildProcessHost child_process_host(blocking_pool.get(), false,
                                       base::FilePath());
   base::RunLoop run_loop;
-  child_process_host.Start(base::Bind(&ProcessReadyCallbackAdapater,
-                                      run_loop.QuitClosure()));
+  child_process_host.Start(
+      base::Bind(&ProcessReadyCallbackAdapater, run_loop.QuitClosure()));
   run_loop.Run();
 
   child_process_host.ExitNow(123);
