@@ -1205,6 +1205,25 @@ TEST_F(MultiprocessMessagePipeTest, SendPipeWithClosedPeerBetweenChildren) {
   END_CHILD()
 }
 
+TEST_F(MultiprocessMessagePipeTest, SendClosePeerSend) {
+  MojoHandle a, b;
+  CreateMessagePipe(&a, &b);
+
+  MojoHandle c, d;
+  CreateMessagePipe(&c, &d);
+
+  // Send |a| over |c|, immediately close |b|, then send |a| back over |d|.
+  WriteMessageWithHandles(c, "foo", &a, 1);
+  EXPECT_EQ("foo", ReadMessageWithHandles(d, &a, 1));
+  WriteMessageWithHandles(d, "bar", &a, 1);
+  EXPECT_EQ("bar", ReadMessageWithHandles(c, &a, 1));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(b));
+
+  // We should be able to detect peer closure on |a|.
+  EXPECT_EQ(MOJO_RESULT_OK, MojoWait(a, MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+                                     MOJO_DEADLINE_INDEFINITE, nullptr));
+}
+
 }  // namespace
 }  // namespace edk
 }  // namespace mojo
