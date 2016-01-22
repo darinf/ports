@@ -425,14 +425,23 @@ MojoResult MessagePipeDispatcher::AddAwakable(
   }
 
   HandleSignalsState state = GetHandleSignalsStateNoLock();
+
+  DVLOG(2) << "Getting signal state for pipe " << pipe_id_ << " endpoint "
+           << endpoint_ << " [awakable=" << awakable << "; port="
+           << port_.name() << "; signals=" << signals << "; satisfied="
+           << state.satisfied_signals << "; satisfiable="
+           << state.satisfiable_signals << "]";
+
   if (state.satisfies(signals)) {
     if (signals_state)
       *signals_state = state;
+    DVLOG(2) << "Signals already set for " << port_.name();
     return MOJO_RESULT_ALREADY_EXISTS;
   }
   if (!state.can_satisfy(signals)) {
     if (signals_state)
       *signals_state = state;
+    DVLOG(2) << "Signals impossible to satisfy for " << port_.name();
     return MOJO_RESULT_FAILED_PRECONDITION;
   }
 
@@ -455,7 +464,7 @@ void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
   }
 
   DVLOG(2) << "Removing awakable from pipe " << pipe_id_ << " endpoint "
-           << endpoint_ << "[awakable=" << awakable << "; port="
+           << endpoint_ << " [awakable=" << awakable << "; port="
            << port_.name() << "]";
 
   awakables_.Remove(awakable);
