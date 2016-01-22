@@ -436,6 +436,10 @@ MojoResult MessagePipeDispatcher::AddAwakable(
     return MOJO_RESULT_FAILED_PRECONDITION;
   }
 
+  DVLOG(2) << "Adding awakable to pipe " << pipe_id_ << " endpoint "
+           << endpoint_ << " [awakable=" << awakable << "; port="
+           << port_.name() << "; signals=" << signals << "]";
+
   awakables_.Add(awakable, signals, context);
   return MOJO_RESULT_OK;
 }
@@ -449,6 +453,11 @@ void MessagePipeDispatcher::RemoveAwakable(Awakable* awakable,
   } else if (signals_state) {
     *signals_state = GetHandleSignalsStateNoLock();
   }
+
+  DVLOG(2) << "Removing awakable from pipe " << pipe_id_ << " endpoint "
+           << endpoint_ << "[awakable=" << awakable << "; port="
+           << port_.name() << "]";
+
   awakables_.Remove(awakable);
 }
 
