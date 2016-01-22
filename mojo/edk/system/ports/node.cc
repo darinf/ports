@@ -768,6 +768,10 @@ int Node::AcceptPort(const PortName& port_name,
       port_descriptor.last_sequence_num_to_receive;
   port->peer_closed = port_descriptor.peer_closed;
 
+  DVLOG(2) << "Accepting port " << port_name << " [peer_closed="
+           << port->peer_closed << "; last_sequence_num_to_receive="
+           << port->last_sequence_num_to_receive << "]";
+
   // A newly accepted port is not signalable until the message referencing the
   // new port finds its way to the consumer (see GetMessageIf).
   port->message_queue.set_signalable(false);
