@@ -24,6 +24,7 @@ struct MOJO_ALIGNAS(8) PortDescriptor {
   PortName referring_port_name;
   uint64_t next_sequence_num_to_send;
   uint64_t next_sequence_num_to_receive;
+  uint64_t last_sequence_num_to_receive;
   bool peer_closed;
 };
 
