@@ -47,6 +47,19 @@ Node::~Node() {
     DLOG(WARNING) << "Unclean shutdown for node " << name_;
 }
 
+bool Node::CanShutdownCleanly() {
+  base::AutoLock ports_lock(ports_lock_);
+#ifndef NDEBUG
+  if (!ports_.empty()) {
+    DVLOG(2) << "Node " << name_ << " cannot shutdown cleanly, due to ports:";
+    for (auto entry : ports_)
+      DVLOG(2) << "  " << entry.first
+               << " (state=" << static_cast<int>(entry.second->state) << ")";
+  }
+#endif
+  return ports_.empty();
+}
+
 int Node::GetPort(const PortName& port_name, PortRef* port_ref) {
   scoped_refptr<Port> port = GetPort(port_name);
   if (!port)
@@ -170,9 +183,15 @@ int Node::ClosePort(const PortRef& port_ref) {
     peer_port_name = port->peer_port_name;
   }
 
+  DVLOG(2) << "Sending ObserveClosure from " << port_ref.name() << "@" << name_
+           << " to " << peer_port_name << "@" << peer_node_name;
+
   delegate_->ForwardMessage(
       peer_node_name,
       NewInternalMessage(peer_port_name, EventType::kObserveClosure, data));
+
+  // TODO: If the port being closed still has unread messages, then we need to
+  // take care to close those ports so as to avoid leaking memory.
 
   ErasePort(port_ref.name());
   return OK;

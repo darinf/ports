@@ -34,6 +34,14 @@ void LogMessage(const Message* message) {
            << "\" ports=[" << ports.str() << "]";
 }
 
+void ClosePortsInMessage(Node* node, Message* message) {
+  for (size_t i = 0; i < message->num_ports(); ++i) {
+    PortRef port;
+    ASSERT_EQ(OK, node->GetPort(message->ports()[i], &port));
+    EXPECT_EQ(OK, node->ClosePort(port));
+  }
+}
+
 class TestMessage : public Message {
  public:
   static ScopedMessage NewUserMessage(size_t num_payload_bytes,
@@ -177,6 +185,7 @@ class TestNodeDelegate : public NodeDelegate {
     if (drop_messages_) {
       DVLOG(1) << "Dropping ForwardMessage from node "
                << node_name_ << " to " << node_name;
+      ClosePortsInMessage(GetNode(node_name), message.get());
       return;
     }
     DVLOG(1) << "ForwardMessage from node "
@@ -270,6 +279,11 @@ TEST_F(PortsTest, Basic1) {
 
   EXPECT_EQ(OK, node0.ClosePort(x0));
   EXPECT_EQ(OK, node1.ClosePort(x1));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node1.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, Basic2) {
@@ -300,6 +314,11 @@ TEST_F(PortsTest, Basic2) {
 
   EXPECT_EQ(OK, node0.ClosePort(x0));
   EXPECT_EQ(OK, node1.ClosePort(x1));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node1.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, Basic3) {
@@ -339,6 +358,11 @@ TEST_F(PortsTest, Basic3) {
 
   EXPECT_EQ(OK, node0.ClosePort(x0));
   EXPECT_EQ(OK, node1.ClosePort(x1));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node1.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, LostConnectionToNode1) {
@@ -377,6 +401,11 @@ TEST_F(PortsTest, LostConnectionToNode1) {
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(x0));
   EXPECT_EQ(OK, node1.ClosePort(x1));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node1.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, LostConnectionToNode2) {
@@ -414,6 +443,21 @@ TEST_F(PortsTest, LostConnectionToNode2) {
   ScopedMessage message;
   EXPECT_EQ(ERROR_PORT_PEER_CLOSED, node0.GetMessage(a0, &message));
   EXPECT_FALSE(message);
+
+  EXPECT_EQ(OK, node0.ClosePort(a0));
+
+  EXPECT_EQ(OK, node0.ClosePort(x0));
+
+  EXPECT_EQ(OK, node1.GetMessage(x1, &message));
+  EXPECT_TRUE(message);
+  ClosePortsInMessage(&node1, message.get());
+
+  EXPECT_EQ(OK, node1.ClosePort(x1));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node1.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, GetMessage1) {
@@ -440,6 +484,8 @@ TEST_F(PortsTest, GetMessage1) {
   EXPECT_FALSE(message);
 
   EXPECT_EQ(OK, node0.ClosePort(a0));
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, GetMessage2) {
@@ -463,6 +509,8 @@ TEST_F(PortsTest, GetMessage2) {
 
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(a1));
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, GetMessage3) {
@@ -495,6 +543,8 @@ TEST_F(PortsTest, GetMessage3) {
 
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(a1));
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, Delegation1) {
@@ -565,6 +615,9 @@ TEST_F(PortsTest, Delegation1) {
 
   EXPECT_EQ(OK, node0.ClosePort(x0));
   EXPECT_EQ(OK, node1.ClosePort(x1));
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node1.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, Delegation2) {
@@ -606,9 +659,16 @@ TEST_F(PortsTest, Delegation2) {
 
     PumpTasks();
 
+    EXPECT_EQ(OK, node0.ClosePort(C));
+    EXPECT_EQ(OK, node0.ClosePort(E));
+
+    EXPECT_EQ(OK, node0.ClosePort(A));
+    EXPECT_EQ(OK, node1.ClosePort(B));
+
     for (;;) {
       ScopedMessage message;
       if (node1_delegate.GetSavedMessage(&message)) {
+        ClosePortsInMessage(&node1, message.get());
         if (strcmp("hello", ToString(message)) == 0)
           break;
       } else {
@@ -616,10 +676,15 @@ TEST_F(PortsTest, Delegation2) {
         break;
       }
     }
+
+    PumpTasks();  // Because ClosePort may have generated tasks.
   }
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node1.CanShutdownCleanly());
 }
 
-TEST_F(PortsTest, SendUninitialized1) {
+TEST_F(PortsTest, SendUninitialized) {
   NodeName node0_name(0, 1);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
@@ -641,95 +706,16 @@ TEST_F(PortsTest, SendUninitialized1) {
 
   // Send a message on each port and expect neither to arrive yet.
 
-  EXPECT_EQ(OK, SendStringMessage(&node0, x0, "it can wait"));
-  EXPECT_EQ(OK, SendStringMessage(&node1, x1, "hello eventually"));
+  EXPECT_EQ(ERROR_PORT_STATE_UNEXPECTED,
+            SendStringMessage(&node0, x0, "oops"));
+  EXPECT_EQ(ERROR_PORT_STATE_UNEXPECTED,
+            SendStringMessage(&node1, x1, "oh well"));
 
-  PumpTasks();
+  EXPECT_EQ(OK, node0.ClosePort(x0));
+  EXPECT_EQ(OK, node1.ClosePort(x1));
 
-  ScopedMessage message;
-  EXPECT_FALSE(node0_delegate.GetSavedMessage(&message));
-  EXPECT_FALSE(node1_delegate.GetSavedMessage(&message));
-
-  // Initialize the ports and expect both messages to arrive.
-
-  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
-  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
-
-  PumpTasks();
-
-  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
-  EXPECT_EQ(0, strcmp("hello eventually", ToString(message)));
-
-  ASSERT_TRUE(node1_delegate.GetSavedMessage(&message));
-  EXPECT_EQ(0, strcmp("it can wait", ToString(message)));
-}
-
-TEST_F(PortsTest, SendUninitialized2) {
-  NodeName node0_name(0, 1);
-  TestNodeDelegate node0_delegate(node0_name);
-  Node node0(node0_name, &node0_delegate);
-  node_map[0] = &node0;
-
-  NodeName node1_name(1, 1);
-  TestNodeDelegate node1_delegate(node1_name);
-  Node node1(node1_name, &node1_delegate);
-  node_map[1] = &node1;
-
-  // Begin to setup a pipe between node0 and node1, but don't initialize either
-  // endpoint.
-  PortRef x0, x1;
-  EXPECT_EQ(OK, node0.CreateUninitializedPort(&x0));
-  EXPECT_EQ(OK, node1.CreateUninitializedPort(&x1));
-
-  node0_delegate.set_save_messages(true);
-  node1_delegate.set_save_messages(true);
-
-  PortRef A, B;
-  EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
-
-  // Send B over the uninitialized x0 port and expect it to not yet be received.
-
-  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, x0, "hi", B));
-
-  PumpTasks();
-
-  ScopedMessage message;
-  EXPECT_FALSE(node1_delegate.GetSavedMessage(&message));
-
-  // Send a message over A to B while B is waiting to be sent to x1.
-  EXPECT_EQ(OK, SendStringMessage(&node0, A, "hey"));
-
-  PumpTasks();
-
-  // Nothing should have arrived yet because B should be buffering, waiting to
-  // proxy to its new destination wherever that may be.
-  EXPECT_FALSE(node1_delegate.GetSavedMessage(&message));
-
-  // Initialize the ports and expect both messages to arrive.
-
-  EXPECT_EQ(OK, node0.InitializePort(x0, node1_name, x1.name()));
-  EXPECT_EQ(OK, node1.InitializePort(x1, node0_name, x0.name()));
-
-  PumpTasks();
-
-  ASSERT_TRUE(node1_delegate.GetSavedMessage(&message));
-  EXPECT_EQ(0, strcmp("hi", ToString(message)));
-
-  PortRef received_port;
-  node1.GetPort(message->ports()[0], &received_port);
-
-  ASSERT_TRUE(node1_delegate.GetSavedMessage(&message));
-  EXPECT_EQ(0, strcmp("hey", ToString(message)));
-
-  // Send a message over the previously received port and expect it to get back
-  // to A.
-
-  EXPECT_EQ(OK, SendStringMessage(&node1, received_port, "bye"));
-
-  PumpTasks();
-
-  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
-  EXPECT_EQ(0, strcmp("bye", ToString(message)));
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node1.CanShutdownCleanly());
 }
 
 TEST_F(PortsTest, SendFailure) {
@@ -768,9 +754,20 @@ TEST_F(PortsTest, SendFailure) {
 
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
   EXPECT_EQ(0, strcmp("hi", ToString(message)));
+  ClosePortsInMessage(&node0, message.get());
 
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
   EXPECT_EQ(0, strcmp("hey", ToString(message)));
+  ClosePortsInMessage(&node0, message.get());
+
+  PumpTasks();
+
+  EXPECT_EQ(OK, node0.ClosePort(A));
+  EXPECT_EQ(OK, node0.ClosePort(B));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
 }
 
 }  // namespace test

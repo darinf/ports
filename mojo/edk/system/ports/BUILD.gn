@@ -36,7 +36,9 @@ test("mojo_system_ports_unittests") {
 
   deps = [
     ":ports",
+    "//base",
+    "//base/test:test_support",
+    "//mojo/edk/test:run_all_unittests",
     "//testing/gtest",
-    "//testing/gtest:gtest_main",
   ]
 }

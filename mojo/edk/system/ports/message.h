@@ -20,6 +20,8 @@ namespace ports {
 // This class is designed to be subclassed, and the subclass is responsible for
 // providing the underlying storage. The header size will be aligned, and it
 // should be followed in memory by the array of ports and finally the payload.
+//
+// NOTE: This class does not manage the lifetime of the ports it references.
 class Message {
  public:
   virtual ~Message() {}

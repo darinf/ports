@@ -52,6 +52,13 @@ class Node {
   Node(const NodeName& name, NodeDelegate* delegate);
   ~Node();
 
+  // Returns true if there are no open ports or ports in the process of being
+  // transferred from this node to another. If this returns false, then to
+  // ensure clean shutdown, it is necessary to keep the node alive and continue
+  // routing messages to it via AcceptMessage. This method may be called again
+  // after AcceptMessage to check if the Node is now ready to be destroyed.
+  bool CanShutdownCleanly();
+
   // Lookup the named port.
   int GetPort(const PortName& port_name, PortRef* port_ref);
 
@@ -160,8 +167,8 @@ class Node {
     return NewInternalMessage_Helper(port_name, type, &data, sizeof(data));
   }
 
-  NodeName name_;
-  NodeDelegate* delegate_;
+  const NodeName name_;
+  NodeDelegate* const delegate_;
 
   // Guards |ports_| as well as any operation which needs to hold multiple port
   // locks simultaneously. Usage of this is subtle: it must NEVER be acquired
