@@ -739,6 +739,11 @@ void Node::WillSendPort_Locked(Port* port,
   DCHECK(port->state == Port::kReceiving);
   port->state = Port::kBuffering;
 
+  // If we already know our peer is closed, we already know this proxy can
+  // be removed once it receives and forwards its last expected message.
+  if (port->peer_closed)
+    port->remove_proxy_on_last_message = true;
+
   *port_name = new_port_name;
 
   port_descriptor->peer_node_name = port->peer_node_name;
