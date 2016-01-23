@@ -798,6 +798,101 @@ TEST_F(PortsTest, DontLeakUnreceivedPorts) {
   EXPECT_TRUE(node0.CanShutdownCleanly());
 }
 
+TEST_F(PortsTest, ProxyCollapse1) {
+  NodeName node0_name(0, 1);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_save_messages(true);
+
+  PortRef A, B;
+  EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
+
+  PortRef X, Y;
+  EXPECT_EQ(OK, node0.CreatePortPair(&X, &Y));
+
+  ScopedMessage message;
+
+  // Send B and receive it as C.
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", B));
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+  PortRef C;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &C));
+
+  // Send C and receive it as D.
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", C));
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+  PortRef D;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &D));
+
+  // Send D and receive it as E.
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", D));
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+  PortRef E;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &E));
+
+  EXPECT_EQ(OK, node0.ClosePort(X));
+  EXPECT_EQ(OK, node0.ClosePort(Y));
+
+  EXPECT_EQ(OK, node0.ClosePort(A));
+  EXPECT_EQ(OK, node0.ClosePort(E));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+}
+
+TEST_F(PortsTest, ProxyCollapse2) {
+  NodeName node0_name(0, 1);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_save_messages(true);
+
+  PortRef A, B;
+  EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
+
+  PortRef X, Y;
+  EXPECT_EQ(OK, node0.CreatePortPair(&X, &Y));
+
+  ScopedMessage message;
+
+  // Send B and receive it as C.
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", B));
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+  PortRef C;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &C));
+
+  // Send A and receive it as D.
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", A));
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+  PortRef D;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &D));
+
+  // At this point we have a scenario with:
+  //
+  // D -> [B] -> C -> [A]
+  //
+  // Ensure that the proxies can collapse.
+
+  EXPECT_EQ(OK, node0.ClosePort(X));
+  EXPECT_EQ(OK, node0.ClosePort(Y));
+
+  EXPECT_EQ(OK, node0.ClosePort(C));
+  EXPECT_EQ(OK, node0.ClosePort(D));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+}
+
 }  // namespace test
 }  // namespace ports
 }  // namespace edk
