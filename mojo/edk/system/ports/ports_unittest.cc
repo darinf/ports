@@ -960,25 +960,31 @@ TEST_F(PortsTest, SendWithClosedPeerSent) {
   PortRef A, B;
   EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
 
+  ScopedMessage message;
+
   // Send A as new port C.
   EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", A));
-
-  ScopedMessage message;
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
   ASSERT_EQ(1u, message->num_ports());
-
   PortRef C;
   ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &C));
 
+  // Send C as new port D.
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", C));
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+  PortRef D;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &D));
+
   node0_delegate.set_read_messages(false);
 
-  // Send a message to B through C, then close C.
-  EXPECT_EQ(OK, SendStringMessage(&node0, C, "hey"));
-  EXPECT_EQ(OK, node0.ClosePort(C));
+  // Send a message to B through D, then close D.
+  EXPECT_EQ(OK, SendStringMessage(&node0, D, "hey"));
+  EXPECT_EQ(OK, node0.ClosePort(D));
 
   PumpTasks();
 
-  // Now send B as new port D.
+  // Now send B as new port E.
 
   node0_delegate.set_read_messages(true);
   EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", B));
@@ -989,24 +995,24 @@ TEST_F(PortsTest, SendWithClosedPeerSent) {
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
   ASSERT_EQ(1u, message->num_ports());
 
-  PortRef D;
-  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &D));
+  PortRef E;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &E));
 
   PumpTasks();
 
-  // D should receive the message originally sent to B, and it should also be
-  // aware of C's closure.
+  // E should receive the message originally sent to B, and it should also be
+  // aware of D's closure.
 
   ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
   EXPECT_EQ(0, strcmp("hey", ToString(message)));
 
   PortStatus status;
-  EXPECT_EQ(OK, node0.GetStatus(D, &status));
+  EXPECT_EQ(OK, node0.GetStatus(E, &status));
   EXPECT_FALSE(status.receiving_messages);
   EXPECT_FALSE(status.has_messages);
   EXPECT_TRUE(status.peer_closed);
 
-  node0.ClosePort(D);
+  node0.ClosePort(E);
 
   EXPECT_TRUE(node0.CanShutdownCleanly());
 }
