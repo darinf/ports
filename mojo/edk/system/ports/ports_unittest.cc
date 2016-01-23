@@ -893,6 +893,124 @@ TEST_F(PortsTest, ProxyCollapse2) {
   EXPECT_TRUE(node0.CanShutdownCleanly());
 }
 
+TEST_F(PortsTest, SendWithClosedPeer) {
+  NodeName node0_name(0, 1);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_read_messages(false);
+
+  // Send a message from A to B, then close A.
+  PortRef A, B;
+  EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
+  EXPECT_EQ(OK, SendStringMessage(&node0, A, "hey"));
+  EXPECT_EQ(OK, node0.ClosePort(A));
+
+  PumpTasks();
+
+  // Now send B over X-Y as new port C.
+  PortRef X, Y;
+  EXPECT_EQ(OK, node0.CreatePortPair(&X, &Y));
+
+  node0_delegate.set_read_messages(true);
+  node0_delegate.set_save_messages(true);
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", B));
+
+  EXPECT_EQ(OK, node0.ClosePort(X));
+  EXPECT_EQ(OK, node0.ClosePort(Y));
+
+  ScopedMessage message;
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+
+  PortRef C;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &C));
+
+  PumpTasks();
+
+  // C should receive the message originally sent to B, and it should also be
+  // aware of A's closure.
+
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  EXPECT_EQ(0, strcmp("hey", ToString(message)));
+
+  PortStatus status;
+  EXPECT_EQ(OK, node0.GetStatus(C, &status));
+  EXPECT_FALSE(status.receiving_messages);
+  EXPECT_FALSE(status.has_messages);
+  EXPECT_TRUE(status.peer_closed);
+
+  node0.ClosePort(C);
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+}
+
+TEST_F(PortsTest, SendWithClosedPeerSent) {
+  NodeName node0_name(0, 1);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_save_messages(true);
+
+  PortRef X, Y;
+  EXPECT_EQ(OK, node0.CreatePortPair(&X, &Y));
+
+  PortRef A, B;
+  EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
+
+  // Send A as new port C.
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", A));
+
+  ScopedMessage message;
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+
+  PortRef C;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &C));
+
+  node0_delegate.set_read_messages(false);
+
+  // Send a message to B through C, then close C.
+  EXPECT_EQ(OK, SendStringMessage(&node0, C, "hey"));
+  EXPECT_EQ(OK, node0.ClosePort(C));
+
+  PumpTasks();
+
+  // Now send B as new port D.
+
+  node0_delegate.set_read_messages(true);
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, X, "foo", B));
+
+  EXPECT_EQ(OK, node0.ClosePort(X));
+  EXPECT_EQ(OK, node0.ClosePort(Y));
+
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+
+  PortRef D;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &D));
+
+  PumpTasks();
+
+  // D should receive the message originally sent to B, and it should also be
+  // aware of C's closure.
+
+  ASSERT_TRUE(node0_delegate.GetSavedMessage(&message));
+  EXPECT_EQ(0, strcmp("hey", ToString(message)));
+
+  PortStatus status;
+  EXPECT_EQ(OK, node0.GetStatus(D, &status));
+  EXPECT_FALSE(status.receiving_messages);
+  EXPECT_FALSE(status.has_messages);
+  EXPECT_TRUE(status.peer_closed);
+
+  node0.ClosePort(D);
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+}
+
 }  // namespace test
 }  // namespace ports
 }  // namespace edk
