@@ -41,6 +41,7 @@ enum : int {
 
 struct PortStatus {
   bool has_messages;
+  bool receiving_messages;
   bool peer_closed;
 };
 

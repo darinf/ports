@@ -1224,6 +1224,53 @@ TEST_F(MultiprocessMessagePipeTest, SendClosePeerSend) {
                                      MOJO_DEADLINE_INDEFINITE, nullptr));
 }
 
+DEFINE_TEST_CLIENT_TEST_WITH_PIPE(WriteCloseSendPeerClient,
+                                  MultiprocessMessagePipeTest, h) {
+  MojoHandle pipe[2];
+  EXPECT_EQ("foo", ReadMessageWithHandles(h, pipe, 2));
+
+  // Write some messages to the first endpoint and then close it.
+  WriteMessage(pipe[0], "baz");
+  WriteMessage(pipe[0], "qux");
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(pipe[0]));
+
+  MojoHandle c, d;
+  CreateMessagePipe(&c, &d);
+
+  // Pass the orphaned endpoint over another pipe before passing it back to
+  // the parent, just for some extra proxying goodness.
+  WriteMessageWithHandles(c, "foo", &pipe[1], 1);
+  EXPECT_EQ("foo", ReadMessageWithHandles(d, &pipe[1], 1));
+
+  // And finally pass it back to the parent.
+  WriteMessageWithHandles(h, "bar", &pipe[1], 1);
+
+  EXPECT_EQ("quit", ReadMessage(h));
+}
+
+TEST_F(MultiprocessMessagePipeTest, WriteCloseSendPeer) {
+  MojoHandle pipe[2];
+  CreateMessagePipe(&pipe[0], &pipe[1]);
+
+  RUN_CHILD_ON_PIPE(WriteCloseSendPeerClient, h)
+    // Pass the pipe to the child.
+    WriteMessageWithHandles(h, "foo", pipe, 2);
+
+    // Read back an endpoint which should have messages on it.
+    MojoHandle p;
+    EXPECT_EQ("bar", ReadMessageWithHandles(h, &p, 1));
+
+    EXPECT_EQ("baz", ReadMessage(p));
+    EXPECT_EQ("qux", ReadMessage(p));
+
+    // Expect to have peer closure signaled.
+    EXPECT_EQ(MOJO_RESULT_OK, MojoWait(p, MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+                                       MOJO_DEADLINE_INDEFINITE, nullptr));
+
+    WriteMessage(h, "quit");
+  END_CHILD()
+}
+
 }  // namespace
 }  // namespace edk
 }  // namespace mojo

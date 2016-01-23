@@ -216,6 +216,7 @@ int Node::GetStatus(const PortRef& port_ref, PortStatus* port_status) {
     return ERROR_PORT_STATE_UNEXPECTED;
 
   port_status->has_messages = port->message_queue.HasNextMessage();
+  port_status->receiving_messages = CanAcceptMoreMessages(port);
   port_status->peer_closed = port->peer_closed;
   return OK;
 }
