@@ -544,17 +544,7 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
   port_closed_ = true;
   awakables_.CancelAll();
 
-  if (port_transferred_) {
-    // Transferred ports are closed automatically by the ports layer during
-    // eventual proxy teardown. We stop observing here so the port doesn't hold
-    // a reference to this dispatcher.
-    //
-    // NOTE: It's important not to hold the dispatcher's lock here since
-    // SetPortObserver ultimately acquires the port's internal lock and we don't
-    // want any ordering dependencies between the two.
-    base::AutoUnlock unlock(signal_lock_);
-    node_controller_->SetPortObserver(port_, nullptr);
-  } else {
+  if (!port_transferred_) {
     base::AutoUnlock unlock(signal_lock_);
     node_controller_->ClosePort(port_);
   }
