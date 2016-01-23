@@ -192,12 +192,11 @@ int Node::ClosePort(const PortRef& port_ref) {
   DVLOG(2) << "Sending ObserveClosure from " << port_ref.name() << "@" << name_
            << " to " << peer_port_name << "@" << peer_node_name;
 
+  ErasePort(port_ref.name());
+
   delegate_->ForwardMessage(
       peer_node_name,
       NewInternalMessage(peer_port_name, EventType::kObserveClosure, data));
-
-
-  ErasePort(port_ref.name());
 
   for (const auto& name : referenced_port_names) {
     PortRef ref;
@@ -651,33 +650,43 @@ int Node::OnObserveClosure(const PortName& port_name,
              << port->peer_port_name << "@" << port->peer_node_name
              << " (last_sequence_num=" << last_sequence_num << ")";
 
+    // We always forward ObserveClosure, even beyond the receiving port which
+    // cares about it. This ensures that any dead-end proxies beyond that port
+    // are notified to remove themselves.
+
+    ObserveClosureEventData forwarded_data;
+
     if (port->state == Port::kReceiving) {
       notify_delegate = true;
+
+      // When forwarding along the other half of the port cycle, this will only
+      // reach dead-end proxies. Tell them we've sent our last message so they
+      // can go away.
+      //
+      // TODO: Repurposing ObserveClosure for this has the desired result but
+      // may be semantically confusing since the forwarding port is not actually
+      // closed. Consider replacing this with a new event type.
+      forwarded_data.last_sequence_num = port->next_sequence_num_to_send - 1;
     } else {
-      NodeName next_node_name = port->peer_node_name;
-      PortName next_port_name = port->peer_port_name;
-
-      port->remove_proxy_on_last_message = true;
-
-      ObserveClosureEventData data;
-      data.last_sequence_num = last_sequence_num;
+      // We haven't yet reached the receiving peer of the closed port, so
+      // forward the message along as-is.
+      forwarded_data.last_sequence_num = last_sequence_num;
 
       // See about removing the port if it is a proxy as our peer won't be able
       // to participate in proxy removal.
-      if (port->state == Port::kProxying) {
+      port->remove_proxy_on_last_message = true;
+      if (port->state == Port::kProxying)
         MaybeRemoveProxy_Locked(port.get(), port_name);
-
-        DVLOG(2) << "Forwarding ObserveClosure from "
-                 << port_name << "@" << name_ << " to proxy target "
-                 << next_port_name << "@" << next_node_name;
-
-        // Forward this event along.
-        delegate_->ForwardMessage(
-            next_node_name,
-            NewInternalMessage(next_port_name,
-                               EventType::kObserveClosure, data));
-      }
     }
+
+    DVLOG(2) << "Forwarding ObserveClosure from "
+             << port_name << "@" << name_ << " to proxy target "
+             << port->peer_port_name << "@" << port->peer_node_name;
+
+    delegate_->ForwardMessage(
+        port->peer_node_name,
+        NewInternalMessage(port->peer_port_name,
+                           EventType::kObserveClosure, forwarded_data));
   }
   if (notify_delegate) {
     PortRef port_ref(port_name, port);
