@@ -308,6 +308,8 @@ bool DataPipeProducerDispatcher::BeginTransit() {
 }
 
 void DataPipeProducerDispatcher::CompleteTransitAndClose() {
+  node_controller_->SetPortObserver(control_port_, nullptr);
+
   base::AutoLock lock(lock_);
   DCHECK(in_transit_);
   transferred_ = true;
@@ -403,17 +405,7 @@ MojoResult DataPipeProducerDispatcher::CloseNoLock() {
   shared_ring_buffer_ = nullptr;
 
   awakable_list_.CancelAll();
-  if (transferred_) {
-    // Transferred ports are closed automatically by the ports layer during
-    // eventual proxy teardown. We stop observing here so the port doesn't hold
-    // a reference to this dispatcher.
-    //
-    // NOTE: It's important not to hold the dispatcher's lock here since
-    // SetPortObserver ultimately acquires the port's internal lock and we don't
-    // want any ordering dependencies between the two.
-    base::AutoUnlock unlock(lock_);
-    node_controller_->SetPortObserver(control_port_, nullptr);
-  } else {
+  if (!transferred_) {
     base::AutoUnlock unlock(lock_);
     node_controller_->ClosePort(control_port_);
   }

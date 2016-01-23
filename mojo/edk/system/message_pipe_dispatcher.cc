@@ -494,6 +494,8 @@ bool MessagePipeDispatcher::BeginTransit() {
 }
 
 void MessagePipeDispatcher::CompleteTransitAndClose() {
+  node_controller_->SetPortObserver(port_, nullptr);
+
   base::AutoLock lock(signal_lock_);
   in_transit_ = false;
   port_transferred_ = true;
