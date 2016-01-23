@@ -474,7 +474,7 @@ void DataPipeConsumerDispatcher::UpdateSignalsStateNoLock() {
   ports::PortStatus port_status;
   if (node_controller_->node()->GetStatus(control_port_, &port_status) !=
           ports::OK ||
-      port_status.peer_closed) {
+      !port_status.receiving_messages) {
     DVLOG(1) << "Data pipe consumer " << pipe_id_ << " is aware of peer closure"
              << " [control_port=" << control_port_.name() << "]";
 

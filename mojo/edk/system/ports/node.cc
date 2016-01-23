@@ -680,8 +680,10 @@ int Node::OnObserveClosure(const PortName& port_name,
     }
 
     DVLOG(2) << "Forwarding ObserveClosure from "
-             << port_name << "@" << name_ << " to proxy target "
-             << port->peer_port_name << "@" << port->peer_node_name;
+             << port_name << "@" << name_ << " to peer "
+             << port->peer_port_name << "@" << port->peer_node_name
+             << " (last_sequence_num=" << forwarded_data.last_sequence_num
+             << ")";
 
     delegate_->ForwardMessage(
         port->peer_node_name,
