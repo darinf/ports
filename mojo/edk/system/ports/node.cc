@@ -152,6 +152,8 @@ int Node::GetUserData(const PortRef& port_ref,
 }
 
 int Node::ClosePort(const PortRef& port_ref) {
+  std::deque<PortName> referenced_port_names;
+
   ObserveClosureEventData data;
 
   NodeName peer_node_name;
@@ -181,6 +183,10 @@ int Node::ClosePort(const PortRef& port_ref) {
 
     peer_node_name = port->peer_node_name;
     peer_port_name = port->peer_port_name;
+
+    // If the port being closed still has unread messages, then we need to take
+    // care to close those ports so as to avoid leaking memory.
+    port->message_queue.GetReferencedPorts(&referenced_port_names);
   }
 
   DVLOG(2) << "Sending ObserveClosure from " << port_ref.name() << "@" << name_
@@ -190,10 +196,14 @@ int Node::ClosePort(const PortRef& port_ref) {
       peer_node_name,
       NewInternalMessage(peer_port_name, EventType::kObserveClosure, data));
 
-  // TODO: If the port being closed still has unread messages, then we need to
-  // take care to close those ports so as to avoid leaking memory.
 
   ErasePort(port_ref.name());
+
+  for (const auto& name : referenced_port_names) {
+    PortRef ref;
+    if (GetPort(name, &ref) == OK)
+      ClosePort(ref);
+  }
   return OK;
 }
 

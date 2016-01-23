@@ -75,6 +75,13 @@ void MessageQueue::AcceptMessage(ScopedMessage message,
   }
 }
 
+void MessageQueue::GetReferencedPorts(std::deque<PortName>* port_names) {
+  for (const auto& message : heap_) {
+    for (size_t i = 0; i < message->num_ports(); ++i)
+      port_names->push_back(message->ports()[i]);
+  }
+}
+
 }  // namespace ports
 }  // namespace edk
 }  // namespace mojo

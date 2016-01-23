@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <deque>
 #include <functional>
 #include <vector>
 
@@ -50,6 +51,9 @@ class MessageQueue {
   // In other words, has_next_message acts like an edge trigger.
   //
   void AcceptMessage(ScopedMessage message, bool* has_next_message);
+
+  // Returns all of the ports referenced by messages in this message queue.
+  void GetReferencedPorts(std::deque<PortName>* ports);
 
  private:
   std::vector<ScopedMessage> heap_;

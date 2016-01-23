@@ -770,6 +770,34 @@ TEST_F(PortsTest, SendFailure) {
   EXPECT_TRUE(node0.CanShutdownCleanly());
 }
 
+TEST_F(PortsTest, DontLeakUnreceivedPorts) {
+  NodeName node0_name(0, 1);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_read_messages(false);
+
+  PortRef A, B;
+  EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
+
+  PortRef C, D;
+  EXPECT_EQ(OK, node0.CreatePortPair(&C, &D));
+
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, A, "foo", D));
+
+  PumpTasks();
+
+  EXPECT_EQ(OK, node0.ClosePort(C));
+
+  EXPECT_EQ(OK, node0.ClosePort(A));
+  EXPECT_EQ(OK, node0.ClosePort(B));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+}
+
 }  // namespace test
 }  // namespace ports
 }  // namespace edk
