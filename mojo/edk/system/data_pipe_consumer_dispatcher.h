@@ -82,9 +82,9 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
   ~DataPipeConsumerDispatcher() override;
 
   void InitializeNoLock();
-  void NotifyReadNoLock(uint32_t num_bytes);
   MojoResult CloseNoLock();
   HandleSignalsState GetHandleSignalsStateNoLock() const;
+  void NotifyRead(uint32_t num_bytes);
   void OnPortStatusChanged();
   void UpdateSignalsStateNoLock();
 

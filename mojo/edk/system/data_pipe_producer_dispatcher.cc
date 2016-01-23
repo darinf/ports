@@ -147,7 +147,10 @@ MojoResult DataPipeProducerDispatcher::WriteData(const void* elements,
   HandleSignalsState new_state = GetHandleSignalsStateNoLock();
   if (!new_state.equals(old_state))
     awakable_list_.AwakeForStateChange(new_state);
-  NotifyWriteNoLock(num_bytes_to_write);
+
+  base::AutoUnlock unlock(lock_);
+  NotifyWrite(num_bytes_to_write);
+
   return MOJO_RESULT_OK;
 }
 
@@ -204,7 +207,9 @@ MojoResult DataPipeProducerDispatcher::EndWriteData(
     available_capacity_ -= num_bytes_written;
     write_offset_ = (write_offset_ + num_bytes_written) %
         options_.capacity_num_bytes;
-    NotifyWriteNoLock(num_bytes_written);
+
+    base::AutoUnlock unlock(lock_);
+    NotifyWrite(num_bytes_written);
   }
 
   in_two_phase_write_ = false;
@@ -372,6 +377,8 @@ DataPipeProducerDispatcher::~DataPipeProducerDispatcher() {
 }
 
 void DataPipeProducerDispatcher::InitializeNoLock() {
+  lock_.AssertAcquired();
+
   if (shared_ring_buffer_) {
     ring_buffer_mapping_ =
         shared_ring_buffer_->Map(0, options_.capacity_num_bytes);
@@ -380,18 +387,11 @@ void DataPipeProducerDispatcher::InitializeNoLock() {
       shared_ring_buffer_ = nullptr;
     }
   }
+
+  base::AutoUnlock unlock(lock_);
   node_controller_->SetPortObserver(
       control_port_,
       make_scoped_refptr(new PortObserverThunk(this)));
-}
-
-void DataPipeProducerDispatcher::NotifyWriteNoLock(uint32_t num_bytes) {
-  DVLOG(1) << "Data pipe producer " << pipe_id_ << " notifying peer: "
-           << num_bytes << " bytes written. [control_port="
-           << control_port_.name() << "]";
-
-  SendDataPipeControlMessage(node_controller_, control_port_,
-                             DataPipeCommand::DATA_WAS_WRITTEN, num_bytes);
 }
 
 MojoResult DataPipeProducerDispatcher::CloseNoLock() {
@@ -407,8 +407,14 @@ MojoResult DataPipeProducerDispatcher::CloseNoLock() {
     // Transferred ports are closed automatically by the ports layer during
     // eventual proxy teardown. We stop observing here so the port doesn't hold
     // a reference to this dispatcher.
+    //
+    // NOTE: It's important not to hold the dispatcher's lock here since
+    // SetPortObserver ultimately acquires the port's internal lock and we don't
+    // want any ordering dependencies between the two.
+    base::AutoUnlock unlock(lock_);
     node_controller_->SetPortObserver(control_port_, nullptr);
   } else {
+    base::AutoUnlock unlock(lock_);
     node_controller_->ClosePort(control_port_);
   }
 
@@ -429,6 +435,15 @@ HandleSignalsState DataPipeProducerDispatcher::GetHandleSignalsStateNoLock()
   }
   rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_PEER_CLOSED;
   return rv;
+}
+
+void DataPipeProducerDispatcher::NotifyWrite(uint32_t num_bytes) {
+  DVLOG(1) << "Data pipe producer " << pipe_id_ << " notifying peer: "
+           << num_bytes << " bytes written. [control_port="
+           << control_port_.name() << "]";
+
+  SendDataPipeControlMessage(node_controller_, control_port_,
+                             DataPipeCommand::DATA_WAS_WRITTEN, num_bytes);
 }
 
 void DataPipeProducerDispatcher::OnPortStatusChanged() {

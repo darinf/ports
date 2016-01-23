@@ -159,7 +159,9 @@ MojoResult DataPipeConsumerDispatcher::ReadData(void* elements,
   if (discard || !peek) {
     read_offset_ = (read_offset_ + bytes_to_read) % options_.capacity_num_bytes;
     bytes_available_ -= bytes_to_read;
-    NotifyReadNoLock(bytes_to_read);
+
+    base::AutoUnlock unlock(lock_);
+    NotifyRead(bytes_to_read);
   }
 
   return MOJO_RESULT_OK;
@@ -224,7 +226,9 @@ MojoResult DataPipeConsumerDispatcher::EndReadData(uint32_t num_bytes_read) {
 
     DCHECK_GE(bytes_available_, num_bytes_read);
     bytes_available_ -= num_bytes_read;
-    NotifyReadNoLock(num_bytes_read);
+
+    base::AutoUnlock unlock(lock_);
+    NotifyRead(num_bytes_read);
   }
 
   in_two_phase_read_ = false;
@@ -391,6 +395,8 @@ DataPipeConsumerDispatcher::~DataPipeConsumerDispatcher() {
 }
 
 void DataPipeConsumerDispatcher::InitializeNoLock() {
+  lock_.AssertAcquired();
+
   if (shared_ring_buffer_) {
     DCHECK(!ring_buffer_mapping_);
     ring_buffer_mapping_ =
@@ -400,18 +406,11 @@ void DataPipeConsumerDispatcher::InitializeNoLock() {
       shared_ring_buffer_ = nullptr;
     }
   }
+
+  base::AutoUnlock unlock(lock_);
   node_controller_->SetPortObserver(
       control_port_,
       make_scoped_refptr(new PortObserverThunk(this)));
-}
-
-void DataPipeConsumerDispatcher::NotifyReadNoLock(uint32_t num_bytes) {
-  DVLOG(1) << "Data pipe consumer " << pipe_id_ << " notifying peer: "
-           << num_bytes << " bytes read. [control_port="
-           << control_port_.name() << "]";
-
-  SendDataPipeControlMessage(node_controller_, control_port_,
-                             DataPipeCommand::DATA_WAS_READ, num_bytes);
 }
 
 MojoResult DataPipeConsumerDispatcher::CloseNoLock() {
@@ -427,8 +426,14 @@ MojoResult DataPipeConsumerDispatcher::CloseNoLock() {
     // Transferred ports are closed automatically by the ports layer during
     // eventual proxy teardown. We stop observing here so the port doesn't hold
     // a reference to this dispatcher.
+    //
+    // NOTE: It's important not to hold the dispatcher's lock here since
+    // SetPortObserver ultimately acquires the port's internal lock and we don't
+    // want any ordering dependencies between the two.
+    base::AutoUnlock unlock(lock_);
     node_controller_->SetPortObserver(control_port_, nullptr);
   } else {
+    base::AutoUnlock unlock(lock_);
     node_controller_->ClosePort(control_port_);
   }
 
@@ -452,6 +457,15 @@ DataPipeConsumerDispatcher::GetHandleSignalsStateNoLock() const {
     rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_PEER_CLOSED;
   rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_PEER_CLOSED;
   return rv;
+}
+
+void DataPipeConsumerDispatcher::NotifyRead(uint32_t num_bytes) {
+  DVLOG(1) << "Data pipe consumer " << pipe_id_ << " notifying peer: "
+           << num_bytes << " bytes read. [control_port="
+           << control_port_.name() << "]";
+
+  SendDataPipeControlMessage(node_controller_, control_port_,
+                             DataPipeCommand::DATA_WAS_READ, num_bytes);
 }
 
 void DataPipeConsumerDispatcher::OnPortStatusChanged() {

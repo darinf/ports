@@ -82,9 +82,9 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
 
   void OnSharedBufferCreated(const scoped_refptr<PlatformSharedBuffer>& buffer);
   void InitializeNoLock();
-  void NotifyWriteNoLock(uint32_t num_bytes);
   MojoResult CloseNoLock();
   HandleSignalsState GetHandleSignalsStateNoLock() const;
+  void NotifyWrite(uint32_t num_bytes);
   void OnPortStatusChanged();
   void UpdateSignalsStateNoLock();
   bool ProcessMessageNoLock(const DataPipeControlMessage& message,

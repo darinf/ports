@@ -81,9 +81,6 @@ MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
   DVLOG(2) << "Creating new MessagePipeDispatcher for port " << port.name()
            << " [pipe_id=" << pipe_id << "; endpoint=" << endpoint << "]";
 
-  // OnPortStatusChanged (via PortObserverThunk) may be called before this
-  // constructor returns. Hold a lock here to prevent signal races.
-  base::AutoLock lock(signal_lock_);
   node_controller_->SetPortObserver(
       port_,
       make_scoped_refptr(new PortObserverThunk(this)));
@@ -549,8 +546,14 @@ MojoResult MessagePipeDispatcher::CloseNoLock() {
     // Transferred ports are closed automatically by the ports layer during
     // eventual proxy teardown. We stop observing here so the port doesn't hold
     // a reference to this dispatcher.
+    //
+    // NOTE: It's important not to hold the dispatcher's lock here since
+    // SetPortObserver ultimately acquires the port's internal lock and we don't
+    // want any ordering dependencies between the two.
+    base::AutoUnlock unlock(signal_lock_);
     node_controller_->SetPortObserver(port_, nullptr);
   } else {
+    base::AutoUnlock unlock(signal_lock_);
     node_controller_->ClosePort(port_);
   }
 
