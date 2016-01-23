@@ -894,6 +894,10 @@ TEST_F(PortsTest, ProxyCollapse2) {
 }
 
 TEST_F(PortsTest, SendWithClosedPeer) {
+  // This tests that if a port is sent when its peer is already known to be
+  // closed, the newly created port will be aware of that peer closure, and the
+  // proxy will eventually collapse.
+
   NodeName node0_name(0, 1);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
@@ -947,6 +951,11 @@ TEST_F(PortsTest, SendWithClosedPeer) {
 }
 
 TEST_F(PortsTest, SendWithClosedPeerSent) {
+  // This tests that if a port is closed while some number of proxies are still
+  // routing messages (directly or indirectly) to it, that the peer port is
+  // eventually notified of the closure, and the dead-end proxies will
+  // eventually be removed.
+
   NodeName node0_name(0, 1);
   TestNodeDelegate node0_delegate(node0_name);
   Node node0(node0_name, &node0_delegate);
