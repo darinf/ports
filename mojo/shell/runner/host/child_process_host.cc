@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/runner/host/child_process_host.h"
+#include "mojo/shell/runner/host/child_process_host.h"
 
 #include <stdint.h>
 
@@ -21,7 +21,7 @@
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/interface_ptr_info.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/runner/host/switches.h"
+#include "mojo/shell/runner/host/switches.h"
 #include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
 
 #if defined(OS_LINUX) && !defined(OS_ANDROID)
@@ -33,7 +33,7 @@
 #endif
 
 namespace mojo {
-namespace runner {
+namespace shell {
 
 ChildProcessHost::PipeHolder::PipeHolder() {}
 
@@ -306,5 +306,5 @@ void ChildProcessHost::OnParentMessagePipeCreated(
   callback_task_runner->PostTask(FROM_HERE, callback);
 }
 
-}  // namespace runner
+}  // namespace shell
 }  // namespace mojo

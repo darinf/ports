@@ -14,12 +14,17 @@ import sys
 
 
 DIRS_TO_COPY_ = [
+  "content/browser/mojo",
+  "content/child",
+  "content/child/mojo",
+  "content/common/mojo",
+  "mojo",
   "mojo/edk/embedder",
   "mojo/edk/system",
   "mojo/edk/system/ports",
   "mojo/edk/test",
-  "mojo/runner/child",
-  "mojo/runner/host",
+  "mojo/shell/runner/child",
+  "mojo/shell/runner/host",
 ]
 
 
