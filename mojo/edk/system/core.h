@@ -90,6 +90,12 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   MojoResult PassWrappedPlatformHandle(MojoHandle wrapper_handle,
                                        ScopedPlatformHandle* platform_handle);
 
+  // Requests that the EDK tear itself down. |callback| will be called once
+  // the shutdown process is complete. Note that |callback| is always called
+  // asynchronously on the calling thread, and the calling thread must continue
+  // running a MessageLoop at least until the callback is called.
+  void RequestShutdown(const base::Closure& callback);
+
   // Watches on the given handle for the given signals, calling |callback| when
   // a signal is satisfied or when all signals become unsatisfiable. |callback|
   // must satisfy stringent requirements -- see |Awakable::Awake()| in

@@ -49,15 +49,28 @@ Node::~Node() {
 
 bool Node::CanShutdownCleanly() {
   base::AutoLock ports_lock(ports_lock_);
-#ifndef NDEBUG
-  if (!ports_.empty()) {
-    DVLOG(2) << "Node " << name_ << " cannot shutdown cleanly, due to ports:";
-    for (auto entry : ports_)
-      DVLOG(2) << "  " << entry.first
-               << " (state=" << static_cast<int>(entry.second->state) << ")";
-  }
+
+  // NOTE: This is not efficient, though it probably doesn't need to be since
+  // relatively few ports should be open during shutdown and shutdown doesn't
+  // need to be blazingly fast.
+  bool can_shutdown = true;
+  for (auto entry : ports_) {
+    base::AutoLock lock(entry.second->lock);
+    if (entry.second->peer_node_name != name_ &&
+        entry.second->state != Port::kReceiving) {
+      can_shutdown = false;
+#if !defined(NDEBUG)
+      DVLOG(2) << "Port " << entry.first << " referencing node "
+               << entry.second->peer_node_name << " is blocking shutdown of "
+               << "node " << name_ << " (state=" << entry.second->state << ")";
+#else
+      // Exit early when not debugging.
+      break;
 #endif
-  return ports_.empty();
+    }
+  }
+
+  return can_shutdown;
 }
 
 int Node::GetPort(const PortName& port_name, PortRef* port_ref) {

@@ -53,11 +53,12 @@ class Node {
   Node(const NodeName& name, NodeDelegate* delegate);
   ~Node();
 
-  // Returns true if there are no open ports or ports in the process of being
-  // transferred from this node to another. If this returns false, then to
-  // ensure clean shutdown, it is necessary to keep the node alive and continue
-  // routing messages to it via AcceptMessage. This method may be called again
-  // after AcceptMessage to check if the Node is now ready to be destroyed.
+  // Returns true iff there are no open ports referring to another node or ports
+  // in the process of being transferred from this node to another. If this
+  // returns false, then to ensure clean shutdown, it is necessary to keep the
+  // node alive and continue routing messages to it via AcceptMessage. This
+  // method may be called again after AcceptMessage to check if the Node is now
+  // ready to be destroyed.
   bool CanShutdownCleanly();
 
   // Lookup the named port.

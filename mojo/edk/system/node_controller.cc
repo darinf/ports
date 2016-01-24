@@ -168,6 +168,15 @@ void NodeController::ConnectToParentPort(const ports::PortRef& local_port,
                  base::Unretained(this), local_port, token, callback));
 }
 
+void NodeController::RequestShutdown(const base::Closure& callback) {
+  {
+    base::AutoLock lock(shutdown_lock_);
+    shutdown_callback_ = callback;
+  }
+
+  AttemptShutdownIfRequested();
+}
+
 void NodeController::ConnectToChildOnIOThread(
     base::ProcessHandle process_handle,
     ScopedPlatformHandle platform_handle) {
@@ -357,6 +366,8 @@ void NodeController::AcceptIncomingMessages() {
     node_->AcceptMessage(std::move(messages.front()));
     messages.pop();
   }
+
+  AttemptShutdownIfRequested();
 }
 
 void NodeController::DropAllPeers() {
@@ -519,6 +530,8 @@ void NodeController::OnPortsMessage(Channel::MessagePtr channel_message) {
                        std::move(channel_message)));
 
   node_->AcceptMessage(std::move(message));
+
+  AttemptShutdownIfRequested();
 }
 
 void NodeController::OnRequestPortConnection(
@@ -713,6 +726,25 @@ void NodeController::OnChannelError(const ports::NodeName& from_node) {
 
 void NodeController::DestroyOnIOThreadShutdown() {
   destroy_on_io_thread_shutdown_ = true;
+}
+
+void NodeController::AttemptShutdownIfRequested() {
+  base::Closure callback;
+  {
+    base::AutoLock lock(shutdown_lock_);
+    if (shutdown_callback_.is_null())
+      return;
+    if (!node_->CanShutdownCleanly()) {
+      DVLOG(2) << "Unable to cleanly shut down node " << name_ << ".";
+      return;
+    }
+    callback = shutdown_callback_;
+    shutdown_callback_.Reset();
+  }
+
+  DCHECK(!callback.is_null());
+
+  callback.Run();
 }
 
 }  // namespace edk

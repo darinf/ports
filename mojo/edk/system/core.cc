@@ -148,6 +148,13 @@ MojoResult Core::PassWrappedPlatformHandle(
   return MOJO_RESULT_OK;
 }
 
+void Core::RequestShutdown(const base::Closure& callback) {
+  base::Closure calling_thread_callback =
+      base::Bind(base::IgnoreResult(&base::TaskRunner::PostTask),
+                 base::ThreadTaskRunnerHandle::Get(), FROM_HERE, callback);
+  GetNodeController()->RequestShutdown(calling_thread_callback);
+}
+
 void Core::CreateParentMessagePipe(
     ScopedPlatformHandle platform_handle,
     const base::Callback<void(ScopedMessagePipeHandle)>& callback) {
@@ -437,7 +444,8 @@ MojoResult Core::CreateDataPipe(
 
   // TODO: Broker through the parent when necessary.
   scoped_refptr<PlatformSharedBuffer> ring_buffer =
-      node_controller_->CreateSharedBuffer(create_options.capacity_num_bytes);
+      GetNodeController()->CreateSharedBuffer(
+          create_options.capacity_num_bytes);
   if (!ring_buffer)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 

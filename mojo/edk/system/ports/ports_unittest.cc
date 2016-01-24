@@ -798,6 +798,45 @@ TEST_F(PortsTest, DontLeakUnreceivedPorts) {
   EXPECT_TRUE(node0.CanShutdownCleanly());
 }
 
+TEST_F(PortsTest, AllowShutdownWithLocalPortsOpen) {
+  NodeName node0_name(0, 1);
+  TestNodeDelegate node0_delegate(node0_name);
+  Node node0(node0_name, &node0_delegate);
+  node_map[0] = &node0;
+
+  node0_delegate.set_save_messages(true);
+
+  PortRef A, B;
+  EXPECT_EQ(OK, node0.CreatePortPair(&A, &B));
+
+  PortRef C, D;
+  EXPECT_EQ(OK, node0.CreatePortPair(&C, &D));
+
+  EXPECT_EQ(OK, SendStringMessageWithPort(&node0, A, "foo", D));
+
+  ScopedMessage message;
+  EXPECT_TRUE(node0_delegate.GetSavedMessage(&message));
+  ASSERT_EQ(1u, message->num_ports());
+
+  PortRef E;
+  ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &E));
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+
+  EXPECT_EQ(OK, node0.ClosePort(A));
+  EXPECT_EQ(OK, node0.ClosePort(B));
+  EXPECT_EQ(OK, node0.ClosePort(C));
+  EXPECT_EQ(OK, node0.ClosePort(E));
+
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly());
+}
+
 TEST_F(PortsTest, ProxyCollapse1) {
   NodeName node0_name(0, 1);
   TestNodeDelegate node0_delegate(node0_name);

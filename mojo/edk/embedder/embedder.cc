@@ -116,7 +116,10 @@ void ShutdownIPCSupportOnIOThread() {
 
 void ShutdownIPCSupport() {
   CHECK(internal::g_process_delegate);
-  internal::g_process_delegate->OnShutdownComplete();
+  CHECK(internal::g_core);
+  internal::g_core->RequestShutdown(
+      base::Bind(&ProcessDelegate::OnShutdownComplete,
+                 base::Unretained(internal::g_process_delegate)));
 }
 
 ScopedMessagePipeHandle CreateMessagePipe(

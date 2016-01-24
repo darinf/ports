@@ -107,6 +107,15 @@ class NodeController : public ports::NodeDelegate,
   // Creates a new shared buffer for use in the current process.
   scoped_refptr<PlatformSharedBuffer> CreateSharedBuffer(size_t num_bytes);
 
+  // Request that the Node be shut down cleanly. This may take an arbitrarily
+  // long time to complete, at which point |callback| will be called.
+  //
+  // Note that while it is safe to continue using the NodeController's public
+  // interface after requesting shutdown, you do so at your own risk and there
+  // is NO guarantee that new messages will be sent or ports will complete
+  // transfer.
+  void RequestShutdown(const base::Closure& callback);
+
  private:
   friend Core;
 
@@ -192,6 +201,11 @@ class NodeController : public ports::NodeDelegate,
   // called on the IO thread.
   void DestroyOnIOThreadShutdown();
 
+  // If there is a registered shutdown callback (meaning shutdown has been
+  // requested, this checks the Node's status to see if clean shutdown is
+  // possible. If so, shutdown is performed and the shutdown callback is run.
+  void AttemptShutdownIfRequested();
+
   // These are safe to access from any thread as long as the Node is alive.
   Core* const core_;
   const ports::NodeName name_;
@@ -242,6 +256,14 @@ class NodeController : public ports::NodeDelegate,
   // Indicates whether this object should delete itself on IO thread shutdown.
   // Must only be accessed from the IO thread.
   bool destroy_on_io_thread_shutdown_ = false;
+
+  // Guards |shutdown_callback_|.
+  base::Lock shutdown_lock_;
+
+  // Set by RequestShutdown(). If this is non-null, the controller will
+  // begin polling the Node to see if clean shutdown is possible any time the
+  // Node's state is modified by the controller.
+  base::Closure shutdown_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(NodeController);
 };
