@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "crypto/random.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
@@ -441,9 +442,7 @@ void NodeController::AllocMessage(size_t num_header_bytes,
 void NodeController::ForwardMessage(const ports::NodeName& node,
                                     ports::ScopedMessage message) {
   if (node == name_) {
-    // NOTE: It isn't critical that we accept messages on the IO thread.
-    // Rather, we just need to avoid re-entering the Node instance within
-    // ForwardMessage.
+    // NOTE: We cannot re-enter the Node instance within ForwardMesage.
 
     bool queue_was_empty = false;
     {
@@ -453,6 +452,15 @@ void NodeController::ForwardMessage(const ports::NodeName& node,
     }
 
     if (queue_was_empty) {
+      // It doesn't matter what thread we accept the messages on. In some
+      // environments we may not have an IO task runner (because we don't need
+      // IPC). In other environments the current thread may not have a message
+      // loop running. We only require that one of those conditions is met.
+      if (!io_task_runner_ && base::ThreadTaskRunnerHandle::IsSet())
+        io_task_runner_ = base::ThreadTaskRunnerHandle::Get();
+      DCHECK(io_task_runner_)
+          << "The Mojo EDK must either have an IO task runner set, or be used "
+          << " exclusively threads with a running MessageLoop.";
       io_task_runner_->PostTask(
           FROM_HERE,
           base::Bind(&NodeController::AcceptIncomingMessages,
