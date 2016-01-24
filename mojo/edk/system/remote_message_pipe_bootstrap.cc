@@ -31,19 +31,31 @@ class ParentBootstrap : public RemoteMessagePipeBootstrap {
   ParentBootstrap(NodeController* node_controller,
                   ScopedPlatformHandle platform_handle,
                   const std::string& token)
-      : RemoteMessagePipeBootstrap(std::move(platform_handle)) {
-    DCHECK_LE(token.size(), kMaxTokenSize);
-    Channel::MessagePtr message(new Channel::Message(token.size(), 0));
-    memcpy(message->mutable_payload(), token.data(), token.size());
+      : RemoteMessagePipeBootstrap(std::move(platform_handle)),
+        node_controller_(node_controller),
+        token_(token) {
+    DCHECK_LE(token_.size(), kMaxTokenSize);
+    Channel::MessagePtr message(new Channel::Message(token_.size(), 0));
+    memcpy(message->mutable_payload(), token_.data(), token_.size());
     channel_->Write(std::move(message));
   }
 
   ~ParentBootstrap() override {}
 
   void OnTokenReceived(const std::string& token) override {
-    DLOG(ERROR) << "Unexpected pipe token received in parent bootstrap.";
+    // It's possible for two different endpoints in the same parent process to
+    // initiate parent bootstrap on the same platform channel without being
+    // aware of the other.
+    //
+    // This will successfully connect the two endpoints as long as at least one
+    // of the ParentBootstrap instances receives the other's token. It's OK that
+    // they race. NodeController will silently ignore any missed reservations.
+    node_controller_->ConnectReservedPorts(token_, token);
     ShutDown();
   }
+
+  NodeController* node_controller_;
+  const std::string token_;
 
   DISALLOW_COPY_AND_ASSIGN(ParentBootstrap);
 };

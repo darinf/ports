@@ -104,6 +104,12 @@ class NodeController : public ports::NodeDelegate,
                            const std::string& token,
                            const base::Closure& callback);
 
+  // Connects two reserved ports to each other. Useful when two independent
+  // systems in the same (parent) process need to establish a port pair without
+  // any direct knowledge of each other.
+  void ConnectReservedPorts(const std::string& token1,
+                            const std::string& token2);
+
   // Creates a new shared buffer for use in the current process.
   scoped_refptr<PlatformSharedBuffer> CreateSharedBuffer(size_t num_bytes);
 

@@ -168,6 +168,30 @@ void NodeController::ConnectToParentPort(const ports::PortRef& local_port,
                  base::Unretained(this), local_port, token, callback));
 }
 
+void NodeController::ConnectReservedPorts(const std::string& token1,
+                                          const std::string& token2) {
+  ReservedPort port1;
+  ReservedPort port2;
+  {
+    base::AutoLock lock(reserved_ports_lock_);
+    auto it1 = reserved_ports_.find(token1);
+    if (it1 == reserved_ports_.end())
+      return;
+    auto it2 = reserved_ports_.find(token2);
+    if (it2 == reserved_ports_.end())
+      return;
+    port1 = it1->second;
+    port2 = it2->second;
+    reserved_ports_.erase(it1);
+    reserved_ports_.erase(it2);
+  }
+
+  node_->InitializePort(port1.local_port, name_, port2.local_port.name());
+  node_->InitializePort(port2.local_port, name_, port1.local_port.name());
+  port1.callback.Run(port1.local_port);
+  port2.callback.Run(port2.local_port);
+}
+
 void NodeController::RequestShutdown(const base::Closure& callback) {
   {
     base::AutoLock lock(shutdown_lock_);
