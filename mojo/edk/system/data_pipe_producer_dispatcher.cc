@@ -440,7 +440,15 @@ void DataPipeProducerDispatcher::NotifyWrite(uint32_t num_bytes) {
 
 void DataPipeProducerDispatcher::OnPortStatusChanged() {
   base::AutoLock lock(lock_);
+
+  // We stop observing the control port as soon it's transferred, but this can
+  // race with events which are raised right before that happens. This is fine
+  // to ignore.
+  if (transferred_)
+    return;
+
   DVLOG(1) << "Control port status changed for data pipe producer " << pipe_id_;
+
   UpdateSignalsStateNoLock();
 }
 

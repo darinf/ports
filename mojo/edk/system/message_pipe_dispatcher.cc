@@ -581,8 +581,11 @@ HandleSignalsState MessagePipeDispatcher::GetHandleSignalsStateNoLock() const {
 void MessagePipeDispatcher::OnPortStatusChanged() {
   base::AutoLock lock(signal_lock_);
 
-  // We stop observing ports as soon as they're transferred.
-  DCHECK(!port_transferred_);
+  // We stop observing our port as soon as it's transferred, but this can race
+  // with events which are raised right before that happens. This is fine to
+  // ignore.
+  if (port_transferred_)
+    return;
 
 #if !defined(NDEBUG)
   ports::PortStatus port_status;
