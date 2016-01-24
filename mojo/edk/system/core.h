@@ -92,8 +92,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
 
   // Requests that the EDK tear itself down. |callback| will be called once
   // the shutdown process is complete. Note that |callback| is always called
-  // asynchronously on the calling thread, and the calling thread must continue
-  // running a MessageLoop at least until the callback is called.
+  // asynchronously on the calling thread if said thread is running a message
+  // loop, and the calling thread must continue running a MessageLoop at least
+  // until the callback is called. If there is no running loop, the |callback|
+  // may be called from any thread. Beware!
   void RequestShutdown(const base::Closure& callback);
 
   // Watches on the given handle for the given signals, calling |callback| when

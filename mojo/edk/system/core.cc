@@ -149,10 +149,15 @@ MojoResult Core::PassWrappedPlatformHandle(
 }
 
 void Core::RequestShutdown(const base::Closure& callback) {
-  base::Closure calling_thread_callback =
-      base::Bind(base::IgnoreResult(&base::TaskRunner::PostTask),
-                 base::ThreadTaskRunnerHandle::Get(), FROM_HERE, callback);
-  GetNodeController()->RequestShutdown(calling_thread_callback);
+  base::Closure on_shutdown;
+  if (base::ThreadTaskRunnerHandle::IsSet()) {
+    on_shutdown = base::Bind(base::IgnoreResult(&base::TaskRunner::PostTask),
+                             base::ThreadTaskRunnerHandle::Get(),
+                             FROM_HERE, callback);
+  } else {
+    on_shutdown = callback;
+  }
+  GetNodeController()->RequestShutdown(on_shutdown);
 }
 
 void Core::CreateParentMessagePipe(
