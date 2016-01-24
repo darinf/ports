@@ -282,8 +282,8 @@ TEST_F(PortsTest, Basic1) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
-  EXPECT_TRUE(node1.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
+  EXPECT_TRUE(node1.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, Basic2) {
@@ -317,8 +317,8 @@ TEST_F(PortsTest, Basic2) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
-  EXPECT_TRUE(node1.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
+  EXPECT_TRUE(node1.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, Basic3) {
@@ -361,8 +361,8 @@ TEST_F(PortsTest, Basic3) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
-  EXPECT_TRUE(node1.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
+  EXPECT_TRUE(node1.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, LostConnectionToNode1) {
@@ -404,8 +404,8 @@ TEST_F(PortsTest, LostConnectionToNode1) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
-  EXPECT_TRUE(node1.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
+  EXPECT_TRUE(node1.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, LostConnectionToNode2) {
@@ -456,8 +456,8 @@ TEST_F(PortsTest, LostConnectionToNode2) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
-  EXPECT_TRUE(node1.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
+  EXPECT_TRUE(node1.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, GetMessage1) {
@@ -485,7 +485,7 @@ TEST_F(PortsTest, GetMessage1) {
 
   EXPECT_EQ(OK, node0.ClosePort(a0));
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, GetMessage2) {
@@ -510,7 +510,7 @@ TEST_F(PortsTest, GetMessage2) {
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(a1));
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, GetMessage3) {
@@ -544,7 +544,7 @@ TEST_F(PortsTest, GetMessage3) {
   EXPECT_EQ(OK, node0.ClosePort(a0));
   EXPECT_EQ(OK, node0.ClosePort(a1));
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, Delegation1) {
@@ -616,8 +616,8 @@ TEST_F(PortsTest, Delegation1) {
   EXPECT_EQ(OK, node0.ClosePort(x0));
   EXPECT_EQ(OK, node1.ClosePort(x1));
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
-  EXPECT_TRUE(node1.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
+  EXPECT_TRUE(node1.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, Delegation2) {
@@ -680,8 +680,8 @@ TEST_F(PortsTest, Delegation2) {
     PumpTasks();  // Because ClosePort may have generated tasks.
   }
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
-  EXPECT_TRUE(node1.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
+  EXPECT_TRUE(node1.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, SendUninitialized) {
@@ -714,8 +714,8 @@ TEST_F(PortsTest, SendUninitialized) {
   EXPECT_EQ(OK, node0.ClosePort(x0));
   EXPECT_EQ(OK, node1.ClosePort(x1));
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
-  EXPECT_TRUE(node1.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
+  EXPECT_TRUE(node1.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, SendFailure) {
@@ -767,7 +767,7 @@ TEST_F(PortsTest, SendFailure) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, DontLeakUnreceivedPorts) {
@@ -795,7 +795,7 @@ TEST_F(PortsTest, DontLeakUnreceivedPorts) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, AllowShutdownWithLocalPortsOpen) {
@@ -821,11 +821,12 @@ TEST_F(PortsTest, AllowShutdownWithLocalPortsOpen) {
   PortRef E;
   ASSERT_EQ(OK, node0.GetPort(message->ports()[0], &E));
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(true));
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(true));
+  EXPECT_FALSE(node0.CanShutdownCleanly(false));
 
   EXPECT_EQ(OK, node0.ClosePort(A));
   EXPECT_EQ(OK, node0.ClosePort(B));
@@ -834,7 +835,7 @@ TEST_F(PortsTest, AllowShutdownWithLocalPortsOpen) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, ProxyCollapse1) {
@@ -882,7 +883,7 @@ TEST_F(PortsTest, ProxyCollapse1) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, ProxyCollapse2) {
@@ -929,7 +930,7 @@ TEST_F(PortsTest, ProxyCollapse2) {
 
   PumpTasks();
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, SendWithClosedPeer) {
@@ -986,7 +987,7 @@ TEST_F(PortsTest, SendWithClosedPeer) {
 
   node0.ClosePort(C);
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 TEST_F(PortsTest, SendWithClosedPeerSent) {
@@ -1062,7 +1063,9 @@ TEST_F(PortsTest, SendWithClosedPeerSent) {
 
   node0.ClosePort(E);
 
-  EXPECT_TRUE(node0.CanShutdownCleanly());
+  PumpTasks();
+
+  EXPECT_TRUE(node0.CanShutdownCleanly(false));
 }
 
 }  // namespace test

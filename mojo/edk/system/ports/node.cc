@@ -47,8 +47,19 @@ Node::~Node() {
     DLOG(WARNING) << "Unclean shutdown for node " << name_;
 }
 
-bool Node::CanShutdownCleanly() {
+bool Node::CanShutdownCleanly(bool allow_local_ports) {
   base::AutoLock ports_lock(ports_lock_);
+
+  if (!allow_local_ports) {
+#if !defined(NDEBUG)
+    for (auto entry : ports_) {
+      DVLOG(2) << "Port " << entry.first << " referencing node "
+               << entry.second->peer_node_name << " is blocking shutdown of "
+               << "node " << name_ << " (state=" << entry.second->state << ")";
+    }
+#endif
+    return ports_.empty();
+  }
 
   // NOTE: This is not efficient, though it probably doesn't need to be since
   // relatively few ports should be open during shutdown and shutdown doesn't

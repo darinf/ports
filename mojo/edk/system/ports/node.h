@@ -59,7 +59,10 @@ class Node {
   // node alive and continue routing messages to it via AcceptMessage. This
   // method may be called again after AcceptMessage to check if the Node is now
   // ready to be destroyed.
-  bool CanShutdownCleanly();
+  //
+  // If |allow_local_ports| is |true|, this will only return |false| when there
+  // are transient ports referring to other nodes.
+  bool CanShutdownCleanly(bool allow_local_ports);
 
   // Lookup the named port.
   int GetPort(const PortName& port_name, PortRef* port_ref);

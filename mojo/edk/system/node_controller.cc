@@ -766,7 +766,7 @@ void NodeController::AttemptShutdownIfRequested() {
     base::AutoLock lock(shutdown_lock_);
     if (shutdown_callback_.is_null())
       return;
-    if (!node_->CanShutdownCleanly()) {
+    if (!node_->CanShutdownCleanly(true /* allow_local_ports */)) {
       DVLOG(2) << "Unable to cleanly shut down node " << name_ << ".";
       return;
     }
