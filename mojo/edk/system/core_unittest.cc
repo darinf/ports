@@ -67,6 +67,7 @@ TEST_F(CoreTest, Basic) {
             core()->ReadMessage(h, nullptr, nullptr, nullptr, nullptr,
                                 MOJO_READ_MESSAGE_FLAG_NONE));
   ASSERT_EQ(2u, info.GetReadMessageCallCount());
+
   ASSERT_EQ(0u, info.GetWriteDataCallCount());
   ASSERT_EQ(MOJO_RESULT_UNIMPLEMENTED,
             core()->WriteData(h, nullptr, nullptr, MOJO_WRITE_DATA_FLAG_NONE));
@@ -96,6 +97,7 @@ TEST_F(CoreTest, Basic) {
   ASSERT_EQ(0u, info.GetEndReadDataCallCount());
   ASSERT_EQ(MOJO_RESULT_UNIMPLEMENTED, core()->EndReadData(h, 0));
   ASSERT_EQ(1u, info.GetEndReadDataCallCount());
+
   ASSERT_EQ(0u, info.GetAddAwakableCallCount());
   ASSERT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
             core()->Wait(h, ~MOJO_HANDLE_SIGNAL_NONE, MOJO_DEADLINE_INDEFINITE,
@@ -309,6 +311,7 @@ TEST_F(CoreTest, InvalidArguments) {
     ASSERT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
               core()->WriteMessage(MOJO_HANDLE_INVALID, nullptr, 0,
                                    nullptr, 0, MOJO_WRITE_MESSAGE_FLAG_NONE));
+
     MockHandleInfo info;
     MojoHandle h = CreateMockHandle(&info);
     MojoHandle handles[2] = {MOJO_HANDLE_INVALID, MOJO_HANDLE_INVALID};
@@ -713,17 +716,10 @@ TEST_F(CoreTest, MessagePipeBasicLocalHandlePassing1) {
             core()->WriteMessage(h_passing[0], kHello, kHelloSize,
                                  &h_passing[0], 1,
                                  MOJO_WRITE_MESSAGE_FLAG_NONE));
-
-#if defined(OS_WIN)
-  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
-#endif
   ASSERT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
             core()->WriteMessage(h_passing[0], kHello, kHelloSize,
                                  &h_passing[1], 1,
                                  MOJO_WRITE_MESSAGE_FLAG_NONE));
-#if defined(OS_WIN)
-  }
-#endif
 
   MojoHandle h_passed[2];
   MojoCreateMessagePipeOptions options;
