@@ -27,6 +27,7 @@ DIRS_TO_COPY_ = [
   "mojo/edk/test",
   "mojo/shell/runner/child",
   "mojo/shell/runner/host",
+  "net",
   "net/test",
   "third_party/mojo/src/mojo/edk/embedder",
 ]
