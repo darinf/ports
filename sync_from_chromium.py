@@ -14,6 +14,7 @@ import sys
 
 
 DIRS_TO_COPY_ = [
+  "chrome/test",
   "chrome/test/base",
   "components/test",
   "content/browser/mojo",
