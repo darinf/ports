@@ -57,6 +57,10 @@ MOJO_SYSTEM_IMPL_EXPORT void SetParentPipeHandle(ScopedPlatformHandle pipe);
 // initialize the (global, singleton) system.
 MOJO_SYSTEM_IMPL_EXPORT void Init();
 
+// An alternative to Init() which provides an IO task runner.
+MOJO_SYSTEM_IMPL_EXPORT void Init(
+    scoped_refptr<base::TaskRunner> io_thread_task_runner);
+
 // Basic functions -------------------------------------------------------------
 
 // The functions in this section are available once |Init()| has been called.

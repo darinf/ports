@@ -78,6 +78,11 @@ void Init() {
   internal::g_platform_support = new SimplePlatformSupport();
 }
 
+void Init(scoped_refptr<base::TaskRunner> io_thread_task_runner) {
+  Init();
+  internal::g_core->SetIOTaskRunner(io_thread_task_runner);
+}
+
 MojoResult AsyncWait(MojoHandle handle,
                      MojoHandleSignals signals,
                      const base::Callback<void(MojoResult)>& callback) {

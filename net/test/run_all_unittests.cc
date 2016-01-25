@@ -5,6 +5,7 @@
 #include "base/command_line.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/test/launcher/unit_test_launcher.h"
+#include "base/test/test_io_thread.h"
 #include "build/build_config.h"
 #include "crypto/nss_util.h"
 #include "net/socket/client_socket_pool_base.h"
@@ -26,7 +27,7 @@
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-#include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
+#include "mojo/edk/embedder/embedder.h"
 #endif
 
 using net::internal::ClientSocketPoolBaseHelper;
@@ -56,6 +57,7 @@ int main(int argc, char** argv) {
       arraysize(kNetTestRegisteredMethods));
 #endif
 
+  scoped_refptr<base::TaskRunner> io_task_runner;
   NetTestSuite test_suite(argc, argv);
   ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(false);
 
@@ -73,7 +75,9 @@ int main(int argc, char** argv) {
   net::EnableSSLServerSockets();
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-  mojo::embedder::Init();
+  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
+  io_task_runner = test_io_thread.task_runner();
+  mojo::edk::Init(io_task_runner);
 #endif
 
   return base::LaunchUnitTests(
