@@ -78,11 +78,6 @@ void Init() {
   internal::g_platform_support = new SimplePlatformSupport();
 }
 
-void Init(scoped_refptr<base::TaskRunner> io_thread_task_runner) {
-  Init();
-  internal::g_core->SetIOTaskRunner(io_thread_task_runner);
-}
-
 MojoResult AsyncWait(MojoHandle handle,
                      MojoHandleSignals signals,
                      const base::Callback<void(MojoResult)>& callback) {
@@ -106,11 +101,9 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
 void InitIPCSupport(ProcessDelegate* process_delegate,
                     scoped_refptr<base::TaskRunner> io_thread_task_runner) {
   CHECK(internal::g_core);
-
-  io_thread_task_runner->AddRef();
-  if (internal::g_io_thread_task_runner)
-    internal::g_io_thread_task_runner->Release();
+  CHECK(!internal::g_io_thread_task_runner);
   internal::g_io_thread_task_runner = io_thread_task_runner.get();
+  internal::g_io_thread_task_runner->AddRef();
 
   internal::g_core->SetIOTaskRunner(io_thread_task_runner);
   internal::g_process_delegate = process_delegate;

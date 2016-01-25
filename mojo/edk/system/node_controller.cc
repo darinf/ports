@@ -125,6 +125,8 @@ void NodeController::ClosePort(const ports::PortRef& port) {
   SetPortObserver(port, nullptr);
   int rv = node_->ClosePort(port);
   DCHECK_EQ(rv, ports::OK) << " Failed to close port: " << port.name();
+
+  AcceptIncomingMessages();
 }
 
 int NodeController::SendMessage(const ports::PortRef& port,
@@ -135,6 +137,8 @@ int NodeController::SendMessage(const ports::PortRef& port,
     DCHECK(ports_message);
     message->reset(static_cast<PortsMessage*>(ports_message.release()));
   }
+
+  AcceptIncomingMessages();
   return rv;
 }
 
@@ -381,26 +385,26 @@ void NodeController::SendPeerMessage(const ports::NodeName& name,
 
 void NodeController::AcceptIncomingMessages() {
   std::queue<ports::ScopedMessage> messages;
-  {
-    base::AutoLock lock(messages_lock_);
-    std::swap(messages, incoming_messages_);
-  }
+  do {
+    // TODO: We should be more careful to avoid starving the rest of the thread
+    // here.
 
-  while (!messages.empty()) {
-    node_->AcceptMessage(std::move(messages.front()));
-    messages.pop();
-  }
+    while (!messages.empty()) {
+      node_->AcceptMessage(std::move(messages.front()));
+      messages.pop();
+    }
+
+    {
+      base::AutoLock lock(messages_lock_);
+      std::swap(messages, incoming_messages_);
+    }
+  } while (!messages.empty());
 
   AttemptShutdownIfRequested();
 }
 
 void NodeController::DropAllPeers() {
-  if (!io_task_runner_->RunsTasksOnCurrentThread()) {
-    // It's possible for this to happen in single-process mode tests where
-    // the global IO task runner may be set to multiple different instances
-    // throughout the lifetime of the same process.
-    return;
-  }
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   {
     base::AutoLock lock(parent_lock_);
@@ -441,23 +445,12 @@ void NodeController::AllocMessage(size_t num_header_bytes,
 void NodeController::ForwardMessage(const ports::NodeName& node,
                                     ports::ScopedMessage message) {
   if (node == name_) {
-    // NOTE: It isn't critical that we accept messages on the IO thread.
-    // Rather, we just need to avoid re-entering the Node instance within
-    // ForwardMessage.
-
-    bool queue_was_empty = false;
-    {
-      base::AutoLock lock(messages_lock_);
-      queue_was_empty = incoming_messages_.empty();
-      incoming_messages_.emplace(std::move(message));
-    }
-
-    if (queue_was_empty) {
-      io_task_runner_->PostTask(
-          FROM_HERE,
-          base::Bind(&NodeController::AcceptIncomingMessages,
-                     base::Unretained(this)));
-    }
+    // NOTE: We need to avoid re-entering the Node instance within
+    // ForwardMessage. Because ForwardMessage is only ever called
+    // (synchronously) in response to Node's ClosePort, SendMessage, or
+    // AcceptMessage, we flush the queue after calling any of those methods.
+    base::AutoLock lock(messages_lock_);
+    incoming_messages_.emplace(std::move(message));
   } else {
     SendPeerMessage(node, std::move(message));
   }
@@ -554,7 +547,7 @@ void NodeController::OnPortsMessage(Channel::MessagePtr channel_message) {
                        std::move(channel_message)));
 
   node_->AcceptMessage(std::move(message));
-
+  AcceptIncomingMessages();
   AttemptShutdownIfRequested();
 }
 

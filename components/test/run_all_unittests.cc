@@ -10,7 +10,6 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/path_service.h"
 #include "base/test/launcher/unit_test_launcher.h"
-#include "base/test/test_io_thread.h"
 #include "base/test/test_suite.h"
 #include "build/build_config.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
@@ -37,7 +36,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "mojo/edk/embedder/embedder.h"
+#include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
 #endif
 
 namespace {
@@ -150,8 +149,7 @@ int main(int argc, char** argv) {
   listeners.Append(new ComponentsUnitTestEventListener());
 
 #if defined(OS_CHROMEOS)
-  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
-  mojo::edk::Init(test_io_thread.task_runner());
+  mojo::embedder::Init();
 #endif
 
   return base::LaunchUnitTests(

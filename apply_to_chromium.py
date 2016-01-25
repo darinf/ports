@@ -15,7 +15,6 @@ import sys
 # These are copied non-recursively. If the destination path doesn't exist,
 # it's created. A source file is only copied if it differs from the destination.
 DIRS_TO_COPY_ = [
-  "chrome/test",
   "chrome/test/base",
   "components/test",
   "content/browser/mojo",
@@ -29,7 +28,6 @@ DIRS_TO_COPY_ = [
   "mojo/edk/test",
   "mojo/shell/runner/child",
   "mojo/shell/runner/host",
-  "net",
   "net/test",
 ]
 

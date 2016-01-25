@@ -247,6 +247,14 @@ class NodeController : public ports::NodeDelegate,
   base::Lock messages_lock_;
   std::queue<ports::ScopedMessage> incoming_messages_;
 
+  // Guards |shutdown_callback_|.
+  base::Lock shutdown_lock_;
+
+  // Set by RequestShutdown(). If this is non-null, the controller will
+  // begin polling the Node to see if clean shutdown is possible any time the
+  // Node's state is modified by the controller.
+  base::Closure shutdown_callback_;
+
   // All other fields below must only be accessed on the I/O thread, i.e., the
   // thread on which core_->io_task_runner() runs tasks.
 
@@ -262,14 +270,6 @@ class NodeController : public ports::NodeDelegate,
   // Indicates whether this object should delete itself on IO thread shutdown.
   // Must only be accessed from the IO thread.
   bool destroy_on_io_thread_shutdown_ = false;
-
-  // Guards |shutdown_callback_|.
-  base::Lock shutdown_lock_;
-
-  // Set by RequestShutdown(). If this is non-null, the controller will
-  // begin polling the Node to see if clean shutdown is possible any time the
-  // Node's state is modified by the controller.
-  base::Closure shutdown_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(NodeController);
 };
