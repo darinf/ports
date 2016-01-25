@@ -36,10 +36,6 @@ int main(int argc, char** argv) {
   // Record histograms, so we can get histograms data in tests.
   base::StatisticsRecorder::Initialize();
 
-  // TODO(use_chrome_edk): This flag will go away and be default behavior soon,
-  // but we explicitly add it here for test coverage.
-  base::CommandLine::ForCurrentProcess()->AppendSwitch("use-new-edk");
-
 #if defined(OS_ANDROID)
   const base::android::RegistrationMethod kNetTestRegisteredMethods[] = {
     {"DummySpnegoAuthenticator",
@@ -62,6 +58,10 @@ int main(int argc, char** argv) {
 
   NetTestSuite test_suite(argc, argv);
   ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(false);
+
+  // TODO(use_chrome_edk): This flag will go away and be default behavior soon,
+  // but we explicitly add it here for test coverage.
+  base::CommandLine::ForCurrentProcess()->AppendSwitch("use-new-edk");
 
 #if defined(OS_WIN) && !defined(USE_OPENSSL)
   // We want to be sure to init NSPR on the main thread.
