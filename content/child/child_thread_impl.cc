@@ -388,7 +388,11 @@ void ChildThreadImpl::Init(const Options& options) {
     IPC::Logging::GetInstance()->SetIPCSender(this);
 #endif
 
-  mojo_ipc_support_.reset(new IPC::ScopedIPCSupport(GetIOTaskRunner()));
+  if (!IsInBrowserProcess()) {
+    // Don't double-initialize IPC support in single-process mode.
+    mojo_ipc_support_.reset(new IPC::ScopedIPCSupport(GetIOTaskRunner()));
+  }
+
   mojo_application_.reset(new MojoApplication(GetIOTaskRunner()));
 
   sync_message_filter_ = channel_->CreateSyncMessageFilter();

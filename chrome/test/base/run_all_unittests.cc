@@ -16,7 +16,6 @@ int main(int argc, char **argv) {
   // but we explicitly add it here for test coverage.
   base::CommandLine::ForCurrentProcess()->AppendSwitch("use-new-edk");
 
-
   mojo::embedder::Init();
   return base::LaunchUnitTests(
       argc, argv, base::Bind(&content::UnitTestTestSuite::Run,
