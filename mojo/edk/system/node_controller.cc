@@ -385,21 +385,24 @@ void NodeController::SendPeerMessage(const ports::NodeName& name,
 
 void NodeController::AcceptIncomingMessages() {
   std::queue<ports::ScopedMessage> messages;
-  do {
-    // TODO: We should be more careful to avoid starving the rest of the thread
-    // here.
+  for (;;) {
+    // TODO: We may need to be more careful to avoid starving the rest of the
+    // thread here. Revisit this if it turns out to be a problem. One
+    // alternative would be to schedule a task to continue pumping messages
+    // after flushing once.
+
+    {
+      base::AutoLock lock(messages_lock_);
+      if (incoming_messages_.empty())
+        break;
+      std::swap(messages, incoming_messages_);
+    }
 
     while (!messages.empty()) {
       node_->AcceptMessage(std::move(messages.front()));
       messages.pop();
     }
-
-    {
-      base::AutoLock lock(messages_lock_);
-      std::swap(messages, incoming_messages_);
-    }
-  } while (!messages.empty());
-
+  }
   AttemptShutdownIfRequested();
 }
 
